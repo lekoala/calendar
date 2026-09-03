@@ -8,7 +8,21 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/actual-css@0.6.0/dist/actual.full.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.6.0/site/assets/actual-themes.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/dist/combobox.css">
   <link rel="stylesheet" href="../dist/calendar.css">
+  <!-- Application dependencies, pinned the way Actual CSS already is. The
+       bare specifiers matter: `@lekoala/combobox` imports `@lekoala/floating`
+       itself, so mapping the name gives both it and this page the same
+       module instance instead of two copies of the positioning engine. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "@lekoala/floating": "https://cdn.jsdelivr.net/npm/@lekoala/floating@0.1.0/src/floating.js",
+        "@lekoala/combobox": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/src/index.js",
+        "@lekoala/combobox/define": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/src/define.js"
+      }
+    }
+  </script>
   <style>
     /* ==================================================================
        Actual CSS supplies every component used here: buttons, joins,
@@ -323,12 +337,20 @@
       opacity: 0.5;
     }
 
-    /* Resource checklist, kind legend, booking rules and search hits: all
-       four are plain application lists over application data. */
+    .sc-searchbtn {
+      justify-content: start;
+      gap: 0.5em;
+    }
+
+    .sc-searchbtn kbd {
+      margin-inline-start: auto;
+    }
+
+    /* Resource checklist, kind legend and booking rules: three plain
+       application lists over application data. */
     .sc-checks,
     .sc-legend,
-    .sc-rules,
-    .sc-results {
+    .sc-rules {
       display: grid;
       gap: 2px;
       margin: 0;
@@ -348,8 +370,7 @@
     }
 
     .sc-check:hover,
-    .sc-legend button:hover,
-    .sc-results button:hover {
+    .sc-legend button:hover {
       background: var(--hover-overlay);
     }
 
@@ -402,31 +423,6 @@
     .sc-rules i {
       margin-block-start: 0.1em;
       color: var(--sc-tone, var(--text-subtle));
-    }
-
-    .sc-results button {
-      display: grid;
-      inline-size: 100%;
-      padding: var(--space-20);
-      border: 0;
-      border-radius: var(--radius-sm);
-      background: var(--surface-subtle);
-      color: var(--text);
-      font: inherit;
-      font-size: var(--font-size-xs);
-      line-height: var(--line-height-tight);
-      text-align: start;
-      cursor: pointer;
-    }
-
-    .sc-results strong {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .sc-results small {
-      color: var(--text-muted);
     }
 
     /* ---------------------------------------------------------------- */
@@ -1255,6 +1251,140 @@
       padding-inline-end: calc(var(--control-size) + var(--space-20));
     }
 
+    /* Search palette. A command-palette dialog sits near the top rather than
+       dead centre, so the picker below the field has room. */
+    .sc-palette {
+      margin-block: 12vh auto;
+    }
+
+    .sc-palette-body {
+      display: grid;
+      gap: var(--space-20);
+      /* A fixed width, not a minimum: `dialog` is `width: fit-content`, so a
+         paragraph of prose inside would stretch the palette to its
+         max-content width. */
+      inline-size: min(34rem, 92vw);
+      padding: var(--space-30);
+    }
+
+    /* The palette's close button sits beside the field rather than over it,
+       so it keeps Actual's affordance without narrowing the picker (which
+       takes its width from the input). */
+    .sc-palette-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-20);
+    }
+
+    .sc-palette-head .dialog-close {
+      position: static;
+    }
+
+    .sc-palette-hint {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: var(--space-20);
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 11px;
+      line-height: var(--line-height-tight);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* --cb-* bridge. Same idea as the --calendar-* bridge above, and the
+       same mapping the combobox project uses in its own Actual CSS demo
+       (MIT, github.com/lekoala/combobox). No adapter, no JS glue: two
+       token contracts meeting in author CSS.                            */
+    /* ---------------------------------------------------------------- */
+    .actual-combobox {
+      --cb-bg: var(--surface);
+      --cb-color: var(--text);
+      --cb-border-color: var(--border);
+      --cb-border-radius: var(--radius);
+      --cb-focus-color: var(--focus);
+      --cb-muted-color: var(--text-muted);
+      --cb-error-color: var(--danger);
+      --cb-control-height: var(--control-size);
+      --cb-option-min-height: var(--control-size);
+    }
+
+    .actual-combobox :is(.cb-text-control, .cb-control):focus-within {
+      --cb-border-color: var(--focus);
+      outline: 2px solid transparent;
+      box-shadow: var(--focus-ring-shadow);
+    }
+
+    /* The picker is in the top layer, outside the control's subtree, so its
+       tokens are declared on the popover itself. */
+    .cb-popover {
+      --cb-picker-bg: var(--surface-raised);
+      --cb-muted-color: var(--text-muted);
+      --cb-error-color: var(--danger);
+      border-color: var(--border);
+      border-radius: var(--radius);
+      background: var(--cb-picker-bg);
+      box-shadow: var(--shadow-popout);
+    }
+
+    .cb-option {
+      border-radius: var(--radius-sm);
+    }
+
+    /* The library pairs its active row with a solid accent fill and a
+       hardcoded white label. A subtle overlay needs the ink restated, or the
+       title disappears - the same mapping the combobox demo uses. */
+    .cb-option:is(:hover, [data-active]) {
+      background: var(--hover-overlay);
+      color: var(--text);
+    }
+
+    .cb-option[aria-selected="true"] {
+      background: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--primary));
+      color: color-mix(in oklab, var(--primary) var(--soft-fg-mix), var(--text));
+    }
+
+    .cb-option[aria-selected="true"]::after {
+      color: var(--primary);
+    }
+
+    /* One suggestion row: the kind tone, the title, and the detail a
+       one-line result cannot carry. */
+    .sc-hit {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: var(--space-20);
+      min-inline-size: 0;
+    }
+
+    .sc-hit > span {
+      display: grid;
+      min-inline-size: 0;
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-hit strong {
+      overflow: hidden;
+      font-size: var(--font-size-xs);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-hit small {
+      color: var(--text-muted);
+      font-size: 10.5px;
+    }
+
+    /* A secondary note inside a button cannot use `.muted`: that token is
+       relative to the surface, not to the control, so it renders as grey ink
+       on a filled accent. Deriving it from the button's own `currentColor`
+       works on every variant. */
+    .btn .sc-note {
+      font-weight: var(--font-weight);
+      opacity: 0.75;
+    }
+
     .sc-shortcuts {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr);
@@ -1279,8 +1409,7 @@
     /* 5. RESPONSIVE                                                     */
     /* ---------------------------------------------------------------- */
     @media (min-width: 64rem) {
-      .sc-burger,
-      .sc-mobile-only {
+      .sc-burger {
         display: none;
       }
 
@@ -1429,7 +1558,7 @@
         <a class="tab" href="./basic.html"><i class="ti ti-layout-columns" aria-hidden="true"></i> Basic grids</a>
       </nav>
       <div class="sc-topbar-end">
-        <button type="button" class="btn sm neutral ghost icon-only sc-mobile-only" id="search-toggle"
+        <button type="button" class="btn sm neutral ghost icon-only" id="search-toggle"
                 aria-label="Search bookings">
           <i class="ti ti-search ti-lg" aria-hidden="true"></i>
         </button>
@@ -1461,15 +1590,11 @@
         <div class="sc-mini-grid" id="mini-grid" data-weeks="true"></div>
       </section>
 
-      <section class="sc-group">
-        <h2 class="sc-group-title"><i class="ti ti-search" aria-hidden="true"></i> Search</h2>
-        <label class="input-icon">
-          <i class="ti ti-search" aria-hidden="true"></i>
-          <input class="input sm" type="search" id="tools-search" placeholder="Title, room…" autocomplete="off"
-                 aria-label="Search loaded bookings">
-        </label>
-        <ul class="sc-results" id="tools-results"></ul>
-      </section>
+      <button type="button" class="btn sm neutral outline sc-searchbtn" id="search-open">
+        <i class="ti ti-search" aria-hidden="true"></i>
+        <span>Search bookings</span>
+        <kbd class="key">/</kbd>
+      </button>
 
       <section class="sc-group">
         <h2 class="sc-group-title">
@@ -1744,6 +1869,39 @@
   <!-- Rejection feedback: an application refusal has to say why. -->
   <output class="status-bar sc-toast" id="toast" aria-live="polite"></output>
 
+  <!-- Search palette. `<combo-box>` enhances a real `input list`, which keeps
+       owning the text; its picker is a `popover="manual"` appended to the
+       nearest ancestor dialog, which is why the search lives in a dialog of
+       its own rather than inline in the side panel: inside a `popover` drawer
+       the picker would be a body-level sibling and the drawer's own light
+       dismiss would fight it. -->
+  <dialog class="sc-dialog sc-palette" id="search-dialog" aria-label="Search bookings">
+    <div class="sc-palette-body">
+      <div class="sc-palette-head">
+        <!-- `placeholder` belongs on the input, not on `<combo-box>`: the
+             wrapper attribute drives the search field the engine generates
+             for a select-backed combobox, and here the native input is the
+             source and owns its own. -->
+        <combo-box class="actual-combobox" id="search-combo" search="fuzzy" min-chars="2"
+                   max-options="8">
+          <input id="tools-search" list="search-catalogue" autocomplete="off"
+                 placeholder="Booking title or room…" aria-label="Search loaded bookings">
+        </combo-box>
+        <button type="button" class="dialog-close" aria-label="Close"></button>
+      </div>
+      <datalist id="search-catalogue"></datalist>
+      <p class="sc-palette-hint">
+        <i class="ti ti-bulb" aria-hidden="true"></i>
+        <span>
+          Suggestions come from an async <code>load(query, { signal })</code> — the same
+          shape the calendar's own <code>eventSource</code> takes, so a superseded
+          keystroke aborts its request. Picking one navigates to that day and focuses
+          the booking.
+        </span>
+      </p>
+    </div>
+  </dialog>
+
   <!-- Creation sheet: calendar:select is an intention, the app decides. -->
   <dialog class="sc-dialog" id="create-dialog" aria-labelledby="create-title">
     <button type="button" class="dialog-close" aria-label="Close"></button>
@@ -1756,13 +1914,13 @@
       </p>
       <div class="stack" style="gap: var(--space-20);">
         <button type="button" class="btn primary" data-create="event">
-          <i class="ti ti-calendar-plus" aria-hidden="true"></i> Booking<span class="muted"> — an event on this slot</span>
+          <i class="ti ti-calendar-plus" aria-hidden="true"></i> Booking<span class="sc-note"> — an event on this slot</span>
         </button>
         <button type="button" class="btn neutral soft" data-create="background">
-          <i class="ti ti-layers-subtract" aria-hidden="true"></i> Background<span class="muted"> — time geometry behind events</span>
+          <i class="ti ti-layers-subtract" aria-hidden="true"></i> Background<span class="sc-note"> — time geometry behind events</span>
         </button>
         <button type="button" class="btn warning soft" data-create="blocked">
-          <i class="ti ti-ban" aria-hidden="true"></i> Blocked<span class="muted"> — non-bookable marker event</span>
+          <i class="ti ti-ban" aria-hidden="true"></i> Blocked<span class="sc-note"> — non-bookable marker event</span>
         </button>
       </div>
     </div>
@@ -1801,10 +1959,11 @@
   </dialog>
 
 <script type="module">
-  // Placement is an application dependency, pinned like Actual CSS, and
-  // never a runtime dependency of the core. The classic-script demos stay
-  // free of it so they keep working over `file://`.
-  import { autoUpdate, reposition, repositionAt } from "https://cdn.jsdelivr.net/npm/@lekoala/floating@0.1.0/src/floating.js";
+  // Placement and the search combobox are application dependencies, never
+  // runtime dependencies of the core. The classic-script demos stay free of
+  // both so they keep working over `file://`.
+  import { autoUpdate, reposition, repositionAt } from "@lekoala/floating";
+  import "@lekoala/combobox/define";
 
   const shell = document.getElementById("shell");
   const sidebar = document.getElementById("sidebar");
@@ -1989,6 +2148,24 @@
    */
   function wallMinutes(startIso, endIso) {
     return wallMinutesOf(endIso) - wallMinutesOf(startIso);
+  }
+
+  /**
+   * An abort-aware delay. Both async seams in this shell - the calendar's
+   * event source and the search palette's `load` - are handed an
+   * `AbortSignal`, and both have to reject rather than resolve late.
+   *
+   * @param {number} ms
+   * @param {AbortSignal} [signal]
+   */
+  function sleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(resolve, ms);
+      signal?.addEventListener("abort", () => {
+        window.clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      }, { once: true });
+    });
   }
 
   /** @param {string} iso an ISO date, `YYYY-MM-DD` or longer */
@@ -3259,18 +3436,12 @@
   const sources = {
     local: undefined,
     slow: async ({ signal }) => {
-      await new Promise((resolve, reject) => {
-        const timer = window.setTimeout(resolve, 600);
-        signal.addEventListener("abort", () => {
-          window.clearTimeout(timer);
-          reject(new DOMException("Aborted", "AbortError"));
-        }, { once: true });
-      });
+      await sleep(600, signal);
       record("slow source resolved (stale responses are dropped by the core)");
       return visibleStore();
     },
     failing: async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      await sleep(250);
       throw new Error("room service unavailable");
     },
   };
@@ -3367,6 +3538,9 @@
     const base = (locale ?? effectiveLocale() ?? "").slice(0, 2);
     calendar.configure({ locale, labels: CORE_LABELS[base] ?? {} });
     fmt = buildFormatters(effectiveLocale());
+    // Instances snapshot their messages at construction, so a locale change
+    // reconfigures them explicitly - the documented path.
+    searchCombo.configure({ messages: searchMessages() });
     // The mini month caches nothing locale-shaped, but every label it
     // prints comes from `fmt`, so the whole chrome is redrawn.
     renderLocales();
@@ -3453,56 +3627,121 @@
     toast(`“${action}” is a stand-in in this demo.`, "success");
   });
 
-  // --- Search: navigation primitives, application index --------------------
-  const toolsSearch = document.getElementById("tools-search");
-  const toolsResults = document.getElementById("tools-results");
+  // --- Search: a command palette over the loaded bookings ------------------
+  // `<combo-box>` enhances a real `input list`, which keeps owning the text;
+  // the shell only supplies the results and decides what a selection means.
+  // Its `load(query, { signal })` is deliberately the same shape as the
+  // calendar's own `eventSource`, so both async seams read alike and a
+  // superseded keystroke aborts its request.
+  const searchDialog = document.getElementById("search-dialog");
+  const searchCombo = document.getElementById("search-combo");
+  const searchInput = document.getElementById("tools-search");
 
-  function focusSearch() {
-    if (sidebar.hasAttribute("popover") && !sidebar.matches(":popover-open")) sidebar.showPopover();
-    toolsSearch.focus();
-    toolsSearch.select();
+  /** The five strings the combobox generates, per locale, like the core's. */
+  const SEARCH_MESSAGES = {
+    en: { noResults: "No booking matches", loading: "Searching…", loadError: "The booking search failed" },
+    fr: { noResults: "Aucune réservation ne correspond", loading: "Recherche…", loadError: "La recherche a échoué" },
+    nl: { noResults: "Geen boeking gevonden", loading: "Zoeken…", loadError: "Zoeken is mislukt" },
+  };
+
+  function searchMessages() {
+    return SEARCH_MESSAGES[(effectiveLocale() ?? "en").slice(0, 2)] ?? SEARCH_MESSAGES.en;
   }
 
-  document.getElementById("search-toggle").addEventListener("click", focusSearch);
-
-  toolsSearch.addEventListener("input", () => {
-    const query = toolsSearch.value.trim().toLowerCase();
-    toolsResults.replaceChildren();
-    if (query.length < 2) return;
-    const hits = store
-      .filter((item) =>
-        `${item.title} ${roomTitle(String(item.resourceId ?? ""))}`.toLowerCase().includes(query))
-      .sort((a, b) => (a.start < b.start ? -1 : 1))
-      .slice(0, 8);
-    if (hits.length === 0) {
-      const empty = document.createElement("li");
-      empty.className = "muted";
-      empty.textContent = "No loaded booking matches — a backend search would live here.";
-      toolsResults.append(empty);
-      return;
-    }
-    for (const hit of hits) {
-      const row = document.createElement("li");
-      const button = document.createElement("button");
-      button.type = "button";
-      const title = document.createElement("strong");
-      title.textContent = hit.title;
-      const meta = document.createElement("small");
-      meta.textContent = `${fmt.range.format(asDate(String(hit.start)))} · ${wallClock(String(hit.start))} · ${roomTitle(String(hit.resourceId ?? ""))}`;
-      button.append(title, meta);
-      button.addEventListener("click", () => {
-        calendar.gotoDate(String(hit.start).slice(0, 10));
-        calendar.scrollToTime(wallClock(String(hit.start)));
-        record(`search → ${hit.id}`);
-        if (sidebar.matches(":popover-open")) sidebar.hidePopover();
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          calendar.querySelector(`[data-event-id="${CSS.escape(hit.id)}"]`)?.focus();
+  searchCombo.configure({
+    minChars: 2,
+    debounce: 160,
+    messages: searchMessages(),
+    async load(query, { signal }) {
+      // Stands in for a backend query: the store is local, the contract is
+      // not. `sleep` rejects on abort, which is what makes the superseded
+      // request disappear instead of racing the newest one.
+      await sleep(220, signal);
+      const needle = query.trim().toLowerCase();
+      return store
+        .filter((item) =>
+          `${item.title} ${roomTitle(String(item.resourceId ?? ""))}`.toLowerCase().includes(needle))
+        .sort((a, b) => (a.start < b.start ? -1 : 1))
+        .slice(0, 8)
+        .map((item) => ({
+          value: item.id,
+          label: item.title,
+          data: {
+            kind: item.extendedProps?.kind ?? "review",
+            when: `${fmt.range.format(asDate(String(item.start)))} · ${wallClock(String(item.start))}`,
+            room: roomTitle(String(item.resourceId ?? "")),
+          },
         }));
-      });
-      row.append(button);
-      toolsResults.append(row);
-    }
+    },
+    render: {
+      // Strings are text and rich rows are DOM nodes here too, so the same
+      // rule that governs the calendar's content hooks governs this one.
+      option(item) {
+        const row = document.createElement("span");
+        row.className = "sc-hit";
+        row.dataset.kind = item.data?.kind ?? "review";
+        const swatch = document.createElement("span");
+        swatch.className = "sc-swatch";
+        const text = document.createElement("span");
+        const title = document.createElement("strong");
+        title.textContent = item.label;
+        const meta = document.createElement("small");
+        meta.textContent = `${item.data?.when ?? ""} · ${item.data?.room ?? ""}`;
+        text.append(title, meta);
+        row.append(swatch, text);
+        return row;
+      },
+    },
   });
+
+  // Focusing the input asks the engine to open the picker. With an empty
+  // catalogue - every suggestion comes from `load()` - that means an empty
+  // query would open a picker with nothing but a state row in it. The
+  // threshold is a policy, so it is enforced on the cancellable event
+  // rather than by suppressing focus.
+  searchInput.addEventListener("combobox:beforeopen", (event) => {
+    if (searchInput.value.trim().length < 2) event.preventDefault();
+  });
+
+  function openSearch() {
+    if (sidebar.matches(":popover-open")) sidebar.hidePopover();
+    const combo = searchCombo.combobox;
+    // Navigation, not a value: the palette opens on an empty query, and the
+    // previous search's transient results go with it. This runs before
+    // `showModal()` on purpose - the dialog autofocuses the field, which is
+    // what asks the engine to open, so clearing afterwards would already
+    // have re-run the previous query.
+    combo?.clearQuery({ show: false });
+    combo?.clearResults();
+    if (!searchDialog.open) searchDialog.showModal();
+    searchInput.focus();
+  }
+
+  document.getElementById("search-toggle").addEventListener("click", openSearch);
+  document.getElementById("search-open").addEventListener("click", openSearch);
+
+  // For an `input list` combobox the input *is* the source control, so the
+  // value events land on it.
+  searchInput.addEventListener("combobox:select", (event) => {
+    searchDialog.close();
+    revealBooking(String(event.detail.item.value));
+  });
+
+  searchInput.addEventListener("combobox:loaderror", (event) => {
+    record(`search failed: ${event.detail?.error?.message ?? "unknown"}`);
+  });
+
+  /** @param {string} id */
+  function revealBooking(id) {
+    const item = store.find((entry) => entry.id === id);
+    if (!item) return;
+    calendar.gotoDate(String(item.start).slice(0, 10));
+    calendar.scrollToTime(wallClock(String(item.start)));
+    record(`search → ${id}`);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      calendar.querySelector(`[data-event-id="${CSS.escape(id)}"]`)?.focus();
+    }));
+  }
 
   // --- Realtime stand-ins --------------------------------------------------
   document.getElementById("rt-add").addEventListener("click", () => {
@@ -3639,7 +3878,7 @@
     }
     if (event.key === "/") {
       event.preventDefault();
-      focusSearch();
+      openSearch();
     } else if (event.key === "?") {
       event.preventDefault();
       shortcutsDialog.showModal();
@@ -3656,10 +3895,15 @@
     }
   });
 
-  // `.dialog-close` is a plain button, so one listener replaces the three
-  // `<form method="dialog">` wrappers the sheets used to carry.
+  // `.dialog-close` is a plain button, so one listener replaces the
+  // `<form method="dialog">` wrappers the sheets used to carry. A click on
+  // the backdrop closes them too: the dialog's own box is the sheet body, so
+  // the element itself is only ever the target from outside it.
   for (const dialog of document.querySelectorAll("dialog.sc-dialog")) {
     dialog.querySelector(".dialog-close")?.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
   }
 
   renderRules();

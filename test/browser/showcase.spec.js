@@ -109,15 +109,89 @@ test("clicking an event opens the app-owned detail sheet", async ({ page }) => {
   await expect(page.locator("#cockpit .sc-last")).toContainText("eventclick");
 });
 
-test("search reveals a loaded event on its date", async ({ page }) => {
+test("the search palette reveals a loaded event on its date", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openPanel(page);
+  await closePanel(page);
+  await page.click("#search-toggle");
+  await expect(page.locator("#search-dialog")).toBeVisible();
+  // `<combo-box>` enhances a real `input list`, and its suggestions come from
+  // an async `load(query, { signal })` - the same shape as `eventSource`.
   await page.fill("#tools-search", "live sync");
-  await expect(page.locator('#tools-results button:has-text("Live sync")')).toBeVisible();
-  await page.locator('#tools-results button:has-text("Live sync")').click();
+  await expect(page.locator('.cb-option:has-text("Live sync")')).toBeVisible();
+  await page.locator('.cb-option:has-text("Live sync")').first().click();
   await flushRender(page);
+  await expect(page.locator("#search-dialog")).toBeHidden();
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-04");
+  await expect(page.locator("#cockpit .sc-last")).toContainText("search → live");
+  // Navigation, not a value: reopening starts from an empty query, with no
+  // picker and none of the previous search's transient results.
+  await page.click("#search-toggle");
+  await expect(page.locator("#tools-search")).toHaveValue("");
+  await expect(page.locator(".cb-popover")).toBeHidden();
+});
+
+test("the palette opens quiet, and closes without the keyboard", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await closePanel(page);
+  await page.click("#search-toggle");
+  await expect(page.locator("#search-dialog")).toBeVisible();
+  // Every suggestion comes from `load()`, so there is nothing to show below
+  // `minChars`: the picker stays shut instead of opening on a state row.
+  await expect(page.locator(".cb-popover")).toBeHidden();
+  await page.fill("#tools-search", "r");
+  await expect(page.locator(".cb-popover")).toBeHidden();
+  await page.fill("#tools-search", "road");
+  await expect(page.locator(".cb-option").first()).toBeVisible();
+
+  await page.click("#search-dialog .dialog-close");
+  await expect(page.locator("#search-dialog")).toBeHidden();
+  await expect(page.locator(".cb-popover")).toBeHidden();
+
+  // The backdrop dismisses every sheet in the shell, not just this one.
+  await page.click("#search-toggle");
+  await expect(page.locator("#search-dialog")).toBeVisible();
+  await page.mouse.click(20, 20);
+  await expect(page.locator("#search-dialog")).toBeHidden();
+});
+
+test("the search picker belongs to its dialog, and follows the locale", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await closePanel(page);
+  await page.click("#search-toggle");
+  await page.fill("#tools-search", "sprint");
+  await expect(page.locator(".cb-option").first()).toBeVisible();
+  // The picker is a `popover="manual"` parented to the nearest ancestor
+  // dialog. That is the whole reason the search is a palette rather than a
+  // field inside the side panel, which is itself a popover below 64rem.
+  expect(
+    await page.evaluate(() => {
+      const picker = /** @type {HTMLElement | null} */ (document.querySelector(".cb-popover"));
+      return { parent: picker?.parentElement?.id, mode: picker?.popover };
+    }),
+  ).toEqual({ parent: "search-dialog", mode: "manual" });
+  // Rich rows are DOM nodes here too, so a suggestion carries the detail a
+  // single line cannot.
+  await expect(page.locator(".cb-option .sc-hit").first()).toBeVisible();
+  await expect(page.locator(".cb-option small").first()).not.toBeEmpty();
+
+  // Escape unwinds one layer at a time: the picker first, the palette after.
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".cb-popover")).toBeHidden();
+  await expect(page.locator("#search-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#search-dialog")).toBeHidden();
+
+  await page.click("#account-toggle");
+  await page.click('#locale-chips [data-locale="fr"]');
+  await page.keyboard.press("Escape");
+  await page.click("#search-toggle");
+  await page.fill("#tools-search", "zzzzz");
+  // `messages` is snapshotted per instance, so the locale switch has to
+  // reconfigure it - and does.
+  await expect(page.locator(".cb-empty")).toContainText("Aucune réservation");
 });
 
 test("the mini month navigates the anchor date and shows ISO weeks", async ({ page }) => {
