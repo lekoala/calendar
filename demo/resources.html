@@ -8,22 +8,62 @@
   <script type="importmap">
     {"imports":{"temporal-polyfill":"../node_modules/temporal-polyfill/index.js","temporal-utils":"../node_modules/temporal-utils/dist/index.js","temporal-utils/protected":"../node_modules/temporal-utils/dist/protected.js","temporal-utils/protected-error-messages":"../node_modules/temporal-utils/dist/protected-error-messages.js"}}
   </script>
-  <style>body{margin:0;padding:2rem;background:#eef1f6;font-family:system-ui,sans-serif}</style>
+  <style>body{margin:0;padding:2rem;background:#eef1f6;font-family:system-ui,sans-serif}nav{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem}</style>
 </head>
 <body>
 <h1>Resource time grid</h1>
-<p>2 resources × 3 days. Header grouping is deliberately primitive and will be redesigned in milestone 2.</p>
+<p>Acceptance fixtures: grouped <code>resource → dates</code> headers, one column per resource and day. Columns keep a minimum width and scroll horizontally; resources are never hidden automatically.</p>
+<nav>
+  <button type="button" data-fixture="1x7">1 × 7</button>
+  <button type="button" data-fixture="2x3">2 × 3</button>
+  <button type="button" data-fixture="6x1">6 × 1</button>
+  <button type="button" data-fixture="6x3">6 × 3</button>
+  <button type="button" data-fixture="12x1">12 × 1</button>
+</nav>
 <calendar-view view="resourceThreeDays" date="2026-09-03"></calendar-view>
 <script type="module">
   import "../src/define.js";
   const calendar = document.querySelector("calendar-view");
-  calendar.resources = [
-    { id: "room-a", title: "Room A" },
-    { id: "room-b", title: "Room B" }
-  ];
+  const rooms = (count) =>
+    Array.from({ length: count }, (_, index) => ({ id: `room-${index + 1}`, title: `Room ${index + 1}` }));
+  /** @type {Record<string, () => void>} */
+  const fixtures = {
+    "1x7": () => {
+      calendar.resources = rooms(1);
+      calendar.setView("week");
+    },
+    "2x3": () => {
+      calendar.resources = [
+        { id: "room-a", title: "Room A" },
+        { id: "room-b", title: "Room B" },
+      ];
+      calendar.setView("resourceThreeDays");
+    },
+    "6x1": () => {
+      calendar.resources = rooms(6);
+      calendar.setView("resourceDay");
+    },
+    "6x3": () => {
+      calendar.resources = rooms(6);
+      calendar.setView("resourceThreeDays");
+    },
+    "12x1": () => {
+      calendar.resources = rooms(12);
+      calendar.setView("resourceDay");
+    },
+  };
+  document.querySelector("nav").addEventListener("click", (event) => {
+    const fixture = /** @type {HTMLElement} */ (event.target).dataset?.fixture;
+    if (fixture && fixtures[fixture]) fixtures[fixture]();
+  });
+  fixtures["2x3"]();
   calendar.events = [
     { id: "a", resourceId: "room-a", title: "Workshop", start: "2026-09-03T09:00:00+02:00[Europe/Brussels]", end: "2026-09-03T10:30:00+02:00[Europe/Brussels]" },
-    { id: "b", resourceId: "room-b", title: "Interview", start: "2026-09-04T11:00:00+02:00[Europe/Brussels]", end: "2026-09-04T11:40:00+02:00[Europe/Brussels]" }
+    { id: "b", resourceId: "room-b", title: "Interview", start: "2026-09-04T11:00:00+02:00[Europe/Brussels]", end: "2026-09-04T11:40:00+02:00[Europe/Brussels]" },
+    { id: "night", resourceId: "room-a", title: "Late handover", start: "2026-09-03T17:00:00+02:00[Europe/Brussels]", end: "2026-09-04T09:00:00+02:00[Europe/Brussels]" }
+  ];
+  calendar.backgrounds = [
+    { id: "cleaning", resourceId: "room-b", start: "2026-09-03T12:00:00+02:00[Europe/Brussels]", end: "2026-09-03T13:00:00+02:00[Europe/Brussels]" }
   ];
 </script>
 </body>

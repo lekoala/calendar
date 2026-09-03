@@ -458,6 +458,7 @@ export class CalendarViewElement extends HTMLElement {
       renderTimeGrid({
         dates,
         resources,
+        view: this.view,
         events: this._events,
         backgrounds: this._backgrounds,
         options,

@@ -1,9 +1,22 @@
 import { Temporal } from "temporal-polyfill";
-import { durationMinutes, formatClock, minutesFromMidnight, zonedDateTimeAt } from "../core/dates.js";
+import {
+  durationMinutes,
+  formatClock,
+  isResourceView,
+  minutesFromMidnight,
+  zonedDateTimeAt,
+} from "../core/dates.js";
 import { eventGeometry, snapMinutes } from "../core/geometry.js";
 import { hitTest } from "../core/hit.js";
 import { layoutEvents } from "../core/layout.js";
 import { isMovable, isResizable } from "../core/model.js";
+import {
+  backgroundAppliesToColumn,
+  eventBelongsToColumn,
+  getResourceColumns,
+  getTimeGridColumns,
+} from "../core/resources.js";
+import { sliceTimedEventForDay } from "../core/slicing.js";
 import { createAutoscroller } from "./autoscroll.js";
 
 /**
@@ -51,21 +64,10 @@ import { createAutoscroller } from "./autoscroll.js";
  */
 
 /**
- * @param {unknown} isoLike
- * @returns {number}
- */
-function eventMinutes(isoLike) {
-  // Prototype shortcut: the public model is Temporal/ZonedDateTime, but this
-  // renderer only needs wall-clock geometry for the first spike.
-  // TODO: parse through the shared Temporal adapter once timezone/view logic lands.
-  const match = String(isoLike).match(/T(\d{2}):(\d{2})/);
-  return match ? Number(match[1]) * 60 + Number(match[2]) : 0;
-}
-
-/**
  * @param {object} input
  * @param {Temporal.PlainDate[]} input.dates
  * @param {import("../core/model.js").CalendarResource[]} input.resources
+ * @param {string} [input.view] view name; resource columns derive only when it is a resource view
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {import("../core/model.js").NormalizedBackground[]} input.backgrounds
  * @param {TimeGridOptions} input.options
@@ -78,6 +80,7 @@ function eventMinutes(isoLike) {
 export function renderTimeGrid({
   dates,
   resources,
+  view = "week",
   events,
   backgrounds,
   options,
@@ -87,6 +90,40 @@ export function renderTimeGrid({
   resourceHeaderContent,
 }) {
   const fragment = document.createDocumentFragment();
+
+  // Column derivation is view-driven, never inferred from resource count:
+  // solo renders one column per date, resource views render resource x dates
+  // (possibly zero columns when no resource is selected).
+  const resourceView = isResourceView(view);
+  const columns = resourceView ? getResourceColumns(resources, dates) : getTimeGridColumns(dates);
+  const gridTemplate = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
+
+  // Grouped resource header row: one header per resource spanning its date
+  // columns. Solo views render no resource row at all.
+  if (resourceView) {
+    const resourceRow = document.createElement("div");
+    resourceRow.className = "cv-resource-row";
+    resourceRow.style.gridTemplateColumns = gridTemplate;
+    resourceRow.setAttribute("role", "row");
+    const corner = document.createElement("div");
+    corner.className = "cv-resource-corner";
+    corner.setAttribute("aria-hidden", "true");
+    resourceRow.append(corner);
+    for (const resource of resources) {
+      const header = document.createElement("div");
+      header.className = "cv-resource-header";
+      header.dataset.resourceId = resource.id;
+      header.style.gridColumn = `span ${Math.max(1, dates.length)}`;
+      header.setAttribute("role", "columnheader");
+      const custom = resourceHeaderContent?.({ resource, dates, element: header });
+      if (custom instanceof Node) header.append(custom);
+      else if (custom != null) header.textContent = String(custom);
+      else header.textContent = resource.title ?? resource.id;
+      resourceRow.append(header);
+    }
+    fragment.append(resourceRow);
+  }
+
   const root = document.createElement("div");
   root.className = "cv-grid";
 
@@ -159,11 +196,16 @@ export function renderTimeGrid({
     axis.append(label);
   }
 
-  const columns = resources.length
-    ? resources.flatMap((resource) => dates.map((date) => ({ date, resource })))
-    : dates.map((date) => ({ date, resource: null }));
+  root.style.gridTemplateColumns = gridTemplate;
 
-  root.style.gridTemplateColumns = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
+  if (columns.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "cv-empty";
+    empty.textContent = "No resources selected.";
+    root.append(empty);
+    fragment.append(root);
+    return fragment;
+  }
 
   /** @type {Array<{ column: TimeGridColumn, body: HTMLDivElement }>} */
   const bodies = [];
@@ -198,15 +240,17 @@ export function renderTimeGrid({
 
     const header = document.createElement("header");
     header.className = "cv-day-header";
-    const headerContent = column.resource
-      ? resourceHeaderContent?.({ date: column.date, resource: column.resource, element: header })
-      : dayHeaderContent?.({ date: column.date, element: header });
+    // Day headers render one date cell per column. In resource views the
+    // resource name lives in the grouped row above; the day header keeps
+    // only the date (plus optional resource context for hooks).
+    const headerContent = dayHeaderContent?.({
+      date: column.date,
+      resource: column.resource,
+      element: header,
+    });
     if (headerContent instanceof Node) header.append(headerContent);
     else if (headerContent != null) header.textContent = String(headerContent);
-    else
-      header.textContent = column.resource
-        ? `${column.resource.title} · ${column.date.toString()}`
-        : column.date.toString();
+    else header.textContent = column.date.toString();
     day.append(header);
 
     const body = document.createElement("div");
@@ -220,14 +264,15 @@ export function renderTimeGrid({
       body.append(line);
     }
 
+    const sliceOptions = { timeZone, slotMin: startMinutes, slotMax: endMinutes };
+
     for (const background of backgrounds) {
-      const sameResource =
-        !column.resource || !background.resourceId || background.resourceId === column.resource.id;
-      const sameDay = String(background.start).startsWith(column.date.toString());
-      if (!sameResource || !sameDay) continue;
+      if (!backgroundAppliesToColumn(background, column)) continue;
+      const slice = sliceTimedEventForDay(background, column.date, sliceOptions);
+      if (!slice) continue;
       const geometry = eventGeometry({
-        startMinutes: eventMinutes(background.start),
-        endMinutes: eventMinutes(background.end),
+        startMinutes: slice.start,
+        endMinutes: slice.end,
         dayStartMinutes: startMinutes,
         pxPerMinute,
         gap: 0,
@@ -239,13 +284,13 @@ export function renderTimeGrid({
       body.append(node);
     }
 
-    const dayEvents = events
-      .filter((event) => {
-        const sameDay = String(event.start).startsWith(column.date.toString());
-        const sameResource = !column.resource || event.resourceId === column.resource.id;
-        return sameDay && sameResource;
-      })
-      .map((event) => ({ event, start: eventMinutes(event.start), end: eventMinutes(event.end) }));
+    const dayEvents = [];
+    for (const event of events) {
+      if (!eventBelongsToColumn(event, column)) continue;
+      const slice = sliceTimedEventForDay(event, column.date, sliceOptions);
+      if (!slice) continue;
+      dayEvents.push({ event, start: slice.start, end: slice.end });
+    }
 
     for (const item of layoutEvents(dayEvents)) {
       const { event } = item;

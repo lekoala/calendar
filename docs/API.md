@@ -32,7 +32,19 @@ Simple serializable configuration may become attributes. Functions/structured be
 
 `setView(view)` takes a single view name. `resources`, `date` and other state remain separate properties. The core never infers the view from `resources.length`.
 
-A solo `timeGrid` with several resources and a `resourceTimeGrid` with one resource are both legitimate, even if an application rarely uses them. View switching preserves the anchor date, vertical scroll and reusable event data where defined.
+A solo `timeGrid` with several resources and a `resourceTimeGrid` with one resource are both legitimate, even if an application rarely uses them. View switching preserves the anchor date, vertical scroll and reusable event data where defined. Horizontal scroll is intentionally not contractual: column counts differ between solo and resource grids, so the browser may clamp.
+
+Column derivation follows the view:
+
+```js
+isResourceView(view)
+  ? getResourceColumns(resources, dates)
+  : getTimeGridColumns(dates)
+```
+
+A `resourceTimeGrid` with no resources renders an explicit empty state.
+
+Resource views use grouped headers: `resourceHeaderContent({ resource, dates, element })` runs once per resource in a row spanning its date columns; `dayHeaderContent({ date, resource, element })` runs once per column.
 
 ## Event model
 
@@ -88,7 +100,7 @@ Potential future fields: `groupId`, `order`, rendering metadata. Avoid hierarchy
 }
 ```
 
-No built-in semantic type.
+No built-in semantic type. A background without `resourceId` is global and applies to every resource column; an event without `resourceId` is hidden in resource views (see view policy).
 
 ## Configuration
 

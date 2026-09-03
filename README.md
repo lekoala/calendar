@@ -116,10 +116,11 @@ The core does not impose a hard `resources × days` limit. The docs do recommend
 
 ## Demos
 
-The prototype includes three deliberately small demos:
+The prototype includes deliberately small demos:
 
 - `demo/index.html` — solo time grid
-- `demo/resources.html` — resource grid
+- `demo/resources.html` — resource grid with acceptance fixtures (1×7, 2×3, 6×1, 6×3, 12×1)
+- `demo/resources-stress.html` — manual stress configurations (12×3, 6×7)
 - `demo/realtime.html` — incremental event mutations
 
 Serve the repository over HTTP:
@@ -152,7 +153,6 @@ The current JavaScript proves only the shell and basic rendering geometry. TODOs
 - autoscroll;
 - range selection;
 - hover-slot preview;
-- resource-aware hit testing;
 - month/list renderers;
 - keyboard navigation;
 - rich render hooks;

@@ -72,6 +72,49 @@
   font-weight: 700;
 }
 
+.cv-resource-row {
+  display: grid;
+  align-items: stretch;
+  min-width: max-content;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--calendar-surface);
+  border-bottom: 1px solid var(--calendar-line);
+}
+
+.cv-resource-corner {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 3.5rem;
+  background: var(--calendar-bg);
+}
+
+.cv-resource-header {
+  display: flex;
+  align-items: center;
+  min-height: 3rem;
+  padding: 0.75rem;
+  overflow: hidden;
+  border-inline-start: 1px solid var(--calendar-line);
+  background: var(--calendar-surface);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Grouped resource headers stick above the day headers. */
+.calendar-view[data-view^="resource"] .cv-day-header {
+  top: 3rem;
+}
+
+.cv-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 2rem;
+  color: var(--calendar-muted);
+}
+
 .cv-day-body {
   position: relative;
 }

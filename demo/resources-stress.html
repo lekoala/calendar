@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendar prototype — resource stress (manual)</title>
+  <link rel="stylesheet" href="../src/calendar.css">
+  <script type="importmap">
+    {"imports":{"temporal-polyfill":"../node_modules/temporal-polyfill/index.js","temporal-utils":"../node_modules/temporal-utils/dist/index.js","temporal-utils/protected":"../node_modules/temporal-utils/dist/protected.js","temporal-utils/protected-error-messages":"../node_modules/temporal-utils/dist/protected-error-messages.js"}}
+  </script>
+  <style>body{margin:0;padding:2rem;background:#eef1f6;font-family:system-ui,sans-serif}nav{display:flex;gap:.5rem;margin-bottom:1rem}</style>
+</head>
+<body>
+<h1>Resource stress (manual)</h1>
+<p>Deliberately heavy configurations for manual inspection only: 12 resources × 3 days and 6 resources × 7 days. No virtualization; note where the view becomes UX-limited rather than technically slow.</p>
+<nav>
+  <button type="button" data-fixture="12x3">12 × 3</button>
+  <button type="button" data-fixture="6x7">6 × 7</button>
+</nav>
+<calendar-view view="resourceThreeDays" date="2026-09-03"></calendar-view>
+<script type="module">
+  import "../src/define.js";
+  const calendar = document.querySelector("calendar-view");
+  const rooms = (count) =>
+    Array.from({ length: count }, (_, index) => ({ id: `room-${index + 1}`, title: `Room ${index + 1}` }));
+  /** @type {Record<string, () => void>} */
+  const fixtures = {
+    "12x3": () => {
+      calendar.resources = rooms(12);
+      calendar.setView("resourceThreeDays");
+    },
+    "6x7": () => {
+      calendar.resources = rooms(6);
+      calendar.setView("week");
+    },
+  };
+  document.querySelector("nav").addEventListener("click", (event) => {
+    const fixture = /** @type {HTMLElement} */ (event.target).dataset?.fixture;
+    if (fixture && fixtures[fixture]) fixtures[fixture]();
+  });
+  fixtures["12x3"]();
+  calendar.events = Array.from({ length: 60 }, (_, index) => {
+    const room = (index % 12) + 1;
+    const day = 3 + (index % 3);
+    const hour = 8 + (index % 9);
+    const startHour = String(hour).padStart(2, "0");
+    const endHour = String(hour + 1).padStart(2, "0");
+    return {
+      id: `stress-${index}`,
+      resourceId: `room-${room}`,
+      title: `Event ${index}`,
+      start: `2026-09-0${day}T${startHour}:00:00+02:00[Europe/Brussels]`,
+      end: `2026-09-0${day}T${endHour}:00:00+02:00[Europe/Brussels]`,
+    };
+  });
+</script>
+</body>
+</html>
