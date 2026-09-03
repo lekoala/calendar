@@ -3,46 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Calendar prototype — solo</title>
-  <link rel="stylesheet" href="../src/calendar.css">
-  <script type="importmap">
-    {"imports":{"temporal-polyfill":"../node_modules/temporal-polyfill/index.js","temporal-utils":"../node_modules/temporal-utils/dist/index.js","temporal-utils/protected":"../node_modules/temporal-utils/dist/protected.js","temporal-utils/protected-error-messages":"../node_modules/temporal-utils/dist/protected-error-messages.js"}}
-  </script>
+  <title>Calendar prototype — demos</title>
   <style>
     body { margin: 0; padding: 2rem; background: #eef1f6; font-family: system-ui, sans-serif; }
-    main { max-width: 1200px; margin: auto; }
-    nav { display: flex; gap: .5rem; margin-bottom: 1rem; }
+    main { max-width: 60rem; margin: auto; }
+    h1 { margin: 0 0 0.25rem; }
+    p.lede { color: #64748b; margin: 0 0 1.5rem; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
+    a.card {
+      display: block;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.6rem;
+      background: #fff;
+      color: inherit;
+      text-decoration: none;
+    }
+    a.card:hover { border-color: #2563eb; }
+    a.card h2 { margin: 0 0 0.35rem; font-size: 1.05rem; }
+    a.card p { margin: 0; color: #64748b; font-size: 0.9rem; line-height: 1.4; }
+    code { font-size: 0.85em; }
   </style>
 </head>
 <body>
 <main>
-  <h1>Calendar views</h1>
-  <p>Solo representations over shared state: time grids, month summary and list. Switching views preserves the anchor date.</p>
-  <nav>
-    <button type="button" data-view="day">Day</button>
-    <button type="button" data-view="threeDays">3 days</button>
-    <button type="button" data-view="week">Week</button>
-    <button type="button" data-view="month">Month</button>
-    <button type="button" data-view="list">List</button>
-  </nav>
-  <calendar-view view="threeDays" date="2026-09-03"></calendar-view>
+  <h1>Calendar demos</h1>
+  <p class="lede">@lekoala/calendar — framework-agnostic Temporal calendar and resource scheduler Web Component.</p>
+  <div class="grid">
+    <a class="card" href="./basic.html">
+      <h2>Basic</h2>
+      <p>Solo time grids, month and list over shared state. The small core demo: day, 3 days, week, month, list.</p>
+    </a>
+    <a class="card" href="./resources.html">
+      <h2>Resources</h2>
+      <p>Resource time grids with acceptance fixtures (1×7, 2×3, 6×1, 6×3, 12×1), grouped headers and horizontal scroll.</p>
+    </a>
+    <a class="card" href="./resources-stress.html">
+      <h2>Resources stress</h2>
+      <p>Manual stress configurations (12×3, 6×7) to probe where the grid becomes UX-limited rather than slow.</p>
+    </a>
+    <a class="card" href="./realtime.html">
+      <h2>Realtime</h2>
+      <p>Incremental mutations (<code>addEvent</code>/<code>updateEvent</code>/<code>removeEvent</code>) standing in for WebSocket/SSE/polling messages.</p>
+    </a>
+    <a class="card" href="./showcase.html">
+      <h2>Showcase</h2>
+      <p>A generic application shell skinned with Actual CSS: rich event cards, creation/detail dialogs, context menu, local tools search and themes.</p>
+    </a>
+    <a class="card" href="./dist.html">
+      <h2>Dist smoke</h2>
+      <p>Always loads the generated classic build (<code>../dist/calendar.js</code>); validates the distributed product over HTTP and <code>file://</code>.</p>
+    </a>
+  </div>
 </main>
-<script type="module">
-  import "../src/define.js";
-
-  const calendar = document.querySelector("calendar-view");
-  calendar.events = [
-    { id: "a", title: "Design review", start: "2026-09-03T09:00:00+02:00[Europe/Brussels]", end: "2026-09-03T10:00:00+02:00[Europe/Brussels]" },
-    { id: "b", title: "Planning", start: "2026-09-04T13:20:00+02:00[Europe/Brussels]", end: "2026-09-04T14:00:00+02:00[Europe/Brussels]" },
-    { id: "c", title: "Overlap review", start: "2026-09-03T09:30:00+02:00[Europe/Brussels]", end: "2026-09-03T10:30:00+02:00[Europe/Brussels]" }
-  ];
-  calendar.backgrounds = [
-    { id: "bg", start: "2026-09-03T08:00:00+02:00[Europe/Brussels]", end: "2026-09-03T12:00:00+02:00[Europe/Brussels]" }
-  ];
-  document.querySelector("nav").addEventListener("click", (event) => {
-    const view = event.target.dataset.view;
-    if (view) calendar.setView(view);
-  });
-</script>
 </body>
 </html>

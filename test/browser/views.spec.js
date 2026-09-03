@@ -22,7 +22,7 @@ function gotoMonth(page) {
 }
 
 test("month renders full Monday weeks with outside days dimmed", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await gotoMonth(page);
   await flushRender(page);
   await expect(page.locator(".cv-month-day")).toHaveCount(35);
@@ -34,7 +34,7 @@ test("month renders full Monday weeks with outside days dimmed", async ({ page }
 });
 
 test("multi-day events repeat per overlapped day, midnight excluded", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).events = [
       {
@@ -60,7 +60,7 @@ test("multi-day events repeat per overlapped day, midnight excluded", async ({ p
 });
 
 test("crowded days collapse behind +n more, honoring monthEventLimit", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = Array.from({ length: 5 }, (_, index) => {
@@ -87,7 +87,7 @@ test("crowded days collapse behind +n more, honoring monthEventLimit", async ({ 
 });
 
 test("month chips activate like events", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await gotoMonth(page);
   await flushRender(page);
   await page.evaluate(() => {
@@ -106,7 +106,7 @@ test("month chips activate like events", async ({ page }) => {
 });
 
 test("empty month day click selects the civil day", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__select = null;
@@ -133,7 +133,7 @@ test("empty month day click selects the civil day", async ({ page }) => {
 });
 
 test("prev and next step whole months", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await gotoMonth(page);
   await flushRender(page);
   const dates = await page.evaluate(() => {
@@ -150,7 +150,7 @@ test("prev and next step whole months", async ({ page }) => {
 });
 
 test("month sources receive the week-aligned range", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__range = null;
@@ -169,7 +169,7 @@ test("month sources receive the week-aligned range", async ({ page }) => {
 });
 
 test("list renders chronological day groups with empty states", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).setView("list");
   });
@@ -186,7 +186,7 @@ test("list renders chronological day groups with empty states", async ({ page })
 });
 
 test("list events activate and switching preserves the anchor date", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__seen = [];

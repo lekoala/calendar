@@ -3,13 +3,13 @@ import { expect, test } from "@playwright/test";
 import { Temporal } from "temporal-polyfill";
 
 test("solo demo renders calendar events", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await expect(page.locator("calendar-view")).toBeVisible();
   await expect(page.locator(".cv-event")).toHaveCount(3);
 });
 
 test("overlapping events share the column width", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await expect(page.locator(".cv-event")).toHaveCount(3);
   const widths = await page.evaluate(() =>
     ["a", "c"].map(
@@ -34,7 +34,7 @@ test("incremental mutation API updates without navigation", async ({ page }) => 
 });
 
 test("prev/next shift the anchor date by view length", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   const dates = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const before = calendar.getAttribute("date");
@@ -50,7 +50,7 @@ test("prev/next shift the anchor date by view length", async ({ page }) => {
 });
 
 test("today returns to the current date and shows the time indicator", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   const today = Temporal.Now.plainDateISO("Europe/Brussels").toString();
   const date = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -62,7 +62,7 @@ test("today returns to the current date and shows the time indicator", async ({ 
 });
 
 test("scrollToTime moves the scroller to the requested hour", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await expect(page.locator(".cv-scroller")).toBeAttached();
   const top = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -74,7 +74,7 @@ test("scrollToTime moves the scroller to the requested hour", async ({ page }) =
 });
 
 test("pointer click dispatches calendar:eventclick", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
@@ -89,7 +89,7 @@ test("pointer click dispatches calendar:eventclick", async ({ page }) => {
 });
 
 test("keyboard Enter on a focused event dispatches calendar:eventclick", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await expect(page.locator('[data-event-id="b"]')).toBeVisible();
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
@@ -153,7 +153,7 @@ function flushRender(page) {
 }
 
 test("hovering an empty slot shows a duration preview", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   const box = await firstBodyBox(page);
   // 187 minutes sits inside the 11:00 snap step: cross-API sub-pixel slop
   // (~1px) must never flip the asserted step.
@@ -163,7 +163,7 @@ test("hovering an empty slot shows a duration preview", async ({ page }) => {
 });
 
 test("hovering an event shows no slot preview", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   const box = await firstBodyBox(page);
   await page.mouse.move(box.x + box.width / 2, box.y + 187 * 1.8);
   await expect(page.locator(".cv-hover").first()).toBeVisible();
@@ -172,7 +172,7 @@ test("hovering an event shows no slot preview", async ({ page }) => {
 });
 
 test("clicking an empty slot selects a snapped default-duration range", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await trackSelections(page);
   const box = await firstBodyBox(page);
   await page.mouse.click(box.x + box.width / 2, box.y + 187 * 1.8);
@@ -185,7 +185,7 @@ test("clicking an empty slot selects a snapped default-duration range", async ({
 });
 
 test("dragging selects a snapped range without a residual click selection", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await trackSelections(page);
   const box = await firstBodyBox(page);
   const x = box.x + box.width / 2;
@@ -323,7 +323,7 @@ async function readResizes(page) {
 }
 
 test("dragging an event in time dispatches a reversible eventmove", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await trackMoves(page);
   const box = await eventBox(page, "a");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -358,7 +358,7 @@ test("dragging an event across resources changes its resource", async ({ page })
 });
 
 test("a rejected move reverts to its previous position", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await page.evaluate(() => {
     /** @type {any} */ (window).__moves = [];
     /** @type {any} */ (document.querySelector("calendar-view")).addEventListener(
@@ -380,7 +380,7 @@ test("a rejected move reverts to its previous position", async ({ page }) => {
 });
 
 test("resizing an event dispatches eventresize", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await trackMoves(page);
   const box = await resizeHandleBox(page, "a", "s");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -395,7 +395,7 @@ test("resizing an event dispatches eventresize", async ({ page }) => {
 });
 
 test("resizing from the top moves the start", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await trackMoves(page);
   const box = await resizeHandleBox(page, "a", "n");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -409,7 +409,7 @@ test("resizing from the top moves the start", async ({ page }) => {
 });
 
 test("pointercancel aborts a drag without dispatching", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await trackMoves(page);
   const box = await eventBox(page, "a");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -427,7 +427,7 @@ test("pointercancel aborts a drag without dispatching", async ({ page }) => {
 });
 
 test("a non-movable event cannot be dragged or moved by command", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await trackMoves(page);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -475,7 +475,7 @@ test("dropping on a non-droppable resource reverts silently", async ({ page }) =
 });
 
 test("moveEvent and resizeEvent commands share the pointer contract", async ({ page }) => {
-  await page.goto("/demo/");
+  await page.goto("/demo/basic.html");
   await trackMoves(page);
   const moved = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));

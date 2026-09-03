@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendar × Actual CSS — application shell showcase</title>
+  <meta name="description" content="@lekoala/calendar inside a generic application shell skinned with Actual CSS: rich event cards, creation dialog, tools search, resource views and themes.">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/actual-css@0.6.0/dist/actual.full.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.6.0/site/assets/actual-themes.min.css">
+  <link rel="stylesheet" href="../dist/calendar.css">
+  <style>
+    /* Page layout — plain Actual CSS classes in markup; only page-explicit
+       sizing lives here. */
+    .page {
+      --center-size: 80rem;
+      padding-block: var(--space-50) var(--space-60);
+    }
+
+    .page-toolbar {
+      align-items: end;
+      justify-content: space-between;
+    }
+
+    /* Manual Light / Dark toggle (same recipe as the combobox bridge demo:
+       the default Actual theme is a light-dark() pair). */
+    [data-theme="light"] {
+      color-scheme: light;
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+    }
+
+    /* ================================================================ */
+    /* THEME BRIDGE — Actual CSS provides the visual language, the       */
+    /* calendar the behaviour. No adapter package: just shared CSS       */
+    /* contracts on top of the public --calendar-* tokens.               */
+    /* ================================================================ */
+    .actual-calendar {
+      --calendar-bg: var(--surface);
+      --calendar-surface: var(--surface-raised);
+      --calendar-line: var(--border);
+      --calendar-text: var(--text);
+      --calendar-muted: var(--text-muted);
+      --calendar-accent: var(--primary);
+      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--primary));
+      --calendar-event-border: var(--primary);
+      --calendar-background-bg: var(--hover-overlay);
+    }
+
+    .actual-calendar .cv-event:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 1px;
+    }
+
+    /* Rich event cards: the core renders geometry (top/height/left/width),
+       the application owns the card content via eventContent(). */
+    .sc-card {
+      display: block;
+      overflow: hidden;
+      font-size: var(--font-size-xs);
+      line-height: var(--line-height);
+    }
+
+    .sc-card strong {
+      display: block;
+      overflow: hidden;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-strong);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-card .sc-meta {
+      display: block;
+      overflow: hidden;
+      color: inherit;
+      opacity: 0.85;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-card .sc-tag {
+      display: inline-block;
+      margin-block-start: 2px;
+      padding: 0 0.45em;
+      border-radius: var(--radius-full);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-strong);
+    }
+
+    /* Kind tints reuse the shared soft recipe, like .badge soft. */
+    .cv-event[data-kind="review"] {
+      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--primary));
+      --calendar-event-border: var(--primary);
+    }
+
+    .cv-event[data-kind="planning"] {
+      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--success));
+      --calendar-event-border: var(--success);
+    }
+
+    .cv-event[data-kind="deadline"] {
+      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--danger));
+      --calendar-event-border: var(--danger);
+    }
+
+    .cv-event[data-kind="blocked"] {
+      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--warning));
+      --calendar-event-border: var(--warning);
+    }
+
+    .sc-tag {
+      background: color-mix(in oklab, var(--surface) var(--soft-bg-mix), currentcolor);
+    }
+
+    /* Day headers keep the date; the application adds a count badge. */
+    .sc-count {
+      margin-inline-start: 0.4em;
+      padding: 0 0.5em;
+      border-radius: var(--radius-full);
+      background: var(--hover-overlay);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-strong);
+    }
+
+    /* Native <dialog> styled with Actual tokens for the app-owned sheets. */
+    .sc-dialog {
+      padding: 0;
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-raised);
+      color: var(--text);
+      box-shadow: var(--shadow-popout);
+    }
+
+    .sc-dialog::backdrop {
+      background: rgb(0 0 0 / 0.4);
+    }
+
+    .sc-dialog-body {
+      min-inline-size: min(24rem, 90vw);
+      padding: var(--space-50);
+    }
+
+    .sc-slot-chips {
+      gap: var(--space-20);
+    }
+
+    /* Context menu anchored by the core-provided clientX/clientY. */
+    .sc-menu {
+      position: fixed;
+      z-index: 50;
+      min-inline-size: 12rem;
+      padding: var(--space-20);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-raised);
+      box-shadow: var(--shadow-popout);
+    }
+
+    .sc-menu button {
+      display: block;
+      inline-size: 100%;
+    }
+
+    .sc-log {
+      max-block-size: 10rem;
+      overflow: auto;
+      font-size: var(--font-size-xs);
+    }
+  </style>
+  <script src="../dist/calendar.js"></script>
+</head>
+<body>
+  <main class="center stack page">
+    <header class="cluster page-toolbar">
+      <hgroup>
+        <p class="overline">Application shell showcase</p>
+        <h1>Calendar × Actual CSS</h1>
+        <p class="muted">
+          A generic <strong>room-booking shell</strong> around <code>@lekoala/calendar</code>:
+          the core owns geometry, rendering and interaction; every panel, dialog and
+          search box here is application code. No medical vocabulary, no backend.
+        </p>
+      </hgroup>
+      <div class="cluster" style="gap: var(--space-20);">
+        <select class="select sm fit" id="theme-switcher" aria-label="Switch theme">
+          <option value="">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="indigo">Indigo</option>
+          <option value="brutalist">Brutalist</option>
+        </select>
+      </div>
+    </header>
+
+    <section class="card stack" aria-label="Agenda toolbar">
+      <div class="join" role="group" aria-label="Views">
+        <button type="button" class="btn" data-view="day">Day</button>
+        <button type="button" class="btn" data-view="threeDays">3 days</button>
+        <button type="button" class="btn" data-view="week">Week</button>
+        <button type="button" class="btn" data-view="resourceDay">Team day</button>
+        <button type="button" class="btn" data-view="resourceThreeDays">Team 3 days</button>
+        <button type="button" class="btn" data-view="month">Month</button>
+        <button type="button" class="btn" data-view="list">List</button>
+      </div>
+      <div class="cluster items-end" style="gap: var(--space-30);">
+        <div class="join" role="group" aria-label="Date navigation">
+          <button type="button" class="btn touch-target" id="nav-prev">← Prev</button>
+          <button type="button" class="btn touch-target" id="nav-today">Today</button>
+          <button type="button" class="btn touch-target" id="nav-next">Next →</button>
+        </div>
+        <span class="muted" id="anchor-label" role="status" style="padding-block-end: var(--space-10);"></span>
+      </div>
+      <div class="cluster items-end" style="gap: var(--space-30);">
+        <label class="field" style="min-inline-size: 12rem;">
+          <span class="field-label">Resources</span>
+          <select class="select sm fit" id="resource-filter">
+            <option value="all">All rooms (solo grid)</option>
+            <option value="team" selected>Rooms A–C (team grid)</option>
+            <option value="room-a">Room A only</option>
+            <option value="room-b">Room B only</option>
+          </select>
+        </label>
+        <label class="field" style="min-inline-size: 12rem;">
+          <span class="field-label">Event source</span>
+          <select class="select sm fit" id="source-mode">
+            <option value="local" selected>Local snapshot</option>
+            <option value="slow">Simulated slow source (600 ms)</option>
+          </select>
+        </label>
+        <div class="field">
+          <span class="field-label sr-only">Tools</span>
+          <button type="button" class="btn touch-target" id="tools-toggle" aria-expanded="false">Tools</button>
+        </div>
+      </div>
+      <div class="card soft" id="tools-panel" hidden>
+        <label class="field">
+          <span class="field-label">Search loaded events</span>
+          <input class="input sm" type="search" id="tools-search" placeholder="Type a title…" autocomplete="off">
+        </label>
+        <ul id="tools-results" class="stack" style="gap: var(--space-10); padding: 0; list-style: none;"></ul>
+      </div>
+    </section>
+
+    <calendar-view class="actual-calendar" view="resourceThreeDays" date="2026-09-03"></calendar-view>
+
+    <section class="grid grid-2 items-start">
+      <div class="card stack">
+        <h2 style="margin: 0;">Realtime (transport-agnostic)</h2>
+        <p class="muted">These buttons stand in for socket/polling messages. The core only sees incremental mutations.</p>
+        <div class="cluster">
+          <button type="button" class="btn sm" id="rt-add">Push event</button>
+          <button type="button" class="btn sm neutral outline" id="rt-move">Shift “Live sync” +1h</button>
+          <button type="button" class="btn sm danger outline" id="rt-remove">Remove “Live sync”</button>
+        </div>
+      </div>
+      <div class="card stack">
+        <h2 style="margin: 0;">Interaction log</h2>
+        <p class="muted">Every intent the core exposes to the application, as it happens.</p>
+        <ol class="sc-log stack" id="event-log" style="gap: 2px; padding-inline-start: 1.2em; margin: 0;"></ol>
+      </div>
+    </section>
+
+    <footer class="page-note muted">
+      <p>
+        Loaded from jsDelivr, pinned: <code>actual-css@0.6.0</code> + themes.
+        Calendar from the local <code>../dist/calendar.js</code> build — run
+        <code>bun run sync</code> before opening. Stays application-owned on purpose:
+        booking form, search backend, waiting list, billing, persistence and transport.
+      </p>
+    </footer>
+  </main>
+
+  <!-- Creation sheet: calendar:select is an intention, the app decides. -->
+  <dialog class="sc-dialog" id="create-dialog" aria-labelledby="create-title">
+    <div class="sc-dialog-body stack">
+      <h2 id="create-title" style="margin: 0;">What do you want to create?</h2>
+      <p class="cluster sc-slot-chips" style="padding: 0;">
+        <span class="badge soft" id="create-date">—</span>
+        <span class="badge soft" id="create-range">—</span>
+        <span class="badge soft neutral" id="create-duration">—</span>
+      </p>
+      <div class="stack" style="gap: var(--space-20);">
+        <button type="button" class="btn primary" data-create="event">Event<span class="muted"> — booked on this slot</span></button>
+        <button type="button" class="btn neutral soft" data-create="background">Background<span class="muted"> — time geometry behind events</span></button>
+        <button type="button" class="btn warning soft" data-create="blocked">Blocked<span class="muted"> — non-bookable marker event</span></button>
+      </div>
+      <form method="dialog"><button type="submit" class="btn neutral ghost sm">Cancel</button></form>
+    </div>
+  </dialog>
+
+  <!-- Detail sheet: opened from calendar:eventclick. -->
+  <dialog class="sc-dialog" id="detail-dialog" aria-labelledby="detail-title">
+    <div class="sc-dialog-body stack">
+      <h2 id="detail-title" style="margin: 0;">—</h2>
+      <p class="muted" id="detail-meta" style="margin: 0;">—</p>
+      <div class="cluster">
+        <button type="button" class="btn sm" id="detail-shift">Move +1h</button>
+        <button type="button" class="btn sm danger outline" id="detail-delete">Delete</button>
+      </div>
+      <form method="dialog"><button type="submit" class="btn neutral ghost sm">Close</button></form>
+    </div>
+  </dialog>
+
+  <div class="sc-menu stack" id="context-menu" hidden style="gap: 2px;"></div>
+
+<script>
+  (() => {
+    const calendar = document.querySelector("calendar-view");
+    const log = document.getElementById("event-log");
+    const anchorLabel = document.getElementById("anchor-label");
+    const ZONE = "Europe/Brussels";
+
+    /** @param {string} message */
+    function record(message) {
+      const item = document.createElement("li");
+      item.textContent = message;
+      log.prepend(item);
+      while (log.children.length > 12) log.lastChild.remove();
+    }
+
+    // --- Fictitious generic dataset: rooms × meetings ---------------------
+    const ROOMS = [
+      { id: "room-a", title: "Room A" },
+      { id: "room-b", title: "Room B" },
+      { id: "room-c", title: "Room C" },
+    ];
+    const KINDS = ["review", "planning", "deadline"];
+    const TITLES = [
+      "Design review", "Sprint planning", "Release gate", "1:1 sync",
+      "Architecture walkthrough", "Demo Friday", "Backlog grooming", "Incident retro",
+    ];
+    /** @type {Array<{ id: string, title: string, start: string, end: string, resourceId: string, extendedProps: { kind: string, seats: number } }>} */
+    const SNAPSHOT = [];
+    {
+      let n = 0;
+      for (let day = 3; day <= 9; day += 1) {
+        const date = `2026-09-0${day}`;
+        for (let i = 0; i < ROOMS.length; i += 1) {
+          const room = ROOMS[i];
+          const hour = 9 + ((day + i * 2) % 7);
+          const startHour = String(hour).padStart(2, "0");
+          const endHour = String(hour + 1).padStart(2, "0");
+          n += 1;
+          SNAPSHOT.push({
+            id: `seed-${n}`,
+            title: TITLES[(day + i) % TITLES.length],
+            start: `${date}T${startHour}:00:00+02:00[${ZONE}]`,
+            end: `${date}T${endHour}:00:00+02:00[${ZONE}]`,
+            resourceId: room.id,
+            extendedProps: { kind: KINDS[(day + i) % KINDS.length], seats: 4 + ((day + i) % 8) },
+          });
+        }
+      }
+      // One deliberate overlap to show the column layout.
+      SNAPSHOT.push({
+        id: "seed-overlap",
+        title: "Overlap review",
+        start: `2026-09-03T09:30:00+02:00[${ZONE}]`,
+        end: `2026-09-03T10:30:00+02:00[${ZONE}]`,
+        resourceId: "room-a",
+        extendedProps: { kind: "deadline", seats: 6 },
+      });
+      SNAPSHOT.push({
+        id: "live",
+        title: "Live sync",
+        start: `2026-09-04T11:00:00+02:00[${ZONE}]`,
+        end: `2026-09-04T11:30:00+02:00[${ZONE}]`,
+        resourceId: "room-b",
+        extendedProps: { kind: "review", seats: 3 },
+      });
+    }
+
+    /** @param {string} iso */
+    function wallClock(iso) {
+      return iso.slice(11, 16);
+    }
+
+    /**
+     * Wall-clock minute difference between two ISO strings of the same day.
+     * @param {string} startIso
+     * @param {string} endIso
+     */
+    function wallMinutes(startIso, endIso) {
+      const start = Number(startIso.slice(11, 13)) * 60 + Number(startIso.slice(14, 16));
+      const end = Number(endIso.slice(11, 13)) * 60 + Number(endIso.slice(14, 16));
+      return end - start;
+    }
+
+    // --- Rich cards: geometry stays in the core, content is the app --------
+    const dayFormat = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
+    calendar.configure({
+      eventContent({ event }) {
+        const wrap = document.createElement("span");
+        wrap.className = "sc-card";
+        const title = document.createElement("strong");
+        title.textContent = event.title ?? "Event";
+        const meta = document.createElement("span");
+        meta.className = "sc-meta";
+        meta.textContent = `${wallClock(String(event.start))}–${wallClock(String(event.end))} · ${event.extendedProps?.seats ?? "?"} seats`;
+        const tag = document.createElement("span");
+        tag.className = "sc-tag";
+        tag.textContent = event.extendedProps?.kind ?? "event";
+        wrap.append(title, meta, tag);
+        return wrap;
+      },
+      dayHeaderContent({ date, resource }) {
+        const count = calendar.events.filter(
+          (item) => String(item.start).slice(0, 10) === date.toString() && (!resource || item.resourceId === resource.id),
+        ).length;
+        const node = document.createElement("span");
+        node.textContent = dayFormat.format(new Date(`${date}T12:00:00`));
+        const badge = document.createElement("span");
+        badge.className = "sc-count";
+        badge.textContent = String(count);
+        node.append(badge);
+        return node;
+      },
+      resourceHeaderContent({ resource }) {
+        const node = document.createElement("span");
+        node.textContent = resource.title;
+        return node;
+      },
+    });
+    calendar.resources = ROOMS;
+    calendar.events = SNAPSHOT;
+    calendar.backgrounds = [
+      {
+        id: "cleaning",
+        title: "Cleaning",
+        resourceId: "room-c",
+        start: `2026-09-03T12:00:00+02:00[${ZONE}]`,
+        end: `2026-09-03T13:00:00+02:00[${ZONE}]`,
+      },
+    ];
+
+    /** @param {string} id */
+    function paintKind(id) {
+      const node = calendar.querySelector(`[data-event-id="${CSS.escape(id)}"]`);
+      const event = calendar.getEventById(id);
+      if (node && event?.extendedProps?.kind) node.dataset.kind = event.extendedProps.kind;
+    }
+    // eventContent runs before the button is attached, so kinds are painted
+    // on the next frame after every render.
+    const observer = new MutationObserver(() => {
+      for (const event of calendar.events) paintKind(event.id);
+    });
+    observer.observe(calendar, { childList: true, subtree: true });
+
+    // --- Toolbar -----------------------------------------------------------
+    const viewButtons = [...document.querySelectorAll("[data-view]")];
+    function refreshChrome() {
+      anchorLabel.textContent = `${calendar.getAttribute("view")} · ${calendar.getAttribute("date")}`;
+      for (const button of viewButtons) {
+        const active = button.dataset.view === calendar.getAttribute("view");
+        button.classList.toggle("primary", active);
+        button.setAttribute("aria-pressed", String(active));
+      }
+    }
+    document.querySelector('.join[aria-label="Views"]').addEventListener("click", (event) => {
+      const view = /** @type {HTMLElement} */ (event.target).dataset?.view;
+      if (!view) return;
+      calendar.setView(view);
+      refreshChrome();
+    });
+    document.getElementById("nav-prev").addEventListener("click", () => { calendar.prev(); refreshChrome(); });
+    document.getElementById("nav-next").addEventListener("click", () => { calendar.next(); refreshChrome(); });
+    document.getElementById("nav-today").addEventListener("click", () => { calendar.today(); refreshChrome(); });
+
+    document.getElementById("resource-filter").addEventListener("change", (event) => {
+      const value = /** @type {HTMLSelectElement} */ (event.target).value;
+      if (value === "all") {
+        calendar.resources = [];
+        calendar.setView("week");
+      } else if (value === "team") {
+        calendar.resources = ROOMS;
+        calendar.setView("resourceThreeDays");
+      } else {
+        calendar.resources = ROOMS.filter((room) => room.id === value);
+        calendar.setView("resourceDay");
+      }
+      refreshChrome();
+    });
+
+    // Simulated async source: abort + stale rejection are exercised by
+    // flipping views/dates quickly while it is active.
+    document.getElementById("source-mode").addEventListener("change", (event) => {
+      const slow = /** @type {HTMLSelectElement} */ (event.target).value === "slow";
+      calendar.configure({
+        eventSource: slow
+          ? async ({ signal }) => {
+              await new Promise((resolve, reject) => {
+                const timer = window.setTimeout(resolve, 600);
+                signal.addEventListener("abort", () => {
+                  window.clearTimeout(timer);
+                  reject(new DOMException("Aborted", "AbortError"));
+                }, { once: true });
+              });
+              record("slow source resolved (stale responses are dropped by the core)");
+              return SNAPSHOT;
+            }
+          : undefined,
+      });
+      if (slow) void calendar.refetchEvents();
+      else calendar.events = SNAPSHOT;
+    });
+
+    // --- Creation sheet ----------------------------------------------------
+    const createDialog = /** @type {HTMLDialogElement} */ (document.getElementById("create-dialog"));
+    /** @type {{ start: any, end: any, resourceId: string | null } | null} */
+    let pendingSlot = null;
+    calendar.addEventListener("calendar:select", (event) => {
+      const detail = /** @type {CustomEvent} */ (event).detail;
+      pendingSlot = { start: detail.start, end: detail.end, resourceId: detail.resourceId };
+      document.getElementById("create-date").textContent = String(detail.start).slice(0, 10);
+      document.getElementById("create-range").textContent =
+        `${wallClock(String(detail.start))} – ${wallClock(String(detail.end))}`;
+      const minutes = wallMinutes(String(detail.start), String(detail.end));
+      document.getElementById("create-duration").textContent = `${minutes} min${detail.resourceId ? ` · ${detail.resourceId}` : ""}`;
+      record(`select ${String(detail.start).slice(0, 16)} → ${String(detail.end).slice(0, 16)}${detail.resourceId ? ` · ${detail.resourceId}` : ""}`);
+      createDialog.showModal();
+    });
+    createDialog.addEventListener("click", (event) => {
+      const kind = /** @type {HTMLElement} */ (event.target).closest("[data-create]")?.dataset?.create;
+      if (!kind || !pendingSlot) return;
+      const stamp = new Date().toISOString().slice(11, 19).replaceAll(":", "");
+      if (kind === "background") {
+        calendar.backgrounds = [...calendar.backgrounds, {
+          id: `bg-${stamp}`,
+          title: "Blocked range",
+          start: String(pendingSlot.start),
+          end: String(pendingSlot.end),
+          ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
+        }];
+        record("background created from selection");
+      } else {
+        const created = calendar.addEvent({
+          id: `event-${stamp}`,
+          title: kind === "blocked" ? "Blocked — do not book" : "New booking",
+          start: String(pendingSlot.start),
+          end: String(pendingSlot.end),
+          ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
+          extendedProps: { kind: kind === "blocked" ? "blocked" : "review", seats: 2 },
+        });
+        paintKind(created.id);
+        record(`event created: ${created.id}`);
+      }
+      pendingSlot = null;
+      createDialog.close();
+    });
+
+    // --- Detail sheet ------------------------------------------------------
+    const detailDialog = /** @type {HTMLDialogElement} */ (document.getElementById("detail-dialog"));
+    /** @type {string | null} */
+    let detailId = null;
+    calendar.addEventListener("calendar:eventclick", (event) => {
+      const detail = /** @type {CustomEvent} */ (event).detail;
+      const item = detail.event;
+      detailId = item.id;
+      document.getElementById("detail-title").textContent = item.title ?? "Event";
+      document.getElementById("detail-meta").textContent =
+        `${String(item.start).slice(0, 16)} → ${String(item.end).slice(0, 16)}${item.resourceId ? ` · ${item.resourceId}` : ""}`;
+      record(`eventclick: ${item.id}`);
+      detailDialog.showModal();
+    });
+    document.getElementById("detail-shift").addEventListener("click", async () => {
+      if (!detailId) return;
+      const item = calendar.getEventById(detailId);
+      if (!item) return;
+      // Wall-clock +1h on the ISO string keeps the demo free of date math;
+      // a real app would use Temporal here.
+      const shift = (/** @type {string} */ iso) =>
+        iso.replace(/T(\d{2}):/, (_, /** @type {string} */ hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
+      const moved = calendar.moveEvent(detailId, { start: shift(String(item.start)), end: shift(String(item.end)) });
+      record(moved ? `eventmove committed: ${detailId} (+1h, revert available)` : `eventmove rejected: ${detailId}`);
+      detailDialog.close();
+    });
+    document.getElementById("detail-delete").addEventListener("click", () => {
+      if (detailId && calendar.removeEvent(detailId)) record(`removed: ${detailId}`);
+      detailId = null;
+      detailDialog.close();
+    });
+
+    // --- Context menu (core intent, app menu) -------------------------------
+    const menu = document.getElementById("context-menu");
+    calendar.addEventListener("calendar:eventcontextmenu", (event) => {
+      event.preventDefault();
+      const detail = /** @type {CustomEvent} */ (event).detail;
+      const native = /** @type {PointerEvent} */ (detail.nativeEvent);
+      menu.replaceChildren();
+      const targetId = detail.event?.id ?? null;
+      const actions = targetId
+        ? [["Move +1h", "shift"], ["Delete", "delete"]]
+        : [["Create here", "create"]];
+      for (const [label, action] of actions) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn sm neutral ghost";
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          menu.hidden = true;
+          if (action === "delete" && targetId) {
+            calendar.removeEvent(targetId);
+            record(`removed via menu: ${targetId}`);
+          } else if (action === "shift" && targetId) {
+            const item = calendar.getEventById(targetId);
+            if (item) {
+              const shift = (/** @type {string} */ iso) =>
+                iso.replace(/T(\d{2}):/, (_, /** @type {string} */ hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
+              calendar.moveEvent(targetId, { start: shift(String(item.start)), end: shift(String(item.end)) });
+              record(`eventmove via menu: ${targetId}`);
+            }
+          } else if (action === "create") {
+            record(`menu on empty slot: ${String(detail.date)} ${String(detail.time)} — use drag-select to create`);
+          }
+        });
+        menu.append(button);
+      }
+      menu.style.left = `${Math.min(native?.clientX ?? 100, window.innerWidth - 200)}px`;
+      menu.style.top = `${Math.min(native?.clientY ?? 100, window.innerHeight - 140)}px`;
+      menu.hidden = false;
+      record(`eventcontextmenu: ${targetId ?? "empty slot"}`);
+    });
+    document.addEventListener("click", (event) => {
+      if (!menu.hidden && !menu.contains(/** @type {Node} */ (event.target))) menu.hidden = true;
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") menu.hidden = true;
+    });
+
+    // --- Tools: local search over loaded events -----------------------------
+    const toolsToggle = document.getElementById("tools-toggle");
+    const toolsPanel = document.getElementById("tools-panel");
+    const toolsSearch = /** @type {HTMLInputElement} */ (document.getElementById("tools-search"));
+    const toolsResults = document.getElementById("tools-results");
+    toolsToggle.addEventListener("click", () => {
+      toolsPanel.hidden = !toolsPanel.hidden;
+      toolsToggle.setAttribute("aria-expanded", String(!toolsPanel.hidden));
+      if (!toolsPanel.hidden) toolsSearch.focus();
+    });
+    toolsSearch.addEventListener("input", () => {
+      const query = toolsSearch.value.trim().toLowerCase();
+      toolsResults.replaceChildren();
+      if (query.length < 2) return;
+      const hits = calendar.events.filter((item) => (item.title ?? "").toLowerCase().includes(query)).slice(0, 8);
+      if (hits.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "muted";
+        empty.textContent = "No loaded event matches — a backend search would live here.";
+        toolsResults.append(empty);
+        return;
+      }
+      for (const hit of hits) {
+        const row = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn sm neutral outline";
+        button.textContent = `${hit.title} · ${String(hit.start).slice(0, 16)}`;
+        button.addEventListener("click", () => {
+          calendar.gotoDate(String(hit.start).slice(0, 10));
+          refreshChrome();
+          record(`tools → ${hit.id}`);
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            /** @type {HTMLElement | null} */ (calendar.querySelector(`[data-event-id="${CSS.escape(hit.id)}"]`))?.focus();
+          }));
+        });
+        row.append(button);
+        toolsResults.append(row);
+      }
+    });
+
+    // --- Realtime stand-ins --------------------------------------------------
+    document.getElementById("rt-add").addEventListener("click", () => {
+      const created = calendar.addEvent({
+        id: `pushed-${Date.now()}`,
+        title: "Pushed booking",
+        start: `2026-09-03T13:00:00+02:00[${ZONE}]`,
+        end: `2026-09-03T13:30:00+02:00[${ZONE}]`,
+        resourceId: "room-a",
+        extendedProps: { kind: "planning", seats: 5 },
+      });
+      paintKind(created.id);
+      record(`realtime add: ${created.id}`);
+    });
+    document.getElementById("rt-move").addEventListener("click", () => {
+      const item = calendar.getEventById("live");
+      if (!item) {
+        record("realtime move: “Live sync” no longer exists");
+        return;
+      }
+      const shift = (/** @type {string} */ iso) =>
+        iso.replace(/T(\d{2}):/, (_, /** @type {string} */ hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
+      calendar.moveEvent("live", { start: shift(String(item.start)), end: shift(String(item.end)) });
+      record("realtime move: “Live sync” +1h");
+    });
+    document.getElementById("rt-remove").addEventListener("click", () => {
+      record(calendar.removeEvent("live") ? "realtime remove: “Live sync”" : "realtime remove: already gone");
+    });
+
+    // --- Misc ---------------------------------------------------------------
+    document.getElementById("theme-switcher").addEventListener("change", (event) => {
+      const value = /** @type {HTMLSelectElement} */ (event.target).value;
+      if (value) document.documentElement.dataset.theme = value;
+      else document.documentElement.removeAttribute("data-theme");
+    });
+    if (window.innerWidth < 768) calendar.setView("threeDays");
+    refreshChrome();
+    record("shell ready: core renders, app owns the chrome");
+  })();
+</script>
+</body>
+</html>

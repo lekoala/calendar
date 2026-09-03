@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — showcase polish + demo hub
+
+- `demo/index.html` is now a demo hub linking every demo; the old solo page moved to `demo/basic.html` (git history preserved).
+- Showcase bumped to Actual CSS 0.6.0 (pinned CDN + themes); tokens revalidated against the bundle.
+- Toolbar polish: view switcher and date navigation now use `.join` segmented controls with `aria-pressed`, tools controls bottom-aligned via `.items-end` + `sr-only` label + `touch-target`, day headers localized via `Intl.DateTimeFormat` with a per-column count badge.
+- `test/browser/*` retargeted from `/demo/` to `/demo/basic.html`; showcase test extended with segmented active-state assertions.
+
+## Unreleased — showcase demo
+
+- `demo/showcase.html`: generic room-booking application shell skinned with Actual CSS (pinned CDN + `--calendar-*` token bridge). Rich `eventContent` cards by `extendedProps.kind`, day/resource header hooks, 3-choice creation dialog on `calendar:select` (event/background/blocked), detail dialog on `calendar:eventclick` with optimistic move/delete, app menu on `calendar:eventcontextmenu`, local tools search with reveal, slow-source and realtime stand-ins, theme switcher.
+- `test/browser/showcase.spec.js`: 5 Chromium tests (seeded render, view-switch date preservation, detail sheet, tools reveal, realtime add).
+
 ## Unreleased — M7 package/release engineering
 
 - Combobox-style release model: `sync` regenerates `dist/` (classic IIFE `calendar.js` + min twin, `calendar.css` + min twin with the Temporal ponyfill bundled) plus `dist/types/` declarations and `custom-elements.json`.

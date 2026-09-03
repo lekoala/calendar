@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendar prototype — solo</title>
+  <link rel="stylesheet" href="../src/calendar.css">
+  <script type="importmap">
+    {"imports":{"temporal-polyfill":"../node_modules/temporal-polyfill/index.js","temporal-utils":"../node_modules/temporal-utils/dist/index.js","temporal-utils/protected":"../node_modules/temporal-utils/dist/protected.js","temporal-utils/protected-error-messages":"../node_modules/temporal-utils/dist/protected-error-messages.js"}}
+  </script>
+  <style>
+    body { margin: 0; padding: 2rem; background: #eef1f6; font-family: system-ui, sans-serif; }
+    main { max-width: 1200px; margin: auto; }
+    nav { display: flex; gap: .5rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Calendar views</h1>
+  <p>Solo representations over shared state: time grids, month summary and list. Switching views preserves the anchor date.</p>
+  <nav>
+    <button type="button" data-view="day">Day</button>
+    <button type="button" data-view="threeDays">3 days</button>
+    <button type="button" data-view="week">Week</button>
+    <button type="button" data-view="month">Month</button>
+    <button type="button" data-view="list">List</button>
+  </nav>
+  <calendar-view view="threeDays" date="2026-09-03"></calendar-view>
+</main>
+<script type="module">
+  import "../src/define.js";
+
+  const calendar = document.querySelector("calendar-view");
+  calendar.events = [
+    { id: "a", title: "Design review", start: "2026-09-03T09:00:00+02:00[Europe/Brussels]", end: "2026-09-03T10:00:00+02:00[Europe/Brussels]" },
+    { id: "b", title: "Planning", start: "2026-09-04T13:20:00+02:00[Europe/Brussels]", end: "2026-09-04T14:00:00+02:00[Europe/Brussels]" },
+    { id: "c", title: "Overlap review", start: "2026-09-03T09:30:00+02:00[Europe/Brussels]", end: "2026-09-03T10:30:00+02:00[Europe/Brussels]" }
+  ];
+  calendar.backgrounds = [
+    { id: "bg", start: "2026-09-03T08:00:00+02:00[Europe/Brussels]", end: "2026-09-03T12:00:00+02:00[Europe/Brussels]" }
+  ];
+  document.querySelector("nav").addEventListener("click", (event) => {
+    const view = event.target.dataset.view;
+    if (view) calendar.setView(view);
+  });
+</script>
+</body>
+</html>
