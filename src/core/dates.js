@@ -7,6 +7,7 @@ const VIEW_DAYS = {
   week: 7,
   resourceDay: 1,
   resourceThreeDays: 3,
+  list: 7,
 };
 
 /**
@@ -31,6 +32,7 @@ export function getViewDays(view) {
  * @returns {{ start: Temporal.PlainDate, end: Temporal.PlainDate }}
  */
 export function getViewRange(date, view) {
+  if (isMonthView(view)) return getMonthRange(date);
   const start = toPlainDate(date);
   const end = start.add({ days: getViewDays(view) });
   return { start, end };
@@ -42,6 +44,7 @@ export function getViewRange(date, view) {
  * @returns {Temporal.PlainDate[]}
  */
 export function getVisibleDates(date, view) {
+  if (isMonthView(view)) return getMonthWeeks(date).flat();
   const start = toPlainDate(date);
   const count = getViewDays(view);
   return Array.from({ length: count }, (_, index) => start.add({ days: index }));
@@ -53,6 +56,51 @@ export function getVisibleDates(date, view) {
  */
 export function isResourceView(view) {
   return view === "resourceDay" || view === "resourceThreeDays";
+}
+
+/**
+ * @param {string} view
+ * @returns {boolean}
+ */
+export function isMonthView(view) {
+  return view === "month";
+}
+
+/**
+ * Full Monday → Sunday weeks covering the anchor date's calendar month,
+ * including leading/trailing days of adjacent months. Week start is ISO
+ * Monday; a `weekStart` option stays a future extension.
+ *
+ * @param {Temporal.PlainDate | string} date
+ * @returns {Temporal.PlainDate[][]}
+ */
+export function getMonthWeeks(date) {
+  const anchor = toPlainDate(date);
+  const monthStart = anchor.with({ day: 1 });
+  const monthEnd = monthStart.add({ months: 1 }).subtract({ days: 1 });
+  const first = monthStart.subtract({ days: monthStart.dayOfWeek - 1 });
+  /** @type {Temporal.PlainDate[][]} */
+  const weeks = [];
+  let current = first;
+  for (;;) {
+    const week = Array.from({ length: 7 }, (_, index) => current.add({ days: index }));
+    weeks.push(week);
+    if (Temporal.PlainDate.compare(week[6], monthEnd) >= 0) break;
+    current = week[6].add({ days: 1 });
+  }
+  return weeks;
+}
+
+/**
+ * Visible month range with an exclusive end, matching the `getViewRange`
+ * convention sources rely on.
+ *
+ * @param {Temporal.PlainDate | string} date
+ * @returns {{ start: Temporal.PlainDate, end: Temporal.PlainDate }}
+ */
+export function getMonthRange(date) {
+  const weeks = getMonthWeeks(date);
+  return { start: weeks[0][0], end: weeks[weeks.length - 1][6].add({ days: 1 }) };
 }
 
 /**

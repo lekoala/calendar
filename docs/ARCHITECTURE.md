@@ -23,11 +23,11 @@ Application
    │  ├─ collision/overlap layout
    │  └─ resource/date column model
    │
-   ├─ Renderers
-   │  ├─ timeGrid
-   │  ├─ resourceTimeGrid
-   │  ├─ month (later)
-   │  └─ list (later)
+    ├─ Renderers
+    │  ├─ timeGrid
+    │  ├─ resourceTimeGrid
+    │  ├─ month (summary day grid, solo)
+    │  └─ list (chronological groups, solo)
    │
    └─ Interaction engine
       ├─ hover hit test

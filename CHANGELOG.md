@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — M6 month + list
+
+- `month` view: Monday-start week grid over the anchor month, per-day chips with `+n more` past `monthEventLimit`, no resource matrices.
+- `list` view: 7 chronological day groups with empty states, shared `eventContent` hook.
+- Civil-day overlap helper (`eventOverlapsDate`); midnight-exact ends excluded.
+- `prev`/`next` step whole months in month view; sources receive the week-aligned range.
+- Month day clicks select the civil day; chips and list rows activate via click/Enter.
+- No new render hooks: month/list reuse `eventContent` / `dayHeaderContent`.
+
 ## Unreleased — internal
 
 - Instance state and helpers are truly private (`#field`); the element → renderer seam is now explicit injected callbacks (`commitEventMove`, `commitEventResize`, `announce`, `refocusEvent`) instead of underscore members. No behavioral change.

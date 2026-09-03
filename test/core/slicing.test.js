@@ -3,6 +3,7 @@ import test from "node:test";
 import { Temporal } from "temporal-polyfill";
 import {
   describeEvent,
+  eventOverlapsDate,
   sliceRangeForDay,
   sliceTimedEventForDay,
   toZonedDateTime,
@@ -154,4 +155,32 @@ test("describeEvent repeats the end date only across days", () => {
     ),
     "Event, 2026-09-07, 17:00 to 2026-09-08, 09:00",
   );
+});
+
+test("eventOverlapsDate matches single and multi-day spans", () => {
+  const night = {
+    start: "2026-09-07T17:00:00+02:00[Europe/Brussels]",
+    end: "2026-09-08T09:00:00+02:00[Europe/Brussels]",
+  };
+  assert.equal(eventOverlapsDate(night, "2026-09-07", ZONE), true);
+  assert.equal(eventOverlapsDate(night, "2026-09-08", ZONE), true);
+  assert.equal(eventOverlapsDate(night, "2026-09-09", ZONE), false);
+  assert.equal(eventOverlapsDate(night, "2026-09-06", ZONE), false);
+});
+
+test("eventOverlapsDate excludes a day touched exactly at midnight", () => {
+  const evening = {
+    start: "2026-09-07T20:00:00+02:00[Europe/Brussels]",
+    end: "2026-09-08T00:00:00+02:00[Europe/Brussels]",
+  };
+  assert.equal(eventOverlapsDate(evening, "2026-09-07", ZONE), true);
+  assert.equal(eventOverlapsDate(evening, "2026-09-08", ZONE), false);
+});
+
+test("eventOverlapsDate rejects empty ranges", () => {
+  const empty = {
+    start: "2026-09-07T09:00:00+02:00[Europe/Brussels]",
+    end: "2026-09-07T09:00:00+02:00[Europe/Brussels]",
+  };
+  assert.equal(eventOverlapsDate(empty, "2026-09-07", ZONE), false);
 });

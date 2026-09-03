@@ -1,8 +1,10 @@
 import { Temporal } from "temporal-polyfill";
 import {
+  getMonthWeeks,
   getViewDays,
   getViewRange,
   getVisibleDates,
+  isMonthView,
   isResourceView,
   minutesFromMidnight,
   toPlainDate,
@@ -14,6 +16,8 @@ import {
   normalizeEvent,
   normalizeResource,
 } from "./core/model.js";
+import { renderList } from "./render/list.js";
+import { renderMonthGrid } from "./render/month-grid.js";
 import { renderTimeGrid } from "./render/time-grid.js";
 
 /**
@@ -31,6 +35,7 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {number} [pxPerMinute]
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
+ * @property {number} [monthEventLimit] event chips per month day cell before `+n more`
  * @property {boolean} [editable]
  * @property {(query: EventSourceQuery) => Promise<unknown[]>} [eventSource]
  * @property {(query: EventSourceQuery) => Promise<unknown[]>} [backgroundSource]
@@ -177,10 +182,18 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   prev() {
+    if (isMonthView(this.view)) {
+      this.gotoDate(this.date.add({ months: -1 }));
+      return;
+    }
     this.gotoDate(this.date.add({ days: -getViewDays(this.view) }));
   }
 
   next() {
+    if (isMonthView(this.view)) {
+      this.gotoDate(this.date.add({ months: 1 }));
+      return;
+    }
     this.gotoDate(this.date.add({ days: getViewDays(this.view) }));
   }
 
@@ -473,6 +486,7 @@ export class CalendarViewElement extends HTMLElement {
       pxPerMinute: this.#config.pxPerMinute ?? DEFAULTS.pxPerMinute,
       snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
       defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
+      monthEventLimit: this.#config.monthEventLimit ?? 3,
     };
   }
 
@@ -493,27 +507,49 @@ export class CalendarViewElement extends HTMLElement {
     scroller.className = "cv-scroller";
     scroller.setAttribute("role", "region");
     scroller.setAttribute("aria-label", "Calendar");
-    scroller.append(
-      renderTimeGrid({
-        dates,
-        resources,
-        view: this.view,
-        events: this.#events,
-        backgrounds: this.#backgrounds,
-        options,
-        host: {
-          editable: this.#config.editable,
-          isConnected: () => this.isConnected,
-          announce: (message) => this.#announce(message),
-          refocusEvent: (id) => this.#refocusEvent(id),
-          commitEventMove: (input) => this.#commitEventMove(input),
-          commitEventResize: (input) => this.#commitEventResize(input),
-        },
-        eventContent: this.#config.eventContent,
-        dayHeaderContent: this.#config.dayHeaderContent,
-        resourceHeaderContent: this.#config.resourceHeaderContent,
-      }),
-    );
+    if (this.view === "month") {
+      scroller.append(
+        renderMonthGrid({
+          weeks: getMonthWeeks(this.date),
+          month: this.date.month,
+          events: this.#events,
+          options,
+          eventContent: this.#config.eventContent,
+        }),
+      );
+    } else if (this.view === "list") {
+      scroller.append(
+        renderList({
+          dates,
+          events: this.#events,
+          options,
+          eventContent: this.#config.eventContent,
+          dayHeaderContent: this.#config.dayHeaderContent,
+        }),
+      );
+    } else {
+      scroller.append(
+        renderTimeGrid({
+          dates,
+          resources,
+          view: this.view,
+          events: this.#events,
+          backgrounds: this.#backgrounds,
+          options,
+          host: {
+            editable: this.#config.editable,
+            isConnected: () => this.isConnected,
+            announce: (message) => this.#announce(message),
+            refocusEvent: (id) => this.#refocusEvent(id),
+            commitEventMove: (input) => this.#commitEventMove(input),
+            commitEventResize: (input) => this.#commitEventResize(input),
+          },
+          eventContent: this.#config.eventContent,
+          dayHeaderContent: this.#config.dayHeaderContent,
+          resourceHeaderContent: this.#config.resourceHeaderContent,
+        }),
+      );
+    }
     this.append(scroller);
     scroller.scrollTop = scrollTop;
     scroller.scrollLeft = scrollLeft;

@@ -89,21 +89,26 @@ Narrow viewports change density, never semantics: below 640 px the default colum
 
 ## Month
 
-Month should not necessarily mimic the time grid. It may be a summary-oriented renderer with configurable event rows/indicators.
+Month is a summary-oriented day grid over the anchor date's calendar month, not a time grid. It answers "what happens in September" without forcing a giant resource matrix.
 
-For resource-heavy products, a resource summary/list may be more useful than a giant resource-month matrix. Keep the model flexible enough for applications to compose a specialized summary.
+- Weeks run Monday → Sunday (ISO); the grid shows full weeks, so leading/trailing days of adjacent months are visible but dimmed (`cv-outside`).
+- Each day cell shows the day number, up to `monthEventLimit` event chips (default 3), then a `+n more` indicator. No spanning bars: a multi-day event repeats one chip per overlapped civil day and is omitted from days it does not overlap (an event ending exactly at midnight does not appear on the next day).
+- Chips carry the event title (or `eventContent` output) with a full `describeEvent` accessible name. Background ranges are not rendered in month cells.
+- Month is solo: events from all resources appear; resource columns are never built. `dayHeaderContent` is not used; the weekday row uses the runtime locale (`weekday: short`).
+- An empty day-cell click dispatches `calendar:select` for that civil day (`00:00 → next 00:00` in `calendar.timeZone`, `resourceId: null`). Event chips are buttons: Tab reaches them, Enter/Space fires `calendar:eventclick`. There is no arrow-key model, drag, resize or range-select in month cells.
+- `prev`/`next` step whole calendar months, preserving the anchor day-of-month where possible (`Temporal` constrains overflows, e.g. Jan 31 → Feb 28).
 
 ## List
 
-List is a minimal generic renderer over the same visible event state with the shared `eventContent` hook. Rich operational lists belong to the consumer.
+List is a minimal generic renderer over the same visible event state: 7 consecutive civil days from the anchor date, each a day group with its events in chronological order. Rich operational lists belong to the consumer.
+
+- Day groups use `dayHeaderContent` (falling back to the ISO date, as in time grids); days without events show a muted `No events` row.
+- A multi-day event repeats under every civil day it overlaps, same rule as month.
+- Events are buttons sharing the `eventContent` hook and the `describeEvent` accessible name; Enter/Space fires `calendar:eventclick`. No drag/resize/select.
+- Like month, list is solo: it never builds resource columns. The hook receives `resource: null`; applications resolve `event.resourceId` against their own data.
 
 ## View switching
 
-View changes should preserve where possible:
+Switching views preserves the anchor date, reusable event data and vertical scroll position where the newly rendered scroller allows it; the visible range is recomputed, so sources are refetched for the new range (`start/end/resourceIds/signal` as always). There is no range cache by design — see data docs. Horizontal scroll is intentionally not contractual across representations.
 
-- anchor date;
-- selected resources (application state);
-- event data cache;
-- vertical scroll/time focus when switching between compatible time grids.
-
-A switch `timeGrid ↔ resourceTimeGrid` should not require rebuilding external toolbar/sidebar state.
+Concretely: `timeGrid ↔ resourceTimeGrid ↔ month ↔ list` never rebuilds application-owned toolbar/sidebar state and never requires re-selecting resources.

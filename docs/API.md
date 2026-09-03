@@ -109,6 +109,7 @@ calendar.configure({
   timeZone: "Europe/Brussels",
   snapDuration: Temporal.Duration.from({ minutes: 15 }),
   defaultTimedEventDuration: Temporal.Duration.from({ minutes: 30 }),
+  monthEventLimit: 3,
   eventSource,
   backgroundSource,
   eventContent,
@@ -117,7 +118,7 @@ calendar.configure({
 });
 ```
 
-`snapDuration` controls pointer snapping. `defaultTimedEventDuration` controls the hover preview and single-click creation proposal. An explicit drag selection carries its own `start/end` and does not depend on it.
+`snapDuration` controls pointer snapping. `defaultTimedEventDuration` controls the hover preview and single-click creation proposal. An explicit drag selection carries its own `start/end` and does not depend on it. `monthEventLimit` caps the event chips per month day cell before a `+n more` indicator; no new render hooks are added for month/list — they reuse the frozen `eventContent` / `dayHeaderContent` hooks.
 
 ## Sources
 

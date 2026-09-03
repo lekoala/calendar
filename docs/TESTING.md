@@ -121,6 +121,19 @@ Manual stress only: 12 resources × 3 days, 6 resources × 7 days. Columns keep 
 - resource-specific background range;
 - switching resource ↔ solo preserves date/scroll where defined.
 
+### Month and list
+
+- month renders Monday-start weeks covering the anchor month (5- and 6-week cases);
+- leading/trailing days dimmed but interactive;
+- multi-day event repeats per overlapped day; midnight-exclusive end;
+- crowded day collapses behind `+n more` honoring `monthEventLimit`;
+- chip click + Enter dispatches `calendar:eventclick`;
+- empty day click selects the civil day (`00:00 → next 00:00`, `resourceId: null`);
+- `prev`/`next` step whole months;
+- month sources receive the week-aligned range;
+- list renders 7 chronological day groups with empty states;
+- switching `timeGrid ↔ month ↔ list` preserves the anchor date.
+
 ### Async sources
 
 - initial load;

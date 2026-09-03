@@ -16,17 +16,20 @@
 </head>
 <body>
 <main>
-  <h1>Solo time grid</h1>
-  <p>The demo is intentionally small. Geometry/API are the prototype; interactions are TODO.</p>
+  <h1>Calendar views</h1>
+  <p>Solo representations over shared state: time grids, month summary and list. Switching views preserves the anchor date.</p>
   <nav>
     <button type="button" data-view="day">Day</button>
     <button type="button" data-view="threeDays">3 days</button>
     <button type="button" data-view="week">Week</button>
+    <button type="button" data-view="month">Month</button>
+    <button type="button" data-view="list">List</button>
   </nav>
   <calendar-view view="threeDays" date="2026-09-03"></calendar-view>
 </main>
 <script type="module">
   import "../src/define.js";
+
   const calendar = document.querySelector("calendar-view");
   calendar.events = [
     { id: "a", title: "Design review", start: "2026-09-03T09:00:00+02:00[Europe/Brussels]", end: "2026-09-03T10:00:00+02:00[Europe/Brussels]" },

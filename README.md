@@ -102,17 +102,17 @@ calendar.addEventListener('calendar:eventmove', (event) => {
 });
 ```
 
-## Views planned for v0.x
+## Views
 
 - `day` — solo time grid, 1 day
 - `threeDays` — solo time grid, 3 days
 - `week` — solo time grid, 7 days / configured working week
 - `resourceDay` — resource time grid, 1 day
 - `resourceThreeDays` — resource time grid, 3 days
-- `month` — day grid / summary-oriented month
-- `list` — generic operational list
+- `month` — summary day grid over the anchor month (Monday → Sunday weeks, `+n more` past `monthEventLimit`)
+- `list` — chronological list of 7 days from the anchor date
 
-The core does not impose a hard `resources × days` limit. The docs do recommend choosing a denser representation before a grid becomes unreadable.
+Month and list are alternate representations over the same state: solo, no resource matrices, shared `eventContent` hook. The core does not impose a hard `resources × days` limit. The docs do recommend choosing a denser representation before a grid becomes unreadable.
 
 ## Demos
 
@@ -153,7 +153,7 @@ The current JavaScript proves only the shell and basic rendering geometry. TODOs
 - autoscroll;
 - range selection;
 - hover-slot preview;
-- month/list renderers;
+- month/list renderers (see Views);
 - keyboard navigation;
 - rich render hooks;
 - source caching and request reconciliation;
