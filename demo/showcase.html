@@ -4,20 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Calendar × Actual CSS — application shell showcase</title>
-  <meta name="description" content="@lekoala/calendar inside a full-viewport application shell skinned with Actual CSS: sidebar with mini-month and filters, agenda toolbar, solid event cards, dialogs and themes.">
+  <meta name="description" content="@lekoala/calendar inside a full-viewport application shell skinned with Actual CSS: mini-month and filters, one-row agenda toolbar, popover menus, application booking rules that refuse a drop, hover tooltips and themes.">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/actual-css@0.6.0/dist/actual.full.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.6.0/site/assets/actual-themes.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="../dist/calendar.css">
   <style>
     /* ==================================================================
        Actual CSS supplies every component used here: buttons, joins,
-       tabs, fields, checkboxes, badges, avatars, dialogs, tokens.
-       This stylesheet only adds what a design system cannot know:
-         1. the frame - a full-viewport application layout with a single
-            scrolling region, which is what the calendar needs to fill;
-         2. the bridge - Actual tokens mapped onto the public
-            --calendar-* custom properties;
-         3. the skin the application chooses for its own event cards.
+       menus, fields, checkboxes, badges, avatars, dialogs, status bar,
+       tooltips, tokens. Tabler supplies the icons. This stylesheet only
+       adds what a design system cannot know:
+         1. FRAME     - a full-viewport application layout with a single
+                        scrolling region, which is what the calendar
+                        needs to fill;
+         2. BRIDGE    - Actual tokens mapped onto the public
+                        --calendar-* custom properties;
+         3. SKIN      - the event cards this application chooses;
+         4. OVERLAYS  - popover menus, hover tooltip, sheets;
+         5. RESPONSIVE - below 64rem the chrome collapses so the grid
+                        keeps the whole remaining viewport, which is the
+                        thing the user actually came for.
        ================================================================== */
 
     *,
@@ -36,6 +43,19 @@
       background: var(--surface-subtle);
     }
 
+    /* Tabler is a webfont: one class for the family, one per glyph. Icons
+       sit as flex items inside Actual's controls, so `line-height: 1` is
+       what keeps them optically centred instead of riding the text
+       baseline - the reason glyph characters looked misaligned before. */
+    .ti {
+      font-size: 1.15em;
+      line-height: 1;
+    }
+
+    .ti-lg {
+      font-size: 1.35em;
+    }
+
     /* Manual Light / Dark toggle: the default Actual theme is a
        light-dark() pair, so switching color-scheme is enough. */
     [data-theme="light"] {
@@ -46,11 +66,17 @@
       color-scheme: dark;
     }
 
+    /* Two spellings of the same label, one per breakpoint. Choosing in CSS
+       keeps the toolbar responsive without a resize listener. */
+    .sc-narrow {
+      display: none;
+    }
+
     /* ---------------------------------------------------------------- */
     /* 1. FRAME                                                          */
     /* ---------------------------------------------------------------- */
     .sc-shell {
-      --sc-aside-size: 17.5rem;
+      --sc-aside-size: 16.5rem;
       display: grid;
       grid-template:
         "topbar topbar" auto
@@ -62,9 +88,9 @@
 
     .sc-topbar {
       grid-area: topbar;
-      gap: var(--space-30);
-      padding-block: var(--space-20);
-      padding-inline: var(--space-30);
+      gap: var(--space-20);
+      padding-block: var(--space-10);
+      padding-inline: var(--space-20) var(--space-30);
     }
 
     .sc-brand {
@@ -78,12 +104,11 @@
     .sc-brand-mark {
       display: grid;
       place-items: center;
-      inline-size: 2rem;
-      block-size: 2rem;
+      inline-size: 1.85rem;
+      block-size: 1.85rem;
       border-radius: var(--radius);
       background: var(--primary);
       color: var(--primary-fg);
-      font-size: 0.95rem;
       line-height: 1;
     }
 
@@ -134,13 +159,28 @@
       margin-inline-start: auto;
     }
 
+    /* The intent counter sits beside its icon rather than on top of it: an
+       overlay badge on a 1.75rem control collides with both the glyph and
+       the avatar next to it. */
+    .sc-activity-btn {
+      --btn-pad-x: 0.5em;
+      gap: 0.35em;
+    }
+
+    .sc-activity-btn .badge {
+      font-variant-numeric: tabular-nums;
+    }
+
     /* ---------------------------------------------------------------- */
     /* Sidebar: application chrome the core deliberately does not own.   */
+    /* Below 64rem the same element becomes a `popover`, which is what   */
+    /* supplies light dismiss and Escape instead of a scrim and a        */
+    /* keydown handler.                                                  */
     /* ---------------------------------------------------------------- */
     .sc-sidebar {
       display: flex;
       flex-direction: column;
-      gap: var(--space-40);
+      gap: var(--space-30);
       grid-area: aside;
       min-block-size: 0;
       overflow-y: auto;
@@ -158,8 +198,7 @@
     .sc-group-title {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: var(--space-20);
+      gap: 0.45em;
       margin: 0;
       color: var(--text-subtle);
       font-size: 11px;
@@ -168,24 +207,19 @@
       text-transform: uppercase;
     }
 
+    .sc-group-title .sc-count-mini {
+      margin-inline-start: auto;
+      letter-spacing: 0;
+    }
+
     .sc-sidebar-foot {
+      display: grid;
+      gap: var(--space-20);
       margin-block-start: auto;
       padding-block-start: var(--space-20);
       border-block-start: var(--border-width) solid var(--border);
       color: var(--text-subtle);
       font-size: 11px;
-    }
-
-    .sc-shortcuts {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      align-items: center;
-      gap: var(--space-10) var(--space-20);
-      margin: 0;
-    }
-
-    .sc-shortcuts dd {
-      margin: 0;
     }
 
     /* Mini month: a composition peer, written against the Temporal dates
@@ -214,13 +248,27 @@
       gap: 1px;
     }
 
-    .sc-mini-dow {
+    /* Week numbers are one extra leading column, so the same cells and the
+       same loop keep working. */
+    .sc-mini-grid[data-weeks="true"] {
+      grid-template-columns: 1.35rem repeat(7, minmax(0, 1fr));
+    }
+
+    .sc-mini-dow,
+    .sc-mini-week {
+      display: grid;
+      place-items: center;
       padding-block: 2px;
       color: var(--text-subtle);
       font-size: 10px;
       font-weight: var(--font-weight-bold);
       text-align: center;
       text-transform: uppercase;
+    }
+
+    .sc-mini-week {
+      font-variant-numeric: tabular-nums;
+      opacity: 0.7;
     }
 
     .sc-mini-day {
@@ -275,10 +323,11 @@
       opacity: 0.5;
     }
 
-    /* Resource checklist, kind legend and search hits: all three are
-       plain application filters over application data. */
+    /* Resource checklist, kind legend, booking rules and search hits: all
+       four are plain application lists over application data. */
     .sc-checks,
     .sc-legend,
+    .sc-rules,
     .sc-results {
       display: grid;
       gap: 2px;
@@ -337,7 +386,26 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* Booking rules: the same constants the move/resize guard enforces,
+       written where a user can read them before being refused. */
+    .sc-rules li {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
+      gap: var(--space-20);
+      padding: var(--space-10) var(--space-20);
+      color: var(--text-muted);
+      font-size: var(--font-size-xs);
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-rules i {
+      margin-block-start: 0.1em;
+      color: var(--sc-tone, var(--text-subtle));
+    }
+
     .sc-results button {
+      display: grid;
       inline-size: 100%;
       padding: var(--space-20);
       border: 0;
@@ -352,7 +420,6 @@
     }
 
     .sc-results strong {
-      display: block;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -363,8 +430,9 @@
     }
 
     /* ---------------------------------------------------------------- */
-    /* Main column: toolbar, live strip, calendar, activity dock.        */
-    /* Only the calendar scrolls.                                        */
+    /* Main column: one toolbar row, one live strip, the calendar, and   */
+    /* an activity panel that stays out of the way until asked for.     */
+    /* Only the calendar scrolls.                                       */
     /* ---------------------------------------------------------------- */
     .sc-main {
       display: grid;
@@ -378,62 +446,82 @@
 
     .sc-toolbar {
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       gap: var(--space-20);
-      padding: var(--space-20) var(--space-30);
+      padding: var(--space-10) var(--space-30);
       border-block-end: var(--border-width) solid var(--border);
       background: var(--surface);
     }
 
     .sc-range {
-      margin: 0;
+      display: grid;
+      min-inline-size: 0;
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-range strong {
+      overflow: hidden;
       font-size: var(--font-size-md);
-      font-weight: var(--font-weight-bold);
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .sc-range small {
-      display: block;
+      overflow: hidden;
       color: var(--text-muted);
       font-size: 11px;
-      font-weight: var(--font-weight);
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .sc-toolbar-end {
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
-      gap: var(--space-20);
-      min-inline-size: 0;
+      gap: var(--space-10);
       margin-inline-start: auto;
     }
 
-    .sc-views {
-      min-inline-size: 0;
-      max-inline-size: 100%;
-      overflow-x: auto;
-      overscroll-behavior-inline: contain;
-      scrollbar-width: none;
+    /* `.icon-only` fixes a square box, which is shorter than a labelled
+       sibling in the same join and left a pale sliver under the chevrons.
+       Inside a join the height belongs to the group. */
+    .join > .btn.icon-only {
+      block-size: auto;
     }
 
-    .sc-views::-webkit-scrollbar {
-      display: none;
+    /* The view switcher used to be seven buttons wide. One trigger that
+       names the current view costs a fifth of the room, reads the same on
+       a phone, and is where the keyboard shortcuts are documented. */
+    .sc-viewbtn {
+      --btn-pad-x: 0.6em;
+      max-inline-size: 11rem;
     }
 
-    /* Live strip: the application's own status line over core state. */
+    .sc-viewbtn span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Live strip: the application's own status line over core state. It is
+       a single scrollable row, so it costs the same height at every width
+       instead of wrapping into the grid's space. */
     .sc-cockpit {
       display: flex;
-      overflow: hidden;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: center;
-      gap: var(--space-10) var(--space-40);
+      gap: var(--space-40);
+      overflow-x: auto;
       margin: 0;
-      padding: var(--space-20) var(--space-30);
+      padding: 3px var(--space-30);
       border-block-end: var(--border-width) solid var(--border);
       background: color-mix(in oklab, var(--surface), var(--primary) 7%);
       color: var(--text-muted);
-      font-size: var(--font-size-xs);
+      font-size: 11px;
+      scrollbar-width: none;
+    }
+
+    .sc-cockpit::-webkit-scrollbar {
+      display: none;
     }
 
     .sc-cockpit > span {
@@ -445,6 +533,20 @@
 
     .sc-cockpit strong {
       color: var(--text);
+    }
+
+    /* The newest intent rides the strip, so the log stays closed without
+       the shell looking inert. */
+    .sc-cockpit .sc-last {
+      min-inline-size: 0;
+      color: var(--text-subtle);
+    }
+
+    .sc-cockpit .sc-last span {
+      overflow: hidden;
+      max-inline-size: 22rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     /* Busy state: the strip reports what `calendar:loading` says, and the
@@ -466,45 +568,39 @@
       background: var(--sc-tone, var(--success));
     }
 
-    /* Activity dock: realtime stand-ins plus the intent log. */
-    .sc-dock {
+    /* Activity panel: the intent log. Hidden by default - the shell's
+       diagnostics must not compete with the grid for room. */
+    .sc-activity {
+      display: grid;
+      gap: var(--space-20);
+      padding: var(--space-20) var(--space-30);
       border-block-start: var(--border-width) solid var(--border);
       background: var(--surface);
       font-size: var(--font-size-xs);
     }
 
-    .sc-dock > summary {
+    .sc-activity-head {
       display: flex;
       align-items: center;
       gap: var(--space-20);
-      padding: var(--space-20) var(--space-30);
+    }
+
+    .sc-activity-head h2 {
+      margin: 0;
+      font-size: var(--font-size-xs);
       font-weight: var(--font-weight-bold);
-      cursor: pointer;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
-    .sc-dock-body {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: var(--space-30);
-      align-items: start;
-      padding: 0 var(--space-30) var(--space-30);
-    }
-
-    .sc-dock-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-20);
-    }
-
-    .sc-dock-hint {
+    .sc-activity-head .sc-activity-close {
       margin-inline-start: auto;
-      font-weight: var(--font-weight);
     }
 
     .sc-log {
       display: grid;
       gap: 1px;
-      max-block-size: 6.5rem;
+      max-block-size: 7rem;
       overflow: auto;
       margin: 0;
       padding: 0;
@@ -542,6 +638,9 @@
       --calendar-event-bg: var(--primary);
       --calendar-event-border: var(--primary);
       --calendar-column-min: 9rem;
+      /* The core sticks day headers below the resource row at a fixed
+         3rem. Both live here so shrinking one shrinks the other. */
+      --sc-resource-row: 2rem;
       --calendar-background-bg:
         repeating-linear-gradient(
           135deg,
@@ -583,13 +682,32 @@
       border-top-color: var(--danger);
     }
 
+    /* Application background ranges. The core hard-codes no meaning, so
+       the two policies this shell has - closed hours and non-bookable
+       ranges - are told apart by the classes it puts on them. */
+    .actual-calendar .cv-background.sc-closed {
+      border-inline-start: 0;
+      background: color-mix(in oklab, var(--surface-subtle), var(--text) 7%);
+    }
+
+    .actual-calendar .cv-background.sc-blocked {
+      border-inline-start: 2px solid color-mix(in oklab, var(--danger), transparent 45%);
+      background:
+        repeating-linear-gradient(
+          135deg,
+          color-mix(in oklab, var(--danger), transparent 76%) 0 6px,
+          transparent 6px 12px
+        );
+    }
+
     /* Day and resource headers take application content; the core keeps
        geometry and stickiness. */
     .actual-calendar .cv-day-header {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 0.4rem;
-      padding: var(--space-20) var(--space-30);
+      min-height: 1.9rem;
+      padding: 2px var(--space-20);
       font-weight: var(--font-weight);
     }
 
@@ -599,7 +717,13 @@
 
     .actual-calendar .cv-resource-header {
       gap: 0.45rem;
+      min-height: var(--sc-resource-row);
+      padding-block: 2px;
       font-size: var(--font-size-sm);
+    }
+
+    .actual-calendar[data-view^="resource"] .cv-day-header {
+      top: var(--sc-resource-row);
     }
 
     .sc-dow {
@@ -611,7 +735,7 @@
     }
 
     .sc-dom {
-      font-size: var(--font-size-lg);
+      font-size: var(--font-size-sm);
       font-weight: var(--font-weight-bold);
       font-variant-numeric: tabular-nums;
     }
@@ -619,12 +743,12 @@
     .cv-day-header[data-today="true"] .sc-dom {
       display: grid;
       place-items: center;
-      min-inline-size: 1.6rem;
+      min-inline-size: 1.35rem;
       aspect-ratio: 1;
       border-radius: var(--radius-full);
       background: var(--primary);
       color: var(--primary-fg);
-      font-size: var(--font-size-sm);
+      font-size: var(--font-size-xs);
     }
 
     .sc-count {
@@ -705,7 +829,49 @@
       box-shadow: var(--shadow-popout);
     }
 
+    /* Application read-only rule: `editable: false` already stops the core
+       from starting a drag, so the card only has to look the part. */
+    .actual-calendar .cv-event[data-locked="true"] {
+      cursor: default;
+    }
+
+    /* Aura on a fresh booking. Actual registers `--aura-angle` and the
+       `aura-rotate` keyframes for its own `.aura`, so the same animation
+       drives a sweep inside the card, plus one ring that pings outwards.
+       Box shadows are not clipped by the card's `overflow: hidden`. */
+    @keyframes sc-ping {
+      from {
+        box-shadow: 0 0 0 0 color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 25%);
+      }
+
+      to {
+        box-shadow: 0 0 0 14px color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 100%);
+      }
+    }
+
+    .actual-calendar .cv-event[data-fresh="true"] {
+      animation: sc-ping 1.4s var(--ease-exit) 3;
+    }
+
+    .actual-calendar .cv-event[data-fresh="true"]::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      background:
+        conic-gradient(
+          from var(--aura-angle),
+          transparent 0 62%,
+          color-mix(in oklab, var(--sc-tone-fg, #fff), transparent 62%) 82%,
+          transparent
+        );
+      animation: aura-rotate 2.4s linear infinite;
+      pointer-events: none;
+    }
+
     .sc-card {
+      position: relative;
+      z-index: 1;
       display: grid;
       gap: 1px;
       overflow: hidden;
@@ -713,9 +879,16 @@
     }
 
     .sc-card strong {
+      display: flex;
+      align-items: center;
+      gap: 0.3em;
       overflow: hidden;
       font-size: var(--font-size-xs);
       font-weight: var(--font-weight-bold);
+    }
+
+    .sc-card strong span {
+      overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -740,7 +913,8 @@
       text-transform: uppercase;
     }
 
-    /* Short bookings drop detail instead of clipping it. */
+    /* Short bookings drop detail instead of clipping it. The hover tooltip
+       is what gives the dropped detail back. */
     @container (max-height: 44px) {
       .sc-card .sc-tag {
         display: none;
@@ -838,8 +1012,154 @@
     }
 
     /* ---------------------------------------------------------------- */
-    /* App-owned overlays                                                */
+    /* 4. APP-OWNED OVERLAYS                                             */
+    /* Everything floating here is a native `popover` placed with        */
+    /* @lekoala/floating: the platform owns the top layer, light dismiss  */
+    /* and Escape, and the library owns the coordinates. Neither is      */
+    /* hand-rolled, and neither is a dependency of the core.             */
     /* ---------------------------------------------------------------- */
+    .sc-pop {
+      position: fixed;
+      inset: auto;
+      z-index: var(--z-menu);
+      max-block-size: min(34rem, var(--available-height, 34rem));
+      overflow: auto;
+      margin: 0;
+      padding: var(--space-10);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-raised);
+      color: var(--text);
+      box-shadow: var(--shadow-popout);
+      overscroll-behavior: contain;
+    }
+
+    .sc-pop:not(:popover-open) {
+      display: none;
+    }
+
+    /* Actual draws the checkbox/radio marker as a text glyph. This shell
+       uses real icons everywhere, so the marker slot is dropped and the
+       state is a trailing tick instead. */
+    .sc-pop .menu-item[role="menuitemcheckbox"]::before,
+    .sc-pop .menu-item[role="menuitemradio"]::before {
+      display: none;
+    }
+
+    .sc-pop .sc-tick {
+      visibility: hidden;
+      color: var(--primary);
+    }
+
+    .sc-pop [aria-checked="true"] .sc-tick {
+      visibility: visible;
+    }
+
+    .sc-pop .menu-item[aria-checked="true"] .menu-item-text {
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-pop kbd.key {
+      font-size: 10px;
+    }
+
+    .sc-menu {
+      min-inline-size: 13rem;
+    }
+
+    /* Tools: a small mega menu. Four application concerns side by side,
+       so the debug and test controls have a home instead of sitting in
+       the toolbar. */
+    .sc-mega {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(13rem, 1fr));
+      gap: var(--space-10) var(--space-30);
+      min-inline-size: 28rem;
+      padding: var(--space-20);
+    }
+
+    .sc-mega section {
+      min-inline-size: 0;
+    }
+
+    .sc-mega .menu-label {
+      display: flex;
+      align-items: center;
+      gap: 0.45em;
+      padding-block-end: 0;
+    }
+
+    .sc-account {
+      min-inline-size: 15rem;
+    }
+
+    .sc-account-head {
+      display: flex;
+      align-items: center;
+      gap: var(--space-20);
+      padding: var(--space-20);
+    }
+
+    .sc-account-head div {
+      display: grid;
+      min-inline-size: 0;
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-account-head small {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    /* Hover intent. Events carry `data-event-id`, so an application
+       tooltip needs no core hook at all: it is `popover="manual"` for the
+       top layer without light dismiss, and `autoUpdate()` follows the
+       calendar scroller, which moves independently of the page. */
+    .sc-tip {
+      inset: auto;
+      margin: 0;
+      max-inline-size: 17rem;
+      padding: var(--space-20);
+      border: 0;
+      text-align: start;
+      white-space: normal;
+      user-select: none;
+    }
+
+    .sc-tip:not(:popover-open) {
+      display: none;
+    }
+
+    .sc-tip dl {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 1px var(--space-20);
+      margin: var(--space-10) 0 0;
+      font-size: 11px;
+    }
+
+    .sc-tip dt {
+      color: color-mix(in oklab, currentcolor, transparent 35%);
+    }
+
+    .sc-tip dd {
+      margin: 0;
+    }
+
+    .sc-tip strong {
+      display: block;
+      font-size: var(--font-size-xs);
+    }
+
+    .sc-tip .sc-tip-note {
+      display: flex;
+      align-items: center;
+      gap: 0.4em;
+      margin-block-start: var(--space-20);
+      padding-block-start: var(--space-10);
+      border-block-start: 1px solid color-mix(in oklab, currentcolor, transparent 75%);
+    }
+
     .sc-dialog {
       padding: 0;
       border: var(--border-width) solid var(--border);
@@ -858,40 +1178,32 @@
       padding: var(--space-50);
     }
 
-    .sc-menu {
-      position: fixed;
-      z-index: var(--z-menu);
-      min-inline-size: 12rem;
-      padding: var(--space-20);
-      border: var(--border-width) solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface-raised);
-      box-shadow: var(--shadow-popout);
+    .sc-shortcuts {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: var(--space-10) var(--space-30);
+      margin: 0;
+      font-size: var(--font-size-sm);
     }
 
-    .sc-menu button {
-      display: block;
-      inline-size: 100%;
-      text-align: start;
+    .sc-shortcuts dt {
+      display: flex;
+      gap: 2px;
+      justify-content: end;
     }
 
-    .sc-scrim {
-      position: fixed;
-      inset: 0;
-      z-index: calc(var(--z-menu) - 1);
-      padding: 0;
-      border: 0;
-      background: var(--backdrop-fill);
-      cursor: pointer;
+    .sc-shortcuts dd {
+      margin: 0;
+      color: var(--text-muted);
     }
 
     /* ---------------------------------------------------------------- */
-    /* Responsive: the sidebar becomes an off-canvas panel, the toolbar  */
-    /* wraps, and the calendar keeps the whole remaining viewport.       */
+    /* 5. RESPONSIVE                                                     */
     /* ---------------------------------------------------------------- */
     @media (min-width: 64rem) {
       .sc-burger,
-      .sc-scrim {
+      .sc-mobile-only {
         display: none;
       }
 
@@ -912,59 +1224,109 @@
           / minmax(0, 1fr);
       }
 
-      .sc-sidebar {
+      /* Off-canvas as a popover: `[popover]` supplies the top layer, the
+         backdrop, light dismiss and Escape. Only the geometry is ours. */
+      .sc-sidebar[popover] {
         position: fixed;
-        inset-block: 0;
-        inset-inline-start: 0;
+        inset: 0 auto 0 0;
         z-index: var(--z-menu);
-        inline-size: min(20rem, 88vw);
-        translate: -101% 0;
+        /* The UA `[popover]` rule sizes to `fit-content` and centres with
+           `margin: auto`; a full-height drawer has to say so explicitly. */
+        margin: 0;
+        inline-size: min(19rem, 88vw);
+        block-size: 100%;
+        max-block-size: none;
+        border: 0;
+        border-inline-end: var(--border-width) solid var(--border);
+        border-radius: 0;
         box-shadow: var(--shadow-popout);
-        transition: translate var(--duration) var(--ease-exit);
+        color: var(--text);
       }
 
-      .sc-shell[data-drawer="open"] .sc-sidebar {
-        translate: 0 0;
-        transition-timing-function: var(--ease-enter);
+      .sc-sidebar[popover]:not(:popover-open) {
+        display: none;
+      }
+
+      .sc-sidebar[popover]::backdrop {
+        background: var(--backdrop-fill);
       }
 
       .sc-modules,
-      .sc-dock-hint,
+      .sc-desktop-only,
       .sc-brand-text small {
         display: none;
       }
 
-      .sc-dock-body {
+      .sc-mega {
         grid-template-columns: minmax(0, 1fr);
+        min-inline-size: min(20rem, calc(100vw - 2rem));
       }
     }
 
     @media (max-width: 40rem) {
-      .sc-range {
-        font-size: var(--font-size-sm);
+      .sc-narrow {
+        display: initial;
       }
 
-      .sc-toolbar-end {
-        inline-size: 100%;
-        margin-inline-start: 0;
-      }
-
-      .sc-cockpit > span {
-        white-space: normal;
-      }
-
-      .sc-cockpit > span:nth-child(n + 3) {
+      .sc-wide {
         display: none;
       }
 
+      .sc-topbar {
+        padding-inline: var(--space-10) var(--space-20);
+      }
+
+      .sc-toolbar {
+        padding-inline: var(--space-20);
+      }
+
+      .sc-range strong {
+        font-size: var(--font-size-sm);
+      }
+
+      .sc-cockpit {
+        padding-inline: var(--space-20);
+      }
+
+      .sc-viewbtn {
+        max-inline-size: 7.5rem;
+      }
+
+      /* A 3.5rem axis is a tenth of a phone's width. The core hard-codes
+         it in three coupled places, so all three are narrowed together
+         until it becomes a custom property upstream. */
+      .actual-calendar .cv-grid {
+        grid-template-columns: 2.6rem repeat(auto-fit, minmax(var(--calendar-column-min), 1fr));
+      }
+
+      .actual-calendar .cv-axis,
+      .actual-calendar .cv-resource-corner {
+        width: 2.6rem;
+      }
+
       .actual-calendar {
-        --calendar-column-min: 6rem;
+        --calendar-column-min: 5.5rem;
+      }
+
+      .actual-calendar .cv-day-header,
+      .actual-calendar .cv-resource-header {
+        padding-inline: var(--space-10);
+      }
+
+      .sc-log {
+        max-block-size: 5rem;
       }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .sc-sidebar {
-        transition: none;
+      .actual-calendar .cv-event[data-fresh="true"],
+      .actual-calendar .cv-event[data-fresh="true"]::before {
+        animation: none;
+      }
+
+      .actual-calendar .cv-event[data-fresh="true"] {
+        outline: 2px solid var(--sc-tone-fg, #fff);
+        outline-offset: -3px;
       }
     }
   </style>
@@ -972,110 +1334,125 @@
 </head>
 <body>
   <div class="sc-shell" id="shell" data-drawer="closed" data-focus="false">
-
     <header class="topbar sc-topbar">
-      <button type="button" class="btn sm neutral ghost sc-burger" id="sidebar-toggle"
-              aria-controls="sidebar" aria-expanded="false">☰<span class="sr-only">Toggle side panel</span></button>
+      <button type="button" class="btn sm neutral ghost icon-only sc-burger" id="sidebar-toggle"
+              popovertarget="sidebar" aria-expanded="false" aria-label="Side panel">
+        <i class="ti ti-menu-2 ti-lg" aria-hidden="true"></i>
+      </button>
       <p class="sc-brand">
-        <span class="sc-brand-mark" aria-hidden="true">▦</span>
+        <span class="sc-brand-mark" aria-hidden="true"><i class="ti ti-calendar-week ti-lg"></i></span>
         <span class="sc-brand-text">
           <strong>Room bookings</strong>
           <small class="muted">generic shell · @lekoala/calendar</small>
         </span>
       </p>
       <nav class="tabs sc-modules" aria-label="Application sections">
-        <a class="tab" href="#sidebar" aria-current="page">Calendar</a>
-        <a class="tab" href="./resources.html">Resources</a>
-        <a class="tab" href="./basic.html">Basic grids</a>
+        <a class="tab" href="#sidebar" aria-current="page"><i class="ti ti-calendar-week" aria-hidden="true"></i> Calendar</a>
+        <a class="tab" href="./resources.html"><i class="ti ti-door" aria-hidden="true"></i> Resources</a>
+        <a class="tab" href="./basic.html"><i class="ti ti-layout-columns" aria-hidden="true"></i> Basic grids</a>
       </nav>
       <div class="sc-topbar-end">
-        <select class="select sm fit" id="theme-switcher" aria-label="Switch theme">
-          <option value="">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-          <option value="indigo">Indigo</option>
-          <option value="ocean">Ocean</option>
-          <option value="forest">Forest</option>
-          <option value="sunset">Sunset</option>
-          <option value="brutalist">Brutalist</option>
-        </select>
-        <span class="avatar sm" title="Signed in as the shell demo operator" aria-hidden="true">SO</span>
+        <button type="button" class="btn sm neutral ghost icon-only sc-mobile-only" id="search-toggle"
+                aria-label="Search bookings">
+          <i class="ti ti-search ti-lg" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="btn sm neutral ghost sc-activity-btn" id="activity-toggle"
+                aria-controls="activity" aria-expanded="false" aria-label="Activity log">
+          <i class="ti ti-activity ti-lg" aria-hidden="true"></i>
+          <span class="badge sm soft" id="dock-count">0</span>
+        </button>
+        <button type="button" class="avatar sm" id="account-toggle" popovertarget="account-menu"
+                aria-expanded="false" aria-haspopup="menu" aria-label="Account and preferences">SO</button>
       </div>
     </header>
 
     <aside class="sc-sidebar scroller" id="sidebar" aria-label="Agenda side panel">
-      <button type="button" class="btn primary" id="new-booking">+ New booking</button>
+      <button type="button" class="btn primary" id="new-booking">
+        <i class="ti ti-plus" aria-hidden="true"></i> New booking
+      </button>
 
       <section class="sc-group sc-mini" aria-label="Month navigation">
         <div class="sc-mini-head">
           <h2 class="sc-mini-title" id="mini-title">—</h2>
-          <button type="button" class="btn sm neutral ghost" id="mini-prev" aria-label="Previous month">‹</button>
-          <button type="button" class="btn sm neutral ghost" id="mini-next" aria-label="Next month">›</button>
+          <button type="button" class="btn sm neutral ghost icon-only" id="mini-prev" aria-label="Previous month">
+            <i class="ti ti-chevron-left" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="btn sm neutral ghost icon-only" id="mini-next" aria-label="Next month">
+            <i class="ti ti-chevron-right" aria-hidden="true"></i>
+          </button>
         </div>
-        <div class="sc-mini-grid" id="mini-grid"></div>
+        <div class="sc-mini-grid" id="mini-grid" data-weeks="true"></div>
       </section>
 
       <section class="sc-group">
-        <h2 class="sc-group-title">Search</h2>
-        <input class="input sm" type="search" id="tools-search" placeholder="Title, room…" autocomplete="off"
-               aria-label="Search loaded bookings">
+        <h2 class="sc-group-title"><i class="ti ti-search" aria-hidden="true"></i> Search</h2>
+        <label class="input-icon">
+          <i class="ti ti-search" aria-hidden="true"></i>
+          <input class="input sm" type="search" id="tools-search" placeholder="Title, room…" autocomplete="off"
+                 aria-label="Search loaded bookings">
+        </label>
         <ul class="sc-results" id="tools-results"></ul>
       </section>
 
       <section class="sc-group">
-        <h2 class="sc-group-title">Rooms <span class="sc-count-mini" id="room-summary"></span></h2>
+        <h2 class="sc-group-title">
+          <i class="ti ti-door" aria-hidden="true"></i> Rooms
+          <span class="sc-count-mini" id="room-summary"></span>
+        </h2>
         <ul class="sc-checks" id="room-list"></ul>
       </section>
 
       <section class="sc-group">
-        <h2 class="sc-group-title">Kinds</h2>
+        <h2 class="sc-group-title"><i class="ti ti-palette" aria-hidden="true"></i> Kinds</h2>
         <ul class="sc-legend" id="kind-legend"></ul>
       </section>
 
       <section class="sc-group">
-        <h2 class="sc-group-title">Event source</h2>
-        <select class="select sm" id="source-mode">
-          <option value="local" selected>Local snapshot</option>
-          <option value="slow">Simulated slow source (600 ms)</option>
-        </select>
+        <h2 class="sc-group-title"><i class="ti ti-shield-check" aria-hidden="true"></i> Booking rules</h2>
+        <ul class="sc-rules" id="rules"></ul>
       </section>
 
       <div class="sc-sidebar-foot">
-        <dl class="sc-shortcuts">
-          <dt><kbd class="key">T</kbd></dt>
-          <dd>today</dd>
-          <dt><kbd class="key">←</kbd> <kbd class="key">→</kbd></dt>
-          <dd>previous / next range</dd>
-          <dt><kbd class="key">/</kbd></dt>
-          <dd>search</dd>
-          <dt><kbd class="key">F</kbd></dt>
-          <dd>focus mode</dd>
-        </dl>
+        <button type="button" class="btn sm neutral ghost" id="shortcuts-open">
+          <i class="ti ti-keyboard" aria-hidden="true"></i> Keyboard shortcuts
+        </button>
       </div>
     </aside>
-
-    <button type="button" class="sc-scrim" id="sidebar-scrim" tabindex="-1" aria-label="Close side panel" hidden></button>
 
     <div class="sc-main">
       <div class="sc-toolbar">
         <div class="join" role="group" aria-label="Date navigation">
-          <button type="button" class="btn sm" id="nav-prev" aria-label="Previous range">‹</button>
+          <button type="button" class="btn sm icon-only" id="nav-prev" aria-label="Previous range">
+            <i class="ti ti-chevron-left" aria-hidden="true"></i>
+          </button>
           <button type="button" class="btn sm" id="nav-today">Today</button>
-          <button type="button" class="btn sm" id="nav-next" aria-label="Next range">›</button>
+          <button type="button" class="btn sm icon-only" id="nav-next" aria-label="Next range">
+            <i class="ti ti-chevron-right" aria-hidden="true"></i>
+          </button>
         </div>
-        <p class="sc-range" id="anchor-label" data-date="">—</p>
+        <p class="sc-range">
+          <strong id="anchor-label" data-date="">
+            <span class="sc-wide" id="anchor-long">—</span>
+            <span class="sc-narrow" id="anchor-short">—</span>
+          </strong>
+          <small id="anchor-sub">—</small>
+        </p>
         <div class="sc-toolbar-end">
-          <div class="join sc-views" role="group" aria-label="Views">
-            <button type="button" class="btn sm" data-view="day">Day</button>
-            <button type="button" class="btn sm" data-view="threeDays">3 days</button>
-            <button type="button" class="btn sm" data-view="week">Week</button>
-            <button type="button" class="btn sm" data-view="resourceDay">Team day</button>
-            <button type="button" class="btn sm" data-view="resourceThreeDays">Team 3 days</button>
-            <button type="button" class="btn sm" data-view="month">Month</button>
-            <button type="button" class="btn sm" data-view="list">List</button>
-          </div>
-          <button type="button" class="btn sm neutral outline" id="tools-toggle">Tools</button>
-          <button type="button" class="btn sm neutral ghost" id="focus-toggle" aria-pressed="false">Focus</button>
+          <button type="button" class="btn sm neutral outline sc-viewbtn" id="view-toggle"
+                  popovertarget="view-menu" aria-expanded="false" aria-haspopup="menu">
+            <i class="ti ti-users" id="view-icon" aria-hidden="true"></i>
+            <span id="view-label">—</span>
+            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="btn sm neutral outline" id="tools-toggle"
+                  popovertarget="tools-menu" aria-expanded="false" aria-haspopup="true">
+            <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
+            <span class="sc-desktop-only">Tools</span>
+          </button>
+          <button type="button" class="btn sm neutral ghost icon-only sc-desktop-only" id="focus-toggle"
+                  aria-pressed="false" aria-label="Focus mode">
+            <i class="ti ti-layout-sidebar-left-collapse ti-lg" id="focus-icon" aria-hidden="true"></i>
+          </button>
         </div>
       </div>
 
@@ -1084,22 +1461,200 @@
       <calendar-view class="actual-calendar" view="resourceThreeDays" date="2026-09-03"
                      slot-min="07:00" slot-max="20:00"></calendar-view>
 
-      <details class="sc-dock" id="dock" open>
-        <summary>
-          Activity <span class="badge soft sm" id="dock-count">0</span>
-          <span class="muted sc-dock-hint">realtime stand-ins, and every intent the core hands the application</span>
-        </summary>
-        <div class="sc-dock-body">
-          <div class="sc-dock-actions">
-            <button type="button" class="btn sm" id="rt-add">Push event</button>
-            <button type="button" class="btn sm neutral outline" id="rt-move">Shift “Live sync” +1h</button>
-            <button type="button" class="btn sm danger outline" id="rt-remove">Remove “Live sync”</button>
-          </div>
-          <ol class="sc-log" id="event-log"></ol>
+      <section class="sc-activity" id="activity" aria-label="Activity" hidden>
+        <div class="sc-activity-head">
+          <h2><i class="ti ti-activity" aria-hidden="true"></i> Every intent the core hands the application</h2>
+          <button type="button" class="btn sm neutral ghost icon-only sc-activity-close" id="activity-close"
+                  aria-label="Close activity log">
+            <i class="ti ti-x" aria-hidden="true"></i>
+          </button>
         </div>
-      </details>
+        <ol class="sc-log" id="event-log"></ol>
+      </section>
     </div>
   </div>
+
+  <!-- View switcher: one trigger, a grouped menu, digit shortcuts. -->
+  <ul class="sc-pop sc-menu menu" id="view-menu" popover role="menu" aria-label="Views"></ul>
+
+  <!-- Tools: the application's own mega menu. Source lifecycle, realtime
+       stand-ins, grid density and diagnostics - none of it in the toolbar. -->
+  <div class="sc-pop sc-mega" id="tools-menu" popover role="dialog" aria-label="Tools">
+    <section>
+      <h3 class="menu-label"><i class="ti ti-database" aria-hidden="true"></i> Event source</h3>
+      <ul class="menu" role="group" id="source-menu">
+        <li>
+          <button type="button" class="menu-item" role="menuitemradio" aria-checked="true" data-source="local">
+            <span class="menu-item-icon"><i class="ti ti-database" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Local snapshot</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" role="menuitemradio" aria-checked="false" data-source="slow">
+            <span class="menu-item-icon"><i class="ti ti-clock-pause" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Slow source · 600 ms</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" role="menuitemradio" aria-checked="false" data-source="failing">
+            <span class="menu-item-icon"><i class="ti ti-cloud-off" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Failing source</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li><hr class="menu-separator"></li>
+        <li>
+          <button type="button" class="menu-item" data-tool="refetch">
+            <span class="menu-item-icon"><i class="ti ti-refresh" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Refetch now</span>
+          </button>
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h3 class="menu-label"><i class="ti ti-broadcast" aria-hidden="true"></i> Realtime stand-ins</h3>
+      <ul class="menu" role="group">
+        <li>
+          <button type="button" class="menu-item" id="rt-add">
+            <span class="menu-item-icon"><i class="ti ti-calendar-plus" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Push event</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" id="rt-move">
+            <span class="menu-item-icon"><i class="ti ti-clock-play" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Shift “Live sync” +1h</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" id="rt-remove">
+            <span class="menu-item-icon"><i class="ti ti-trash" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Remove “Live sync”</span>
+          </button>
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h3 class="menu-label"><i class="ti ti-ruler" aria-hidden="true"></i> Grid</h3>
+      <ul class="menu" role="group" id="grid-menu">
+        <li>
+          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="true" data-grid="weeks">
+            <span class="menu-item-icon"><i class="ti ti-hash" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Week numbers</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="true" data-grid="sunday">
+            <span class="menu-item-icon"><i class="ti ti-beach" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Hide Sundays</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-grid="dense">
+            <span class="menu-item-icon"><i class="ti ti-baseline-density-medium" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Compact rows</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-grid="halfhour">
+            <span class="menu-item-icon"><i class="ti ti-clock-hour-3" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Half-hour labels</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h3 class="menu-label"><i class="ti ti-tool" aria-hidden="true"></i> Diagnostics</h3>
+      <ul class="menu" role="group">
+        <li>
+          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false"
+                  id="activity-menu-item" data-tool="activity">
+            <span class="menu-item-icon"><i class="ti ti-activity" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Activity log</span>
+            <span class="menu-item-end"><kbd class="key">A</kbd><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" data-tool="now">
+            <span class="menu-item-icon"><i class="ti ti-target" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Reveal now</span>
+          </button>
+        </li>
+        <li>
+          <button type="button" class="menu-item" data-tool="shortcuts">
+            <span class="menu-item-icon"><i class="ti ti-keyboard" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Keyboard shortcuts</span>
+            <span class="menu-item-end"><kbd class="key">?</kbd></span>
+          </button>
+        </li>
+      </ul>
+    </section>
+  </div>
+
+  <!-- Account: dummy identity plus the theme switcher, which is where an
+       application usually keeps it. -->
+  <div class="sc-pop sc-account" id="account-menu" popover role="dialog" aria-label="Account">
+    <div class="sc-account-head">
+      <span class="avatar sm" aria-hidden="true">SO</span>
+      <div>
+        <strong>Shell operator</strong>
+        <small>operator@example.invalid</small>
+      </div>
+    </div>
+    <hr class="menu-separator">
+    <ul class="menu" role="menu">
+      <li>
+        <button type="button" class="menu-item" role="menuitem" data-account="profile">
+          <span class="menu-item-icon"><i class="ti ti-user-circle" aria-hidden="true"></i></span>
+          <span class="menu-item-text">Profile</span>
+        </button>
+      </li>
+      <li>
+        <button type="button" class="menu-item" role="menuitem" data-account="notifications">
+          <span class="menu-item-icon"><i class="ti ti-bell" aria-hidden="true"></i></span>
+          <span class="menu-item-text">Notifications</span>
+          <span class="menu-item-end"><span class="badge sm soft">3</span></span>
+        </button>
+      </li>
+      <li>
+        <button type="button" class="menu-item" role="menuitem" data-account="shortcuts">
+          <span class="menu-item-icon"><i class="ti ti-keyboard" aria-hidden="true"></i></span>
+          <span class="menu-item-text">Keyboard shortcuts</span>
+        </button>
+      </li>
+    </ul>
+    <hr class="menu-separator">
+    <h3 class="menu-label"><i class="ti ti-palette" aria-hidden="true"></i> Theme</h3>
+    <ul class="menu" role="group" id="theme-menu"></ul>
+    <hr class="menu-separator">
+    <ul class="menu" role="menu">
+      <li>
+        <button type="button" class="menu-item danger" role="menuitem" data-account="signout">
+          <span class="menu-item-icon"><i class="ti ti-logout" aria-hidden="true"></i></span>
+          <span class="menu-item-text">Sign out</span>
+        </button>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Context menu: `calendar:eventcontextmenu` carries the coordinates,
+       `repositionAt()` uses them, and `popover` closes the thing. -->
+  <ul class="sc-pop sc-menu menu" id="context-menu" popover role="menu" aria-label="Booking actions"></ul>
+
+  <!-- Hover intent: application-owned, keyed on `data-event-id`. -->
+  <div class="tooltip sc-tip" id="event-tip" popover="manual" role="tooltip"></div>
+
+  <!-- Rejection feedback: an application refusal has to say why. -->
+  <output class="status-bar sc-toast" id="toast" aria-live="polite"></output>
 
   <!-- Creation sheet: calendar:select is an intention, the app decides. -->
   <dialog class="sc-dialog" id="create-dialog" aria-labelledby="create-title">
@@ -1111,9 +1666,15 @@
         <span class="badge soft neutral" id="create-duration">—</span>
       </p>
       <div class="stack" style="gap: var(--space-20);">
-        <button type="button" class="btn primary" data-create="event">Booking<span class="muted"> — an event on this slot</span></button>
-        <button type="button" class="btn neutral soft" data-create="background">Background<span class="muted"> — time geometry behind events</span></button>
-        <button type="button" class="btn warning soft" data-create="blocked">Blocked<span class="muted"> — non-bookable marker event</span></button>
+        <button type="button" class="btn primary" data-create="event">
+          <i class="ti ti-calendar-plus" aria-hidden="true"></i> Booking<span class="muted"> — an event on this slot</span>
+        </button>
+        <button type="button" class="btn neutral soft" data-create="background">
+          <i class="ti ti-layers-subtract" aria-hidden="true"></i> Background<span class="muted"> — time geometry behind events</span>
+        </button>
+        <button type="button" class="btn warning soft" data-create="blocked">
+          <i class="ti ti-ban" aria-hidden="true"></i> Blocked<span class="muted"> — non-bookable marker event</span>
+        </button>
       </div>
       <form method="dialog"><button type="submit" class="btn neutral ghost sm">Cancel</button></form>
     </div>
@@ -1125,926 +1686,1769 @@
       <h2 id="detail-title" style="margin: 0;">—</h2>
       <p class="muted" id="detail-meta" style="margin: 0;">—</p>
       <div class="cluster">
-        <button type="button" class="btn sm" id="detail-shift">Move +1h</button>
-        <button type="button" class="btn sm danger outline" id="detail-delete">Delete</button>
+        <button type="button" class="btn sm" id="detail-shift">
+          <i class="ti ti-clock-play" aria-hidden="true"></i> Move +1h
+        </button>
+        <button type="button" class="btn sm danger outline" id="detail-delete">
+          <i class="ti ti-trash" aria-hidden="true"></i> Delete
+        </button>
       </div>
       <form method="dialog"><button type="submit" class="btn neutral ghost sm">Close</button></form>
     </div>
   </dialog>
 
-  <div class="sc-menu stack" id="context-menu" hidden style="gap: 2px;"></div>
+  <dialog class="sc-dialog" id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+    <div class="sc-dialog-body stack">
+      <h2 id="shortcuts-title" style="margin: 0;">
+        <i class="ti ti-keyboard" aria-hidden="true"></i> Keyboard
+      </h2>
+      <dl class="sc-shortcuts" id="shortcuts-list"></dl>
+      <p class="muted" style="margin: 0; font-size: var(--font-size-xs);">
+        Focused bookings also take <kbd class="key">Shift</kbd> + arrows to move and
+        <kbd class="key">Alt</kbd> + arrows to resize — those are core behaviour, and
+        they go through the same application rules as a drag.
+      </p>
+      <form method="dialog"><button type="submit" class="btn neutral ghost sm">Close</button></form>
+    </div>
+  </dialog>
 
-<script>
-  (() => {
-    const shell = document.getElementById("shell");
-    const calendar = document.querySelector("calendar-view");
-    const log = document.getElementById("event-log");
-    const dockCount = document.getElementById("dock-count");
-    const anchorLabel = document.getElementById("anchor-label");
-    const cockpit = document.getElementById("cockpit");
-    const ZONE = "Europe/Brussels";
+<script type="module">
+  // Placement is an application dependency, pinned like Actual CSS, and
+  // never a runtime dependency of the core. The classic-script demos stay
+  // free of it so they keep working over `file://`.
+  import { autoUpdate, reposition, repositionAt } from "https://cdn.jsdelivr.net/npm/@lekoala/floating@0.1.0/src/floating.js";
 
-    let logged = 0;
-    let busy = false;
+  const shell = document.getElementById("shell");
+  const sidebar = document.getElementById("sidebar");
+  const calendar = document.querySelector("calendar-view");
+  const log = document.getElementById("event-log");
+  const dockCount = document.getElementById("dock-count");
+  const cockpit = document.getElementById("cockpit");
+  const ZONE = "Europe/Brussels";
 
-    /** @param {string} message */
-    function record(message) {
-      const item = document.createElement("li");
-      item.textContent = message;
-      log.prepend(item);
-      while (log.children.length > 20) log.lastChild.remove();
-      logged += 1;
-      dockCount.textContent = String(logged);
-    }
+  let logged = 0;
+  let busy = false;
+  let lastIntent = "shell ready";
 
-    // --- Fictitious generic dataset: rooms × bookings ---------------------
-    const ROOMS = [
-      { id: "room-a", title: "Room A · Atrium" },
-      { id: "room-b", title: "Room B · Loft" },
-      { id: "room-c", title: "Room C · Studio" },
-    ];
+  /** @param {string} message */
+  function record(message) {
+    const item = document.createElement("li");
+    item.textContent = message;
+    log.prepend(item);
+    while (log.children.length > 24) log.lastChild.remove();
+    logged += 1;
+    lastIntent = message;
+    dockCount.textContent = String(logged);
+    renderCockpit();
+  }
 
-    const KINDS = [
-      { id: "review", label: "Review" },
-      { id: "planning", label: "Planning" },
-      { id: "workshop", label: "Workshop" },
-      { id: "deadline", label: "Deadline" },
-      { id: "maintenance", label: "Maintenance" },
-    ];
+  // --- Fictitious generic dataset: rooms × bookings ---------------------
+  const ROOMS = [
+    { id: "room-a", title: "Room A · Atrium" },
+    { id: "room-b", title: "Room B · Loft" },
+    { id: "room-c", title: "Room C · Studio" },
+  ];
 
-    const TITLES = {
-      review: ["Design review", "Code review", "Portfolio review", "Quarterly review"],
-      planning: ["Sprint planning", "Roadmap sync", "Capacity planning", "Weekly stand-up"],
-      workshop: ["Discovery workshop", "Onboarding workshop", "Retro workshop", "Training session"],
-      deadline: ["Release gate", "Freeze deadline", "Handover", "Demo Friday"],
-      maintenance: ["Equipment check", "Network maintenance", "Deep clean", "Inventory"],
+  const KINDS = [
+    { id: "review", label: "Review" },
+    { id: "planning", label: "Planning" },
+    { id: "workshop", label: "Workshop" },
+    { id: "deadline", label: "Deadline" },
+    { id: "maintenance", label: "Maintenance" },
+  ];
+
+  const TITLES = {
+    review: ["Design review", "Code review", "Portfolio review", "Quarterly review"],
+    planning: ["Sprint planning", "Roadmap sync", "Capacity planning", "Weekly stand-up"],
+    workshop: ["Discovery workshop", "Onboarding workshop", "Retro workshop", "Training session"],
+    deadline: ["Release gate", "Freeze deadline", "Handover", "Demo Friday"],
+    maintenance: ["Equipment check", "Network maintenance", "Deep clean", "Inventory"],
+  };
+
+  /**
+   * The application's booking policy. `calendar:eventmove` and
+   * `calendar:eventresize` are cancelable and carry `revert()`, so these
+   * constants are the whole reason a drop can be refused - the core knows
+   * none of them.
+   */
+  const POLICY = {
+    opensAt: 8 * 60,
+    closesAt: 18 * 60,
+    maxMinutes: 4 * 60,
+    // Saturday is staffed for viewing only; Sunday is not rendered at all.
+    closedWeekdays: [6],
+    // Kinds the facilities team owns: the core refuses the drag itself,
+    // because the application hands them `editable: false`.
+    lockedKinds: ["maintenance"],
+    // Kinds the scheduling desk confirms after the fact, which is the
+    // asynchronous half of the contract: accept, await, then `revert()`.
+    reviewedKinds: ["deadline"],
+    reviewDelay: 550,
+  };
+
+  /**
+   * Non-bookable ranges, in wall-clock minutes. `dayOfWeek` is ISO
+   * (1 = Monday) or null for every day. They are rendered as background
+   * ranges, so the rule the guard enforces is the rule the user sees.
+   */
+  const BLOCKED = [
+    { resourceId: "room-c", dayOfWeek: null, from: 12 * 60, to: 13 * 60, label: "Daily reset" },
+    { resourceId: "room-a", dayOfWeek: 3, from: 15 * 60, to: 17 * 60, label: "AV maintenance" },
+    { resourceId: "room-b", dayOfWeek: 5, from: 8 * 60, to: 10 * 60, label: "Facilities audit" },
+  ];
+
+  /**
+   * Deterministic pseudo-random source: the fixture must look busy and
+   * stay byte-identical between reloads and test runs.
+   * @param {number} seed
+   */
+  function makeRandom(seed) {
+    let state = seed;
+    return () => {
+      state = (state * 1103515245 + 12345) % 2147483648;
+      return state / 2147483648;
     };
+  }
 
-    /**
-     * Deterministic pseudo-random source: the fixture must look busy and
-     * stay byte-identical between reloads and test runs.
-     * @param {number} seed
-     */
-    function makeRandom(seed) {
-      let state = seed;
-      return () => {
-        state = (state * 1103515245 + 12345) % 2147483648;
-        return state / 2147483648;
-      };
-    }
-
-    /**
-     * Six weeks of bookings around the anchor date, so month view is as
-     * populated as the time grids. Dates come from the element's own
-     * Temporal.PlainDate: the demo needs no date library of its own.
-     */
-    function seedStore() {
-      const random = makeRandom(20260903);
-      const store = [];
-      const first = calendar.date.subtract({ days: 10 });
-      let n = 0;
-      for (let index = 0; index < 42; index += 1) {
-        const date = first.add({ days: index });
-        if (date.dayOfWeek === 7) continue;
-        const perRoom = date.dayOfWeek === 6 ? 1 : 3 + Math.floor(random() * 3);
-        for (const room of ROOMS) {
-          let minutes = 8 * 60 + Math.floor(random() * 4) * 30;
-          for (let slot = 0; slot < perRoom; slot += 1) {
-            const duration = [30, 45, 60, 90][Math.floor(random() * 4)];
-            if (minutes + duration > 19 * 60) break;
-            const kind = KINDS[Math.floor(random() * KINDS.length)].id;
-            const titles = TITLES[kind];
-            n += 1;
-            store.push({
-              id: `seed-${n}`,
-              title: titles[Math.floor(random() * titles.length)],
-              start: stamp(date, minutes),
-              end: stamp(date, minutes + duration),
-              resourceId: room.id,
-              extendedProps: { kind, seats: 2 + Math.floor(random() * 10) },
-            });
-            minutes += duration + [0, 15, 30, 60, 90][Math.floor(random() * 5)];
-          }
+  /**
+   * Six weeks of bookings around the anchor date, so month view is as
+   * populated as the time grids. Dates come from the element's own
+   * Temporal.PlainDate: the demo needs no date library of its own.
+   */
+  function seedStore() {
+    const random = makeRandom(20260903);
+    const store = [];
+    const first = calendar.date.subtract({ days: 10 });
+    let n = 0;
+    for (let index = 0; index < 42; index += 1) {
+      const date = first.add({ days: index });
+      if (date.dayOfWeek === 7) continue;
+      const perRoom = date.dayOfWeek === 6 ? 1 : 3 + Math.floor(random() * 3);
+      for (const room of ROOMS) {
+        let minutes = 8 * 60 + Math.floor(random() * 4) * 30;
+        for (let slot = 0; slot < perRoom; slot += 1) {
+          const duration = [30, 45, 60, 90][Math.floor(random() * 4)];
+          if (minutes + duration > 18 * 60) break;
+          const kind = KINDS[Math.floor(random() * KINDS.length)].id;
+          const titles = TITLES[kind];
+          n += 1;
+          store.push({
+            id: `seed-${n}`,
+            title: titles[Math.floor(random() * titles.length)],
+            start: stamp(date, minutes),
+            end: stamp(date, minutes + duration),
+            resourceId: room.id,
+            extendedProps: { kind, seats: 2 + Math.floor(random() * 10) },
+          });
+          minutes += duration + [0, 15, 30, 60, 90][Math.floor(random() * 5)];
         }
       }
+    }
 
-      // One deliberate overlap on the anchor day, to show column layout.
-      store.push({
-        id: "seed-overlap",
-        title: "Overlap review",
-        start: stamp(calendar.date, 9 * 60 + 30),
-        end: stamp(calendar.date, 10 * 60 + 30),
-        resourceId: "room-a",
-        extendedProps: { kind: "deadline", seats: 6 },
+    // One deliberate overlap on the anchor day, to show column layout.
+    store.push({
+      id: "seed-overlap",
+      title: "Overlap review",
+      start: stamp(calendar.date, 9 * 60 + 30),
+      end: stamp(calendar.date, 10 * 60 + 30),
+      resourceId: "room-a",
+      extendedProps: { kind: "deadline", seats: 6 },
+    });
+    // Stable target for search and realtime stand-ins.
+    store.push({
+      id: "live",
+      title: "Live sync",
+      start: stamp(calendar.date.add({ days: 1 }), 11 * 60),
+      end: stamp(calendar.date.add({ days: 1 }), 11 * 60 + 30),
+      resourceId: "room-b",
+      extendedProps: { kind: "planning", seats: 3 },
+    });
+    return store;
+  }
+
+  /**
+   * @param {{ toString(): string }} date PlainDate
+   * @param {number} minutes wall-clock minutes from midnight
+   */
+  function stamp(date, minutes) {
+    // Midnight is expressed as 24:00 by closing-hour policies, which is not
+    // an ISO hour: roll the date instead of emitting one Temporal refuses.
+    const days = Math.floor(minutes / (24 * 60));
+    const rest = minutes - days * 24 * 60;
+    return `${days ? date.add({ days }) : date}T${clock(rest)}:00+02:00[${ZONE}]`;
+  }
+
+  /** @param {number} minutes wall-clock minutes from midnight */
+  function clock(minutes) {
+    const hour = String(Math.floor(minutes / 60)).padStart(2, "0");
+    const minute = String(minutes % 60).padStart(2, "0");
+    return `${hour}:${minute}`;
+  }
+
+  /** @param {string} iso */
+  function wallClock(iso) {
+    return iso.slice(11, 16);
+  }
+
+  /** @param {string} iso */
+  function wallMinutesOf(iso) {
+    return Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
+  }
+
+  /**
+   * @param {string} startIso
+   * @param {string} endIso
+   */
+  function wallMinutes(startIso, endIso) {
+    return wallMinutesOf(endIso) - wallMinutesOf(startIso);
+  }
+
+  /** @param {string} iso an ISO date, `YYYY-MM-DD` or longer */
+  function asDate(iso) {
+    return new Date(`${iso.slice(0, 10)}T12:00:00`);
+  }
+
+  /** ISO weekday, 1 = Monday, for a `YYYY-MM-DD` string. @param {string} iso */
+  function isoWeekday(iso) {
+    return ((asDate(iso).getDay() + 6) % 7) + 1;
+  }
+
+  // The application store. The core holds the filtered projection.
+  /** @type {Array<any>} */
+  let store = [];
+  const activeRooms = new Set(ROOMS.map((room) => room.id));
+  const activeKinds = new Set(KINDS.map((kind) => kind.id));
+  /** Bookings created in this session, so the aura only ever plays once. */
+  const fresh = new Set();
+
+  /** @param {any} item */
+  function isLocked(item) {
+    return POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
+  }
+
+  function visibleStore() {
+    return store
+      .filter((item) => activeKinds.has(item.extendedProps?.kind ?? "review"))
+      .map((item) => (isLocked(item) ? { ...item, editable: false } : item));
+  }
+
+  /**
+   * Counts shown in the chrome describe what the user is looking at, so
+   * they are always scoped to the range the core reports.
+   * @param {Array<any>} items
+   */
+  function inCurrentRange(items) {
+    const { start, end } = calendar.getVisibleRange();
+    const from = start.toString();
+    const to = end.toString();
+    return items.filter((item) => {
+      const day = String(item.start).slice(0, 10);
+      return day >= from && day < to;
+    });
+  }
+
+  // --- Booking rules ------------------------------------------------------
+  /**
+   * @param {string | null} resourceId
+   * @param {string} iso day, `YYYY-MM-DD`
+   */
+  function blockedRangesOn(resourceId, iso) {
+    const weekday = isoWeekday(iso);
+    return BLOCKED.filter(
+      (range) =>
+        (range.dayOfWeek === null || range.dayOfWeek === weekday) &&
+        (resourceId === null || range.resourceId === resourceId),
+    );
+  }
+
+  /**
+   * The single source of truth for every refusal: pointer drags, keyboard
+   * moves, commands and range selection all ask this.
+   *
+   * @param {{ start: string, end: string, resourceId: string | null }} slot
+   * @returns {string | null} the reason, or null when the slot is bookable
+   */
+  function violation({ start, end, resourceId }) {
+    const day = start.slice(0, 10);
+    const from = wallMinutesOf(start);
+    const to = wallMinutesOf(end);
+    if (POLICY.closedWeekdays.includes(isoWeekday(day))) {
+      return "Saturdays are staffed for viewing only.";
+    }
+    if (from < POLICY.opensAt || to > POLICY.closesAt || to <= from) {
+      return `Bookings stay inside ${clock(POLICY.opensAt)}–${clock(POLICY.closesAt)}.`;
+    }
+    if (to - from > POLICY.maxMinutes) {
+      return `A single booking cannot exceed ${POLICY.maxMinutes / 60} hours.`;
+    }
+    const hit = blockedRangesOn(resourceId, day).find((range) => from < range.to && to > range.from);
+    if (hit) {
+      return `${hit.label} blocks ${clock(hit.from)}–${clock(hit.to)} in ${roomTitle(hit.resourceId)}.`;
+    }
+    return null;
+  }
+
+  /**
+   * Background ranges for the visible span: closed hours globally, plus
+   * the non-bookable ranges per room. Regenerated only when the span or
+   * the room selection actually changed.
+   */
+  let backgroundKey = "";
+
+  function refreshBackgrounds() {
+    const view = calendar.view;
+    if (view === "month" || view === "list") {
+      if (backgroundKey !== "none") {
+        backgroundKey = "none";
+        calendar.backgrounds = [];
+      }
+      return;
+    }
+    const resourceView = view.startsWith("resource");
+    const { start, end } = calendar.getVisibleRange();
+    const key = `${start}|${end}|${resourceView}|${[...activeRooms].join(",")}`;
+    if (key === backgroundKey) return;
+    backgroundKey = key;
+
+    const ranges = [];
+    const days = start.until(end, { largestUnit: "day" }).days;
+    for (let index = 0; index < days; index += 1) {
+      const date = start.add({ days: index });
+      const iso = date.toString();
+      const closed = POLICY.closedWeekdays.includes(date.dayOfWeek);
+      // A background without `resourceId` is global: one pair of closed
+      // ranges covers every room column of that day.
+      ranges.push({
+        id: `closed-am-${iso}`,
+        title: "Closed",
+        start: stamp(date, 0),
+        end: stamp(date, closed ? 24 * 60 : POLICY.opensAt),
+        classNames: ["sc-closed"],
       });
-      // Stable target for search and realtime stand-ins.
-      store.push({
-        id: "live",
-        title: "Live sync",
-        start: stamp(calendar.date.add({ days: 1 }), 11 * 60),
-        end: stamp(calendar.date.add({ days: 1 }), 11 * 60 + 30),
-        resourceId: "room-b",
-        extendedProps: { kind: "planning", seats: 3 },
-      });
-      return store;
-    }
-
-    /**
-     * @param {{ toString(): string }} date PlainDate
-     * @param {number} minutes wall-clock minutes from midnight
-     */
-    function stamp(date, minutes) {
-      const hour = String(Math.floor(minutes / 60)).padStart(2, "0");
-      const minute = String(minutes % 60).padStart(2, "0");
-      return `${date}T${hour}:${minute}:00+02:00[${ZONE}]`;
-    }
-
-    /** @param {string} iso */
-    function wallClock(iso) {
-      return iso.slice(11, 16);
-    }
-
-    /** @param {string} iso */
-    function wallMinutesOf(iso) {
-      return Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
-    }
-
-    /**
-     * @param {string} startIso
-     * @param {string} endIso
-     */
-    function wallMinutes(startIso, endIso) {
-      return wallMinutesOf(endIso) - wallMinutesOf(startIso);
-    }
-
-    /** @param {string} iso an ISO date, `YYYY-MM-DD` or longer */
-    function asDate(iso) {
-      return new Date(`${iso.slice(0, 10)}T12:00:00`);
-    }
-
-    // The application store. The core holds the filtered projection.
-    /** @type {Array<any>} */
-    let store = [];
-    const activeRooms = new Set(ROOMS.map((room) => room.id));
-    const activeKinds = new Set(KINDS.map((kind) => kind.id));
-
-    function visibleStore() {
-      return store.filter((item) => activeKinds.has(item.extendedProps?.kind ?? "review"));
-    }
-
-    /**
-     * Counts shown in the chrome describe what the user is looking at, so
-     * they are always scoped to the range the core reports.
-     * @param {Array<any>} items
-     */
-    function inCurrentRange(items) {
-      const { start, end } = calendar.getVisibleRange();
-      const from = start.toString();
-      const to = end.toString();
-      return items.filter((item) => {
-        const day = String(item.start).slice(0, 10);
-        return day >= from && day < to;
-      });
-    }
-
-    // --- Rendering hooks: geometry stays in the core, content is the app ---
-    // Undefined locale: the core month renderer formats with the browser
-    // locale too, so the whole page stays consistent wherever it is opened.
-    const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-    const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
-    const rangeFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
-    const longFormat = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-
-    /** @param {string} id */
-    function roomTitle(id) {
-      return ROOMS.find((room) => room.id === id)?.title ?? id;
-    }
-
-    calendar.configure({
-      pxPerMinute: 1.5,
-      // This shell does not take Sunday bookings, and its week starts on
-      // Monday: both are application policy handed to the core.
-      firstDay: 1,
-      hiddenDays: [7],
-      eventContent({ event, element }) {
-        const kind = event.extendedProps?.kind ?? "review";
-        // The core hands the application its own node: the tone is set as
-        // a data attribute, no post-render pass and no mutation observer.
-        element.dataset.kind = kind;
-
-        const start = String(event.start);
-        const end = String(event.end);
-
-        if (calendar.view === "list") {
-          const row = document.createElement("span");
-          row.className = "sc-row";
-          const time = document.createElement("span");
-          time.className = "sc-time";
-          time.textContent = `${wallClock(start)}–${wallClock(end)}`;
-          const title = document.createElement("span");
-          title.textContent = event.title ?? "Booking";
-          const room = document.createElement("span");
-          room.className = "sc-time";
-          room.textContent = roomTitle(String(event.resourceId ?? ""));
-          const tag = document.createElement("span");
-          tag.className = "sc-tag";
-          tag.textContent = kind;
-          row.append(time, title, room, tag);
-          return row;
+      if (!closed) {
+        ranges.push({
+          id: `closed-pm-${iso}`,
+          title: "Closed",
+          start: stamp(date, POLICY.closesAt),
+          end: stamp(date, 24 * 60),
+          classNames: ["sc-closed"],
+        });
+        // A room-scoped range has no column of its own in a combined view,
+        // where it would read as blocking every room at once.
+        for (const range of resourceView ? blockedRangesOn(null, iso) : []) {
+          if (!activeRooms.has(range.resourceId)) continue;
+          ranges.push({
+            id: `blocked-${range.resourceId}-${iso}-${range.from}`,
+            title: range.label,
+            resourceId: range.resourceId,
+            start: stamp(date, range.from),
+            end: stamp(date, range.to),
+            classNames: ["sc-blocked"],
+            extendedProps: { label: range.label },
+          });
         }
+      }
+    }
+    calendar.backgrounds = ranges;
+  }
 
-        if (calendar.view === "month") {
-          const chip = document.createElement("span");
-          chip.textContent = `${wallClock(start)} ${event.title ?? "Booking"}`;
-          return chip;
-        }
+  // --- Rendering hooks: geometry stays in the core, content is the app ---
+  // Undefined locale: the core month renderer formats with the browser
+  // locale too, so the whole page stays consistent wherever it is opened.
+  const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+  const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+  const rangeFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+  const shortFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "numeric" });
+  const longFormat = new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
-        const wrap = document.createElement("span");
-        wrap.className = "sc-card";
-        const title = document.createElement("strong");
+  /** @param {string} id */
+  function roomTitle(id) {
+    return ROOMS.find((room) => room.id === id)?.title ?? id;
+  }
+
+  /** @param {string} name tabler icon suffix */
+  function icon(name) {
+    const node = document.createElement("i");
+    node.className = `ti ti-${name}`;
+    node.setAttribute("aria-hidden", "true");
+    return node;
+  }
+
+  calendar.configure({
+    pxPerMinute: 1.5,
+    // This shell does not take Sunday bookings, and its week starts on
+    // Monday: both are application policy handed to the core.
+    firstDay: 1,
+    hiddenDays: [7],
+    eventContent({ event, element }) {
+      const kind = event.extendedProps?.kind ?? "review";
+      // The core hands the application its own node: the tone is set as
+      // a data attribute, no post-render pass and no mutation observer.
+      element.dataset.kind = kind;
+      const locked = POLICY.lockedKinds.includes(kind);
+      if (locked) element.dataset.locked = "true";
+      if (fresh.has(event.id)) element.dataset.fresh = "true";
+
+      const start = String(event.start);
+      const end = String(event.end);
+
+      if (calendar.view === "list") {
+        const row = document.createElement("span");
+        row.className = "sc-row";
+        const time = document.createElement("span");
+        time.className = "sc-time";
+        time.textContent = `${wallClock(start)}–${wallClock(end)}`;
+        const title = document.createElement("span");
         title.textContent = event.title ?? "Booking";
-        const meta = document.createElement("span");
-        meta.className = "sc-meta";
-        meta.textContent = `${wallClock(start)}–${wallClock(end)} · ${event.extendedProps?.seats ?? "?"} seats`;
+        const room = document.createElement("span");
+        room.className = "sc-time";
+        room.textContent = roomTitle(String(event.resourceId ?? ""));
         const tag = document.createElement("span");
         tag.className = "sc-tag";
         tag.textContent = kind;
-        wrap.append(title, meta, tag);
-        return wrap;
-      },
-      dayHeaderContent({ date, resource, element }) {
-        const iso = date.toString();
-        const count = calendar.events.filter(
-          (item) => String(item.start).slice(0, 10) === iso && (!resource || item.resourceId === resource.id),
-        ).length;
-        if (iso === todayIso()) element.dataset.today = "true";
-        if (date.dayOfWeek > 5) element.dataset.weekend = "true";
-
-        const node = document.createDocumentFragment();
-        const dow = document.createElement("span");
-        dow.className = "sc-dow";
-        dow.textContent = dayFormat.format(asDate(iso));
-        const dom = document.createElement("span");
-        dom.className = "sc-dom";
-        dom.textContent = String(date.day);
-        const badge = document.createElement("span");
-        badge.className = "sc-count";
-        badge.textContent = String(count);
-        node.append(dow, dom, badge);
-        return node;
-      },
-      resourceHeaderContent({ resource }) {
-        const node = document.createDocumentFragment();
-        const label = document.createElement("span");
-        label.textContent = resource.title;
-        const count = document.createElement("span");
-        count.className = "sc-count";
-        count.textContent = String(
-          inCurrentRange(calendar.events.filter((item) => item.resourceId === resource.id)).length,
-        );
-        node.append(label, count);
-        return node;
-      },
-    });
-
-    /** Wall-clock “now” in the calendar time zone, as `YYYY-MM-DD HH:mm`. */
-    const nowFormat = new Intl.DateTimeFormat("sv-SE", {
-      timeZone: ZONE,
-      dateStyle: "short",
-      timeStyle: "short",
-    });
-
-    function nowStamp() {
-      return nowFormat.format(new Date());
-    }
-
-    function todayIso() {
-      return nowStamp().slice(0, 10);
-    }
-
-    // --- Boot ---------------------------------------------------------------
-    store = seedStore();
-    calendar.resources = ROOMS;
-    calendar.events = visibleStore();
-    calendar.backgrounds = [
-      {
-        id: "cleaning",
-        title: "Cleaning",
-        resourceId: "room-c",
-        start: stamp(calendar.date, 12 * 60),
-        end: stamp(calendar.date, 13 * 60),
-      },
-    ];
-
-    function applyFilters() {
-      calendar.resources = ROOMS.filter((room) => activeRooms.has(room.id));
-      calendar.events = visibleStore();
-      refreshChrome();
-    }
-
-    // --- Toolbar and chrome --------------------------------------------------
-    const viewButtons = [...document.querySelectorAll("[data-view]")];
-
-    function refreshChrome() {
-      const view = calendar.view;
-      const { start, end } = calendar.getVisibleRange();
-      const anchor = calendar.date.toString();
-      // The label describes what is rendered, which is not the anchor: `week`
-      // snaps to the civil week, and hidden days can move a range's first day.
-      // The anchor stays on the element for anything that needs the exact day.
-      const first = start.toString();
-      const last = end.subtract({ days: 1 }).toString();
-      anchorLabel.dataset.date = anchor;
-      if (view === "month") {
-        anchorLabel.textContent = monthFormat.format(asDate(anchor));
-      } else if (first === last) {
-        anchorLabel.textContent = longFormat.format(asDate(first));
-      } else {
-        anchorLabel.textContent = `${rangeFormat.format(asDate(first))} – ${rangeFormat.format(asDate(last))} ${last.slice(0, 4)}`;
+        row.append(time, title, room, tag);
+        return row;
       }
 
-      for (const button of viewButtons) {
-        const active = button.dataset.view === view;
-        button.classList.toggle("primary", active);
-        button.setAttribute("aria-pressed", String(active));
+      if (calendar.view === "month") {
+        const chip = document.createElement("span");
+        chip.textContent = `${wallClock(start)} ${event.title ?? "Booking"}`;
+        return chip;
       }
-      renderMiniMonth();
-      renderRooms();
-      renderLegend();
-      renderCockpit();
-    }
 
-    function renderCockpit() {
-      const inRange = inCurrentRange(calendar.events);
-      const now = nowStamp();
-      const upcoming = [...calendar.events]
-        .map((item) => ({ item, key: `${String(item.start).slice(0, 10)} ${wallClock(String(item.start))}` }))
-        .filter((entry) => entry.key >= now)
-        .sort((a, b) => (a.key < b.key ? -1 : 1))[0];
+      const wrap = document.createElement("span");
+      wrap.className = "sc-card";
+      const title = document.createElement("strong");
+      if (locked) title.append(icon("lock"));
+      const label = document.createElement("span");
+      label.textContent = event.title ?? "Booking";
+      title.append(label);
+      const meta = document.createElement("span");
+      meta.className = "sc-meta";
+      meta.textContent = `${wallClock(start)}–${wallClock(end)} · ${event.extendedProps?.seats ?? "?"} seats`;
+      const tag = document.createElement("span");
+      tag.className = "sc-tag";
+      tag.textContent = kind;
+      wrap.append(title, meta, tag);
+      return wrap;
+    },
+    dayHeaderContent({ date, resource, element }) {
+      const iso = date.toString();
+      const count = calendar.events.filter(
+        (item) => String(item.start).slice(0, 10) === iso && (!resource || item.resourceId === resource.id),
+      ).length;
+      if (iso === todayIso()) element.dataset.today = "true";
+      if (date.dayOfWeek > 5) element.dataset.weekend = "true";
 
-      const busiest = ROOMS.map((room) => ({
-        room,
-        count: inRange.filter((item) => item.resourceId === room.id).length,
-      })).sort((a, b) => b.count - a.count)[0];
-
-      cockpit.replaceChildren();
-      cockpit.append(
-        chip(
-          busy
-            ? [dot(), strong("Loading"), " from the event source"]
-            : [dot(), strong(String(inRange.length)), " bookings in view"],
-        ),
-        chip(upcoming
-          ? ["Next: ", strong(String(upcoming.item.title)), ` ${whenLabel(String(upcoming.item.start))} · ${roomTitle(String(upcoming.item.resourceId ?? ""))}`]
-          : ["Nothing scheduled after ", strong(now.slice(11))]),
-        chip([strong(`${activeRooms.size}/${ROOMS.length}`), " rooms shown"]),
-        chip(busiest && busiest.count > 0 ? ["Busiest: ", strong(busiest.room.title)] : ["No room loaded"]),
+      const node = document.createDocumentFragment();
+      const dow = document.createElement("span");
+      dow.className = "sc-dow";
+      dow.textContent = dayFormat.format(asDate(iso));
+      const dom = document.createElement("span");
+      dom.className = "sc-dom";
+      dom.textContent = String(date.day);
+      const badge = document.createElement("span");
+      badge.className = "sc-count";
+      badge.textContent = String(count);
+      node.append(dow, dom, badge);
+      return node;
+    },
+    resourceHeaderContent({ resource }) {
+      const node = document.createDocumentFragment();
+      node.append(icon("door"));
+      const label = document.createElement("span");
+      label.textContent = resource.title;
+      const count = document.createElement("span");
+      count.className = "sc-count";
+      count.textContent = String(
+        inCurrentRange(calendar.events.filter((item) => item.resourceId === resource.id)).length,
       );
-    }
-
-    /**
-     * `at 14:00` for today, `Fri 4 Sept, 09:00` otherwise.
-     * @param {string} iso
-     */
-    function whenLabel(iso) {
-      const day = iso.slice(0, 10);
-      const clock = wallClock(iso);
-      if (day === todayIso()) return `at ${clock}`;
-      return `${dayFormat.format(asDate(day))} ${rangeFormat.format(asDate(day))}, ${clock}`;
-    }
-
-    /** @param {Array<string | Node>} parts */
-    function chip(parts) {
-      const node = document.createElement("span");
-      node.append(...parts);
+      node.append(label, count);
       return node;
-    }
+    },
+  });
 
-    /** @param {string} text */
-    function strong(text) {
-      const node = document.createElement("strong");
-      node.textContent = text;
-      return node;
-    }
+  /** Wall-clock “now” in the calendar time zone, as `YYYY-MM-DD HH:mm`. */
+  const nowFormat = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: ZONE,
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 
-    function dot() {
-      const node = document.createElement("span");
-      node.className = "sc-dot";
-      return node;
-    }
+  function nowStamp() {
+    return nowFormat.format(new Date());
+  }
 
-    // --- Mini month ----------------------------------------------------------
-    const miniGrid = document.getElementById("mini-grid");
-    const miniTitle = document.getElementById("mini-title");
-    let miniAnchor = null;
+  function todayIso() {
+    return nowStamp().slice(0, 10);
+  }
 
-    function renderMiniMonth() {
-      const anchor = calendar.date;
-      if (!miniAnchor || miniAnchor.year !== anchor.year || miniAnchor.month !== anchor.month) {
-        miniAnchor = anchor;
+  // --- Views --------------------------------------------------------------
+  /**
+   * Seven views used to be seven buttons. One trigger naming the current
+   * view is a fifth of the width, reads the same on a phone, and is where
+   * the digit shortcuts are documented.
+   */
+  const VIEWS = [
+    { id: "day", label: "Day", short: "Day", icon: "columns-1", group: "Combined" },
+    { id: "threeDays", label: "3 days", short: "3 days", icon: "columns-3", group: "Combined" },
+    { id: "week", label: "Week", short: "Week", icon: "calendar-week", group: "Combined" },
+    { id: "resourceDay", label: "Team day", short: "Team 1d", icon: "users", group: "By room" },
+    { id: "resourceThreeDays", label: "Team 3 days", short: "Team 3d", icon: "users-group", group: "By room" },
+    { id: "month", label: "Month", short: "Month", icon: "calendar-month", group: "Overview" },
+    { id: "list", label: "List", short: "List", icon: "list-details", group: "Overview" },
+  ];
+
+  const viewMenu = document.getElementById("view-menu");
+  // The popover is the menu itself: one element, one role, no wrapper that
+  // would need an `aria-label` it cannot carry.
+  const viewMenuList = viewMenu;
+  const viewToggle = document.getElementById("view-toggle");
+  const viewLabel = document.getElementById("view-label");
+  const viewIcon = document.getElementById("view-icon");
+
+  function renderViewMenu() {
+    viewMenuList.replaceChildren();
+    let group = null;
+    VIEWS.forEach((view, index) => {
+      if (view.group !== group) {
+        group = view.group;
+        const heading = document.createElement("li");
+        heading.setAttribute("role", "presentation");
+        const label = document.createElement("h3");
+        label.className = "menu-label";
+        label.textContent = group;
+        heading.append(label);
+        viewMenuList.append(heading);
       }
-      const month = miniAnchor;
-      miniTitle.textContent = monthFormat.format(asDate(month.toString()));
-
-      const busyDays = new Set(calendar.events.map((item) => String(item.start).slice(0, 10)));
-      const firstOfMonth = month.with({ day: 1 });
-      const gridStart = firstOfMonth.subtract({ days: (firstOfMonth.dayOfWeek + 6) % 7 });
-      const anchorIso = anchor.toString();
-      const today = todayIso();
-
-      miniGrid.replaceChildren();
-      for (let index = 0; index < 7; index += 1) {
-        const head = document.createElement("span");
-        head.className = "sc-mini-dow";
-        head.textContent = dayFormat.format(asDate(gridStart.add({ days: index }).toString())).slice(0, 2);
-        miniGrid.append(head);
-      }
-      for (let index = 0; index < 42; index += 1) {
-        const date = gridStart.add({ days: index });
-        const iso = date.toString();
-        const cell = document.createElement("button");
-        cell.type = "button";
-        cell.className = "sc-mini-day";
-        cell.textContent = String(date.day);
-        cell.dataset.date = iso;
-        if (date.month !== month.month) cell.dataset.outside = "true";
-        if (iso === today) cell.dataset.today = "true";
-        if (iso === anchorIso) cell.dataset.anchor = "true";
-        if (busyDays.has(iso)) cell.dataset.events = "true";
-        cell.addEventListener("click", () => {
-          miniAnchor = date;
-          calendar.gotoDate(iso);
-        });
-        miniGrid.append(cell);
-      }
-    }
-
-    document.getElementById("mini-prev").addEventListener("click", () => {
-      miniAnchor = (miniAnchor ?? calendar.date).add({ months: -1 });
-      renderMiniMonth();
-    });
-    document.getElementById("mini-next").addEventListener("click", () => {
-      miniAnchor = (miniAnchor ?? calendar.date).add({ months: 1 });
-      renderMiniMonth();
-    });
-
-    // --- Room checklist ------------------------------------------------------
-    const roomList = document.getElementById("room-list");
-    const roomSummary = document.getElementById("room-summary");
-
-    function renderRooms() {
-      roomSummary.textContent = `${activeRooms.size}/${ROOMS.length}`;
-      roomList.replaceChildren();
-      for (const room of ROOMS) {
-        const item = document.createElement("li");
-        const label = document.createElement("label");
-        label.className = "sc-check";
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.className = "check";
-        input.checked = activeRooms.has(room.id);
-        input.addEventListener("change", () => {
-          if (input.checked) activeRooms.add(room.id);
-          else activeRooms.delete(room.id);
-          record(`rooms → ${[...activeRooms].join(", ") || "none"}`);
-          applyFilters();
-        });
-        const text = document.createElement("span");
-        text.textContent = room.title;
-        const count = document.createElement("span");
-        count.className = "sc-count-mini";
-        count.textContent = String(
-          inCurrentRange(visibleStore().filter((event) => event.resourceId === room.id)).length,
-        );
-        label.append(input, text, count);
-        item.append(label);
-        roomList.append(item);
-      }
-    }
-
-    // --- Kind legend (also a filter) -----------------------------------------
-    const kindLegend = document.getElementById("kind-legend");
-
-    function renderLegend() {
-      kindLegend.replaceChildren();
-      for (const kind of KINDS) {
-        const item = document.createElement("li");
-        const button = document.createElement("button");
-        button.type = "button";
-        button.dataset.kind = kind.id;
-        button.setAttribute("aria-pressed", String(activeKinds.has(kind.id)));
-        const swatch = document.createElement("span");
-        swatch.className = "sc-swatch";
-        const label = document.createElement("span");
-        label.textContent = kind.label;
-        const count = document.createElement("span");
-        count.className = "sc-count-mini";
-        count.textContent = String(
-          inCurrentRange(store.filter((event) => event.extendedProps?.kind === kind.id)).length,
-        );
-        button.append(swatch, label, count);
-        button.addEventListener("click", () => {
-          if (activeKinds.has(kind.id)) activeKinds.delete(kind.id);
-          else activeKinds.add(kind.id);
-          record(`kinds → ${[...activeKinds].join(", ") || "none"}`);
-          applyFilters();
-        });
-        item.append(button);
-        kindLegend.append(item);
-      }
-    }
-
-    // --- Navigation ----------------------------------------------------------
-    document.querySelector(".sc-views").addEventListener("click", (event) => {
-      const view = event.target.dataset?.view;
-      if (!view) return;
-      calendar.setView(view);
-    });
-    document.getElementById("nav-prev").addEventListener("click", () => calendar.prev());
-    document.getElementById("nav-next").addEventListener("click", () => calendar.next());
-    document.getElementById("nav-today").addEventListener("click", () => calendar.today());
-
-    // The core announces its own state changes; the shell just follows.
-    calendar.addEventListener("calendar:viewchange", () => refreshChrome());
-    calendar.addEventListener("calendar:datechange", () => refreshChrome());
-    calendar.addEventListener("calendar:loading", (event) => {
-      busy = event.detail.loading;
-      shell.dataset.busy = String(busy);
-      renderCockpit();
-    });
-    calendar.addEventListener("calendar:loaderror", (event) => {
-      record(`source error: ${event.detail?.error?.message ?? "unknown"}`);
-    });
-
-    // Simulated async source: abort + stale rejection are exercised by
-    // flipping views/dates quickly while it is active.
-    document.getElementById("source-mode").addEventListener("change", (event) => {
-      const slow = event.target.value === "slow";
-      calendar.configure({
-        eventSource: slow
-          ? async ({ signal }) => {
-              await new Promise((resolve, reject) => {
-                const timer = window.setTimeout(resolve, 600);
-                signal.addEventListener("abort", () => {
-                  window.clearTimeout(timer);
-                  reject(new DOMException("Aborted", "AbortError"));
-                }, { once: true });
-              });
-              record("slow source resolved (stale responses are dropped by the core)");
-              return visibleStore();
-            }
-          : undefined,
+      const item = document.createElement("li");
+      item.setAttribute("role", "none");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "menu-item";
+      button.setAttribute("role", "menuitemradio");
+      button.dataset.view = view.id;
+      const active = calendar.view === view.id;
+      button.setAttribute("aria-checked", String(active));
+      button.setAttribute("aria-pressed", String(active));
+      const iconSlot = document.createElement("span");
+      iconSlot.className = "menu-item-icon";
+      iconSlot.append(icon(view.icon));
+      const text = document.createElement("span");
+      text.className = "menu-item-text";
+      text.textContent = view.label;
+      const end = document.createElement("span");
+      end.className = "menu-item-end";
+      const key = document.createElement("kbd");
+      key.className = "key";
+      key.textContent = String(index + 1);
+      end.append(key, icon("check"));
+      end.lastElementChild.classList.add("sc-tick");
+      button.append(iconSlot, text, end);
+      button.addEventListener("click", () => {
+        viewMenu.hidePopover();
+        calendar.setView(view.id);
       });
-      if (slow) void calendar.refetchEvents();
-      else calendar.events = visibleStore();
+      item.append(button);
+      viewMenuList.append(item);
     });
 
-    // --- Creation sheet ------------------------------------------------------
-    const createDialog = document.getElementById("create-dialog");
-    /** @type {{ start: string, end: string, resourceId: string | null } | null} */
-    let pendingSlot = null;
+    const current = VIEWS.find((view) => view.id === calendar.view);
+    viewLabel.textContent = current?.label ?? calendar.view;
+    viewIcon.className = `ti ti-${current?.icon ?? "calendar-week"}`;
+    viewToggle.title = `View: ${current?.label ?? calendar.view}`;
+  }
 
-    /**
-     * @param {string} startIso
-     * @param {string} endIso
-     * @param {string | null} resourceId
-     */
-    function openCreate(startIso, endIso, resourceId) {
-      pendingSlot = { start: startIso, end: endIso, resourceId };
-      document.getElementById("create-date").textContent = longFormat.format(asDate(startIso));
-      document.getElementById("create-range").textContent = `${wallClock(startIso)} – ${wallClock(endIso)}`;
-      const minutes = wallMinutes(startIso, endIso);
-      document.getElementById("create-duration").textContent =
-        `${minutes} min${resourceId ? ` · ${roomTitle(resourceId)}` : ""}`;
-      createDialog.showModal();
+  // --- Toolbar and chrome --------------------------------------------------
+  const anchorLabel = document.getElementById("anchor-label");
+  const anchorLong = document.getElementById("anchor-long");
+  const anchorShort = document.getElementById("anchor-short");
+  const anchorSub = document.getElementById("anchor-sub");
+
+  function refreshChrome() {
+    const view = calendar.view;
+    const { start, end } = calendar.getVisibleRange();
+    const anchor = calendar.date.toString();
+    // The label describes what is rendered, which is not the anchor: `week`
+    // snaps to the civil week, and hidden days can move a range's first day.
+    // The anchor stays on the element for anything that needs the exact day.
+    const first = start.toString();
+    const last = end.subtract({ days: 1 }).toString();
+    anchorLabel.dataset.date = anchor;
+    if (view === "month") {
+      anchorLong.textContent = monthFormat.format(asDate(anchor));
+      anchorShort.textContent = monthFormat.format(asDate(anchor));
+    } else if (first === last) {
+      anchorLong.textContent = longFormat.format(asDate(first));
+      anchorShort.textContent = rangeFormat.format(asDate(first));
+    } else {
+      anchorLong.textContent = `${rangeFormat.format(asDate(first))} – ${rangeFormat.format(asDate(last))} ${last.slice(0, 4)}`;
+      anchorShort.textContent = `${shortFormat.format(asDate(first))} – ${shortFormat.format(asDate(last))}`;
+    }
+    // `weekOfYear` is the ISO week, which is what a room schedule is
+    // referred by; it needs no date library either.
+    if (view === "month") {
+      anchorSub.textContent = `${inCurrentRange(calendar.events).length} bookings`;
+    } else {
+      const zone = document.createElement("span");
+      zone.className = "sc-wide";
+      zone.textContent = ` · ${calendar.timeZone ?? ZONE}`;
+      anchorSub.replaceChildren(document.createTextNode(`week ${start.weekOfYear}`), zone);
     }
 
-    calendar.addEventListener("calendar:select", (event) => {
-      const detail = event.detail;
-      record(`select ${String(detail.start).slice(0, 16)} → ${String(detail.end).slice(0, 16)}${detail.resourceId ? ` · ${detail.resourceId}` : ""}`);
-      openCreate(String(detail.start), String(detail.end), detail.resourceId);
-    });
+    renderViewMenu();
+    refreshBackgrounds();
+    renderMiniMonth();
+    renderRooms();
+    renderLegend();
+    renderCockpit();
+  }
 
-    document.getElementById("new-booking").addEventListener("click", () => {
-      const room = ROOMS.find((item) => activeRooms.has(item.id));
-      const resourceId = calendar.view.startsWith("resource") ? (room?.id ?? null) : null;
-      openCreate(stamp(calendar.date, 9 * 60), stamp(calendar.date, 9 * 60 + 30), resourceId);
-    });
+  function renderCockpit() {
+    const inRange = inCurrentRange(calendar.events);
+    const now = nowStamp();
+    const upcoming = [...calendar.events]
+      .map((item) => ({ item, key: `${String(item.start).slice(0, 10)} ${wallClock(String(item.start))}` }))
+      .filter((entry) => entry.key >= now)
+      .sort((a, b) => (a.key < b.key ? -1 : 1))[0];
 
-    createDialog.addEventListener("click", (event) => {
-      const kind = event.target.closest("[data-create]")?.dataset?.create;
-      if (!kind || !pendingSlot) return;
-      const id = `${kind}-${Date.now()}`;
-      if (kind === "background") {
-        calendar.backgrounds = [...calendar.backgrounds, {
-          id,
-          title: "Blocked range",
-          start: pendingSlot.start,
-          end: pendingSlot.end,
-          ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
-        }];
-        record("background created from selection");
-      } else {
-        const created = {
-          id,
-          title: kind === "blocked" ? "Blocked — do not book" : "New booking",
-          start: pendingSlot.start,
-          end: pendingSlot.end,
-          ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
-          extendedProps: { kind: kind === "blocked" ? "blocked" : "review", seats: 2 },
-        };
-        store.push(created);
-        calendar.addEvent(created);
-        record(`event created: ${id}`);
-        refreshChrome();
+    const busiest = ROOMS.map((room) => ({
+      room,
+      count: inRange.filter((item) => item.resourceId === room.id).length,
+    })).sort((a, b) => b.count - a.count)[0];
+
+    cockpit.replaceChildren();
+    cockpit.append(
+      chip(
+        busy
+          ? [dot(), strong("Loading"), " from the event source"]
+          : [dot(), strong(String(inRange.length)), " bookings in view"],
+      ),
+      chip(upcoming
+        ? ["Next: ", strong(String(upcoming.item.title)), ` ${whenLabel(String(upcoming.item.start))} · ${roomTitle(String(upcoming.item.resourceId ?? ""))}`]
+        : ["Nothing scheduled after ", strong(now.slice(11))]),
+      chip([strong(`${activeRooms.size}/${ROOMS.length}`), " rooms shown"]),
+      chip(busiest && busiest.count > 0 ? ["Busiest: ", strong(busiest.room.title)] : ["No room loaded"]),
+      lastChip(),
+    );
+  }
+
+  /** The newest intent, so the log can stay closed without looking dead. */
+  function lastChip() {
+    const node = document.createElement("span");
+    node.className = "sc-last";
+    node.append(icon("history"));
+    const text = document.createElement("span");
+    text.textContent = lastIntent;
+    node.append(text);
+    return node;
+  }
+
+  /**
+   * `at 14:00` for today, `Fri 4 Sept, 09:00` otherwise.
+   * @param {string} iso
+   */
+  function whenLabel(iso) {
+    const day = iso.slice(0, 10);
+    const time = wallClock(iso);
+    if (day === todayIso()) return `at ${time}`;
+    return `${dayFormat.format(asDate(day))} ${rangeFormat.format(asDate(day))}, ${time}`;
+  }
+
+  /** @param {Array<string | Node>} parts */
+  function chip(parts) {
+    const node = document.createElement("span");
+    node.append(...parts);
+    return node;
+  }
+
+  /** @param {string} text */
+  function strong(text) {
+    const node = document.createElement("strong");
+    node.textContent = text;
+    return node;
+  }
+
+  function dot() {
+    const node = document.createElement("span");
+    node.className = "sc-dot";
+    return node;
+  }
+
+  // --- Mini month ----------------------------------------------------------
+  const miniGrid = document.getElementById("mini-grid");
+  const miniTitle = document.getElementById("mini-title");
+  let miniAnchor = null;
+
+  function renderMiniMonth() {
+    const anchor = calendar.date;
+    if (!miniAnchor || miniAnchor.year !== anchor.year || miniAnchor.month !== anchor.month) {
+      miniAnchor = anchor;
+    }
+    const month = miniAnchor;
+    const weeks = miniGrid.dataset.weeks === "true";
+    miniTitle.textContent = monthFormat.format(asDate(month.toString()));
+
+    const busyDays = new Set(calendar.events.map((item) => String(item.start).slice(0, 10)));
+    const firstOfMonth = month.with({ day: 1 });
+    const gridStart = firstOfMonth.subtract({ days: (firstOfMonth.dayOfWeek + 6) % 7 });
+    const anchorIso = anchor.toString();
+    const today = todayIso();
+
+    miniGrid.replaceChildren();
+    if (weeks) {
+      const corner = document.createElement("span");
+      corner.className = "sc-mini-dow";
+      corner.textContent = "";
+      corner.setAttribute("aria-hidden", "true");
+      miniGrid.append(corner);
+    }
+    for (let index = 0; index < 7; index += 1) {
+      const head = document.createElement("span");
+      head.className = "sc-mini-dow";
+      head.textContent = dayFormat.format(asDate(gridStart.add({ days: index }).toString())).slice(0, 2);
+      miniGrid.append(head);
+    }
+    for (let index = 0; index < 42; index += 1) {
+      const date = gridStart.add({ days: index });
+      const iso = date.toString();
+      if (weeks && index % 7 === 0) {
+        const week = document.createElement("span");
+        week.className = "sc-mini-week";
+        week.textContent = String(date.weekOfYear);
+        week.title = `ISO week ${date.weekOfYear}`;
+        miniGrid.append(week);
       }
-      pendingSlot = null;
-      createDialog.close();
-    });
-
-    // --- Detail sheet --------------------------------------------------------
-    const detailDialog = document.getElementById("detail-dialog");
-    /** @type {string | null} */
-    let detailId = null;
-
-    calendar.addEventListener("calendar:eventclick", (event) => {
-      const item = event.detail.event;
-      detailId = item.id;
-      document.getElementById("detail-title").textContent = item.title ?? "Booking";
-      document.getElementById("detail-meta").textContent =
-        `${longFormat.format(asDate(String(item.start)))} · ${wallClock(String(item.start))}–${wallClock(String(item.end))}` +
-        `${item.resourceId ? ` · ${roomTitle(String(item.resourceId))}` : ""} · ${item.extendedProps?.seats ?? "?"} seats`;
-      record(`eventclick: ${item.id}`);
-      detailDialog.showModal();
-    });
-
-    /**
-     * Wall-clock +1h on the ISO string keeps the demo free of date math;
-     * a real application would use Temporal here.
-     * @param {string} iso
-     */
-    function shiftHour(iso) {
-      return iso.replace(/T(\d{2}):/, (_, hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
-    }
-
-    /** @param {string} id */
-    function shiftStored(id) {
-      const stored = store.find((item) => item.id === id);
-      if (stored) {
-        stored.start = shiftHour(stored.start);
-        stored.end = shiftHour(stored.end);
-      }
-    }
-
-    document.getElementById("detail-shift").addEventListener("click", () => {
-      if (!detailId) return;
-      const item = calendar.getEventById(detailId);
-      if (!item) return;
-      const moved = calendar.moveEvent(detailId, {
-        start: shiftHour(String(item.start)),
-        end: shiftHour(String(item.end)),
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "sc-mini-day";
+      cell.textContent = String(date.day);
+      cell.dataset.date = iso;
+      if (date.month !== month.month) cell.dataset.outside = "true";
+      if (iso === today) cell.dataset.today = "true";
+      if (iso === anchorIso) cell.dataset.anchor = "true";
+      if (busyDays.has(iso)) cell.dataset.events = "true";
+      cell.addEventListener("click", () => {
+        miniAnchor = date;
+        calendar.gotoDate(iso);
       });
-      if (moved) shiftStored(detailId);
-      record(moved ? `eventmove committed: ${detailId} (+1h, revert available)` : `eventmove rejected: ${detailId}`);
-      detailDialog.close();
-    });
+      miniGrid.append(cell);
+    }
+  }
 
-    document.getElementById("detail-delete").addEventListener("click", () => {
-      if (detailId && calendar.removeEvent(detailId)) {
-        store = store.filter((item) => item.id !== detailId);
-        record(`removed: ${detailId}`);
-        refreshChrome();
-      }
-      detailId = null;
-      detailDialog.close();
-    });
+  document.getElementById("mini-prev").addEventListener("click", () => {
+    miniAnchor = (miniAnchor ?? calendar.date).add({ months: -1 });
+    renderMiniMonth();
+  });
+  document.getElementById("mini-next").addEventListener("click", () => {
+    miniAnchor = (miniAnchor ?? calendar.date).add({ months: 1 });
+    renderMiniMonth();
+  });
 
-    // Pointer drag/resize also has to reach the application store.
-    calendar.addEventListener("calendar:eventmove", (event) => {
-      const detail = event.detail;
-      const stored = store.find((item) => item.id === detail.event?.id);
-      if (stored) {
-        stored.start = String(detail.event.start);
-        stored.end = String(detail.event.end);
-        if (detail.event.resourceId) stored.resourceId = detail.event.resourceId;
-      }
-      record(`eventmove: ${detail.event?.id}`);
-    });
-    calendar.addEventListener("calendar:eventresize", (event) => {
-      const detail = event.detail;
-      const stored = store.find((item) => item.id === detail.event?.id);
-      if (stored) {
-        stored.start = String(detail.event.start);
-        stored.end = String(detail.event.end);
-      }
-      record(`eventresize: ${detail.event?.id}`);
-    });
+  // --- Room checklist ------------------------------------------------------
+  const roomList = document.getElementById("room-list");
+  const roomSummary = document.getElementById("room-summary");
 
-    // --- Context menu (core intent, app menu) ---------------------------------
-    const menu = document.getElementById("context-menu");
-    calendar.addEventListener("calendar:eventcontextmenu", (event) => {
+  function renderRooms() {
+    roomSummary.textContent = `${activeRooms.size}/${ROOMS.length}`;
+    roomList.replaceChildren();
+    for (const room of ROOMS) {
+      const item = document.createElement("li");
+      const label = document.createElement("label");
+      label.className = "sc-check";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.className = "check";
+      input.checked = activeRooms.has(room.id);
+      input.addEventListener("change", () => {
+        if (input.checked) activeRooms.add(room.id);
+        else activeRooms.delete(room.id);
+        record(`rooms → ${[...activeRooms].join(", ") || "none"}`);
+        applyFilters();
+      });
+      const text = document.createElement("span");
+      text.textContent = room.title;
+      const count = document.createElement("span");
+      count.className = "sc-count-mini";
+      count.textContent = String(
+        inCurrentRange(visibleStore().filter((event) => event.resourceId === room.id)).length,
+      );
+      label.append(input, text, count);
+      item.append(label);
+      roomList.append(item);
+    }
+  }
+
+  // --- Kind legend (also a filter) -----------------------------------------
+  const kindLegend = document.getElementById("kind-legend");
+
+  function renderLegend() {
+    kindLegend.replaceChildren();
+    for (const kind of KINDS) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.kind = kind.id;
+      button.setAttribute("aria-pressed", String(activeKinds.has(kind.id)));
+      const swatch = document.createElement("span");
+      swatch.className = "sc-swatch";
+      const label = document.createElement("span");
+      label.textContent = kind.label;
+      const count = document.createElement("span");
+      count.className = "sc-count-mini";
+      count.textContent = String(
+        inCurrentRange(store.filter((event) => event.extendedProps?.kind === kind.id)).length,
+      );
+      button.append(swatch, label, count);
+      button.addEventListener("click", () => {
+        if (activeKinds.has(kind.id)) activeKinds.delete(kind.id);
+        else activeKinds.add(kind.id);
+        record(`kinds → ${[...activeKinds].join(", ") || "none"}`);
+        applyFilters();
+      });
+      item.append(button);
+      kindLegend.append(item);
+    }
+  }
+
+  // --- Booking rules, written from the constants the guard enforces --------
+  function renderRules() {
+    const rules = [
+      ["clock-hour-8", `Bookings run ${clock(POLICY.opensAt)} – ${clock(POLICY.closesAt)}; closed hours are shaded.`],
+      ["hourglass-low", `A booking cannot exceed ${POLICY.maxMinutes / 60} hours.`],
+      ["ban", "Hatched ranges are non-bookable; a drop landing on one is refused."],
+      ["beach", "Saturdays are view-only, Sundays are not rendered."],
+      ["lock", "Maintenance is owned by facilities and cannot be dragged."],
+      ["clipboard-check", "Deadlines are confirmed by the desk, and rolled back if refused."],
+    ];
+    const list = document.getElementById("rules");
+    list.replaceChildren();
+    for (const [name, text] of rules) {
+      const item = document.createElement("li");
+      const label = document.createElement("span");
+      label.textContent = text;
+      item.append(icon(name), label);
+      list.append(item);
+    }
+  }
+
+  // --- Boot ---------------------------------------------------------------
+  // A phone opens on a single day: the grid is what the user came for.
+  if (window.innerWidth < 640) calendar.setView("day");
+  store = seedStore();
+  calendar.resources = ROOMS;
+  calendar.events = visibleStore();
+
+  function applyFilters() {
+    calendar.resources = ROOMS.filter((room) => activeRooms.has(room.id));
+    calendar.events = visibleStore();
+    backgroundKey = "";
+    refreshChrome();
+  }
+
+  // --- Navigation ----------------------------------------------------------
+  document.getElementById("nav-prev").addEventListener("click", () => calendar.prev());
+  document.getElementById("nav-next").addEventListener("click", () => calendar.next());
+  document.getElementById("nav-today").addEventListener("click", () => calendar.today());
+
+  // The core announces its own state changes; the shell just follows.
+  calendar.addEventListener("calendar:viewchange", () => refreshChrome());
+  calendar.addEventListener("calendar:datechange", () => refreshChrome());
+  calendar.addEventListener("calendar:loading", (event) => {
+    busy = event.detail.loading;
+    shell.dataset.busy = String(busy);
+    renderCockpit();
+  });
+  calendar.addEventListener("calendar:loaderror", (event) => {
+    record(`source error: ${event.detail?.error?.message ?? "unknown"}`);
+    toast(`The event source failed: ${event.detail?.error?.message ?? "unknown"}`, "warning");
+  });
+  // Nodes are rebuilt on every render, so an overlay anchored to one has
+  // to let go rather than follow a detached reference.
+  calendar.addEventListener("calendar:render", () => hideTip());
+
+  // --- Overlays: platform first, geometry second ---------------------------
+  /**
+   * Wires one anchored popover. `popovertarget` opens it, the platform
+   * closes it (light dismiss and Escape), and `floating` places it while
+   * it is open - including while the calendar scroller moves under it.
+   *
+   * @param {HTMLElement} menu
+   * @param {HTMLElement} trigger
+   * @param {object} [options] floating placement options
+   */
+  function anchorPopover(menu, trigger, options = {}) {
+    const place = { placement: "bottom-end", distance: 6, ...options };
+    /** @type {(() => void) | undefined} */
+    let stop;
+    menu.addEventListener("toggle", (event) => {
+      const open = event.newState === "open";
+      trigger.setAttribute("aria-expanded", String(open));
+      stop?.();
+      stop = undefined;
+      if (!open) return;
+      const run = () => reposition(trigger, menu, place);
+      run();
+      stop = autoUpdate(trigger, menu, run);
+    });
+  }
+
+  const toolsMenu = document.getElementById("tools-menu");
+  const accountMenu = document.getElementById("account-menu");
+  anchorPopover(viewMenu, viewToggle);
+  anchorPopover(toolsMenu, document.getElementById("tools-toggle"));
+  anchorPopover(accountMenu, document.getElementById("account-toggle"));
+
+  // --- Toast: a refusal has to say why ------------------------------------
+  const toastNode = document.getElementById("toast");
+  let toastTimer = 0;
+
+  /**
+   * @param {string} message
+   * @param {"danger" | "warning" | "success"} [intent]
+   */
+  function toast(message, intent = "danger") {
+    window.clearTimeout(toastTimer);
+    toastNode.className = `status-bar sc-toast is-open ${intent}`;
+    toastNode.replaceChildren(
+      icon(intent === "success" ? "circle-check" : "alert-triangle"),
+      document.createTextNode(message),
+    );
+    toastTimer = window.setTimeout(() => toastNode.classList.remove("is-open"), 4200);
+  }
+
+  // --- Move and resize: the application refuses what it cannot honour -----
+  /**
+   * @param {CustomEvent} event
+   * @param {"move" | "resize"} kind
+   */
+  function guard(event, kind) {
+    const detail = event.detail;
+    const start = String(detail.current.start);
+    const end = String(detail.current.end);
+    const resourceId = detail.current.resourceId ?? detail.event?.resourceId ?? null;
+    const reason = violation({ start, end, resourceId });
+    if (reason) {
+      // Synchronous refusal: the core reverts the optimistic change itself.
       event.preventDefault();
-      const detail = event.detail;
-      const native = detail.nativeEvent;
-      menu.replaceChildren();
-      const targetId = detail.event?.id ?? null;
-      const actions = targetId
-        ? [["Move +1h", "shift"], ["Delete", "delete"]]
-        : [["Create here", "create"]];
-      for (const [label, action] of actions) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "btn sm neutral ghost";
-        button.textContent = label;
-        button.addEventListener("click", () => {
-          menu.hidden = true;
-          if (action === "delete" && targetId) {
-            calendar.removeEvent(targetId);
-            store = store.filter((item) => item.id !== targetId);
-            record(`removed via menu: ${targetId}`);
-            refreshChrome();
-          } else if (action === "shift" && targetId) {
-            const item = calendar.getEventById(targetId);
-            if (item) {
-              calendar.moveEvent(targetId, {
-                start: shiftHour(String(item.start)),
-                end: shiftHour(String(item.end)),
-              });
-              shiftStored(targetId);
-            }
-          } else if (action === "create") {
-            record(`menu on empty slot: ${String(detail.date)} ${String(detail.time)} — use drag-select to create`);
-          }
-        });
-        menu.append(button);
-      }
-      menu.style.left = `${Math.min(native?.clientX ?? 100, window.innerWidth - 200)}px`;
-      menu.style.top = `${Math.min(native?.clientY ?? 100, window.innerHeight - 140)}px`;
-      menu.hidden = false;
-      record(`eventcontextmenu: ${targetId ?? "empty slot"}`);
-    });
-    document.addEventListener("click", (event) => {
-      if (!menu.hidden && !menu.contains(event.target)) menu.hidden = true;
-    });
-
-    // The core reports that a month day has more than it can show; this
-    // application answers by opening that day.
-    calendar.addEventListener("calendar:moreclick", (event) => {
-      const { date, hidden } = event.detail;
-      calendar.gotoDate(String(date));
-      calendar.setView("day");
-      record(`moreclick: ${date} (+${hidden} not shown) - opened the day`);
-    });
-
-    // --- Search: navigation primitives, application index ----------------------
-    const toolsSearch = document.getElementById("tools-search");
-    const toolsResults = document.getElementById("tools-results");
-
-    function focusSearch() {
-      openDrawer(true);
-      toolsSearch.focus();
-      toolsSearch.select();
+      record(`event${kind} refused: ${reason}`);
+      toast(reason);
+      return;
     }
 
-    document.getElementById("tools-toggle").addEventListener("click", focusSearch);
+    const stored = store.find((item) => item.id === detail.event?.id);
+    if (stored) {
+      stored.start = start;
+      stored.end = end;
+      if (resourceId) stored.resourceId = resourceId;
+    }
+    record(`event${kind}: ${detail.event?.id} → ${wallClock(start)}–${wallClock(end)}`);
 
-    toolsSearch.addEventListener("input", () => {
-      const query = toolsSearch.value.trim().toLowerCase();
-      toolsResults.replaceChildren();
-      if (query.length < 2) return;
-      const hits = store
-        .filter((item) =>
-          `${item.title} ${roomTitle(String(item.resourceId ?? ""))}`.toLowerCase().includes(query))
-        .sort((a, b) => (a.start < b.start ? -1 : 1))
-        .slice(0, 8);
-      if (hits.length === 0) {
-        const empty = document.createElement("li");
-        empty.className = "muted";
-        empty.textContent = "No loaded booking matches — a backend search would live here.";
-        toolsResults.append(empty);
-        return;
-      }
-      for (const hit of hits) {
-        const row = document.createElement("li");
-        const button = document.createElement("button");
-        button.type = "button";
-        const title = document.createElement("strong");
-        title.textContent = hit.title;
-        const meta = document.createElement("small");
-        meta.textContent = `${rangeFormat.format(asDate(String(hit.start)))} · ${wallClock(String(hit.start))} · ${roomTitle(String(hit.resourceId ?? ""))}`;
-        button.append(title, meta);
-        button.addEventListener("click", () => {
-          calendar.gotoDate(String(hit.start).slice(0, 10));
-          calendar.scrollToTime(wallClock(String(hit.start)));
-          record(`search → ${hit.id}`);
-          openDrawer(false);
-          requestAnimationFrame(() => requestAnimationFrame(() => {
-            calendar.querySelector(`[data-event-id="${CSS.escape(hit.id)}"]`)?.focus();
-          }));
-        });
-        row.append(button);
-        toolsResults.append(row);
-      }
-    });
+    // The asynchronous half of the same contract: accepted optimistically,
+    // then rolled back with `revert()` once the round-trip answers. The
+    // core does not need to know the answer took time.
+    const kindName = detail.event?.extendedProps?.kind ?? "review";
+    if (POLICY.reviewedKinds.includes(kindName)) {
+      const previousStart = String(detail.previous.start);
+      const previousEnd = String(detail.previous.end);
+      const previousRoom = detail.previous.resourceId;
+      window.setTimeout(() => {
+        detail.revert();
+        if (stored) {
+          stored.start = previousStart;
+          stored.end = previousEnd;
+          if (previousRoom) stored.resourceId = previousRoom;
+        }
+        record(`event${kind} rolled back by the desk: ${detail.event?.id}`);
+        toast("The scheduling desk did not confirm that deadline — reverted.", "warning");
+        refreshChrome();
+      }, POLICY.reviewDelay);
+      return;
+    }
+    refreshChrome();
+  }
 
-    // --- Realtime stand-ins ----------------------------------------------------
-    document.getElementById("rt-add").addEventListener("click", () => {
+  calendar.addEventListener("calendar:eventmove", (event) => guard(event, "move"));
+  calendar.addEventListener("calendar:eventresize", (event) => guard(event, "resize"));
+
+  // --- Creation sheet ------------------------------------------------------
+  const createDialog = document.getElementById("create-dialog");
+  /** @type {{ start: string, end: string, resourceId: string | null } | null} */
+  let pendingSlot = null;
+
+  /**
+   * @param {string} startIso
+   * @param {string} endIso
+   * @param {string | null} resourceId
+   */
+  function openCreate(startIso, endIso, resourceId) {
+    pendingSlot = { start: startIso, end: endIso, resourceId };
+    document.getElementById("create-date").textContent = longFormat.format(asDate(startIso));
+    document.getElementById("create-range").textContent = `${wallClock(startIso)} – ${wallClock(endIso)}`;
+    const minutes = wallMinutes(startIso, endIso);
+    document.getElementById("create-duration").textContent =
+      `${minutes} min${resourceId ? ` · ${roomTitle(resourceId)}` : ""}`;
+    createDialog.showModal();
+  }
+
+  calendar.addEventListener("calendar:select", (event) => {
+    const detail = event.detail;
+    const start = String(detail.start);
+    const end = String(detail.end);
+    const resourceId = detail.resourceId;
+    // A slot that cannot take a drop cannot take a booking either: the same
+    // rule answers both, so the shell never offers what it will refuse.
+    const reason = violation({ start, end, resourceId });
+    if (reason) {
+      event.preventDefault();
+      record(`select refused: ${reason}`);
+      toast(reason);
+      return;
+    }
+    record(`select ${start.slice(0, 16)} → ${end.slice(0, 16)}${resourceId ? ` · ${resourceId}` : ""}`);
+    openCreate(start, end, resourceId);
+  });
+
+  document.getElementById("new-booking").addEventListener("click", () => {
+    const room = ROOMS.find((item) => activeRooms.has(item.id));
+    const resourceId = calendar.view.startsWith("resource") ? (room?.id ?? null) : null;
+    if (sidebar.matches(":popover-open")) sidebar.hidePopover();
+    openCreate(stamp(calendar.date, 9 * 60), stamp(calendar.date, 9 * 60 + 30), resourceId);
+  });
+
+  createDialog.addEventListener("click", (event) => {
+    const kind = event.target.closest("[data-create]")?.dataset?.create;
+    if (!kind || !pendingSlot) return;
+    const id = `${kind}-${Date.now()}`;
+    if (kind === "background") {
+      backgroundKey = "";
+      calendar.backgrounds = [...calendar.backgrounds, {
+        id,
+        title: "Blocked range",
+        start: pendingSlot.start,
+        end: pendingSlot.end,
+        classNames: ["sc-blocked"],
+        ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
+      }];
+      record("background created from selection");
+    } else {
       const created = {
-        id: `pushed-${Date.now()}`,
-        title: "Pushed booking",
-        start: stamp(calendar.date, 13 * 60),
-        end: stamp(calendar.date, 13 * 60 + 30),
-        resourceId: "room-a",
-        extendedProps: { kind: "planning", seats: 5 },
+        id,
+        title: kind === "blocked" ? "Blocked — do not book" : "New booking",
+        start: pendingSlot.start,
+        end: pendingSlot.end,
+        ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
+        extendedProps: { kind: kind === "blocked" ? "blocked" : "review", seats: 2 },
       };
       store.push(created);
+      markFresh(id);
       calendar.addEvent(created);
-      record(`realtime add: ${created.id}`);
+      record(`event created: ${id}`);
       refreshChrome();
-    });
+    }
+    pendingSlot = null;
+    createDialog.close();
+  });
 
-    document.getElementById("rt-move").addEventListener("click", () => {
-      const item = calendar.getEventById("live");
-      if (!item) {
-        record("realtime move: “Live sync” no longer exists");
-        return;
-      }
-      calendar.moveEvent("live", {
+  /**
+   * A new booking gets an aura for a few seconds. The flag lives in the
+   * application, and `eventContent` puts it on the node, so re-renders in
+   * between keep it without a second source of truth.
+   * @param {string} id
+   */
+  function markFresh(id) {
+    fresh.add(id);
+    window.setTimeout(() => {
+      fresh.delete(id);
+      const node = calendar.querySelector(`[data-event-id="${CSS.escape(id)}"]`);
+      if (node instanceof HTMLElement) delete node.dataset.fresh;
+    }, 4600);
+  }
+
+  // --- Detail sheet --------------------------------------------------------
+  const detailDialog = document.getElementById("detail-dialog");
+  /** @type {string | null} */
+  let detailId = null;
+
+  calendar.addEventListener("calendar:eventclick", (event) => {
+    const item = event.detail.event;
+    openDetail(item);
+    record(`eventclick: ${item.id}`);
+  });
+
+  /** @param {any} item */
+  function openDetail(item) {
+    detailId = item.id;
+    const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
+    document.getElementById("detail-title").textContent = item.title ?? "Booking";
+    document.getElementById("detail-meta").textContent =
+      `${longFormat.format(asDate(String(item.start)))} · ${wallClock(String(item.start))}–${wallClock(String(item.end))}` +
+      `${item.resourceId ? ` · ${roomTitle(String(item.resourceId))}` : ""} · ${item.extendedProps?.seats ?? "?"} seats` +
+      `${locked ? " · locked by facilities" : ""}`;
+    document.getElementById("detail-shift").disabled = locked;
+    detailDialog.showModal();
+  }
+
+  /**
+   * Wall-clock +1h on the ISO string keeps the demo free of date math;
+   * a real application would use Temporal here.
+   * @param {string} iso
+   */
+  function shiftHour(iso) {
+    return iso.replace(/T(\d{2}):/, (_, hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
+  }
+
+  /** @param {string} id */
+  function shiftById(id) {
+    const item = calendar.getEventById(id);
+    if (!item) return false;
+    // The same optimistic commit as a drag, so the same rules apply: a
+    // refused command reports itself through `calendar:eventmove`.
+    return Boolean(
+      calendar.moveEvent(id, {
         start: shiftHour(String(item.start)),
         end: shiftHour(String(item.end)),
+      }),
+    );
+  }
+
+  document.getElementById("detail-shift").addEventListener("click", () => {
+    if (detailId) shiftById(detailId);
+    detailDialog.close();
+  });
+
+  document.getElementById("detail-delete").addEventListener("click", () => {
+    if (detailId && calendar.removeEvent(detailId)) {
+      store = store.filter((item) => item.id !== detailId);
+      record(`removed: ${detailId}`);
+      refreshChrome();
+    }
+    detailId = null;
+    detailDialog.close();
+  });
+
+  // --- Context menu (core intent, app menu) --------------------------------
+  const contextMenu = document.getElementById("context-menu");
+  const contextMenuList = contextMenu;
+
+  // A drag suppresses the hover tooltip.
+  let dragging = false;
+  // Whether a pointer is currently pressed, captured once for the overlays
+  // that have to cooperate with the platform's own dismissal.
+  let pointerDown = false;
+  document.addEventListener("pointerdown", () => {
+    pointerDown = true;
+  }, true);
+  document.addEventListener("pointerup", () => {
+    pointerDown = false;
+    dragging = false;
+  }, true);
+
+  /**
+   * `popover=auto` light dismiss closes on the pointer *release*, measured
+   * against the element the press started on. Engines disagree on whether
+   * `contextmenu` is dispatched before or after that release, so a menu
+   * opened during the press is closed again by it. Waiting for the release
+   * keeps the platform's dismissal instead of re-implementing it.
+   *
+   * @param {() => void} run
+   */
+  function afterPointerRelease(run) {
+    if (!pointerDown) {
+      run();
+      return;
+    }
+    document.addEventListener("pointerup", () => window.setTimeout(run, 0), { once: true });
+  }
+
+  /**
+   * @param {Array<{ label: string, icon: string, danger?: boolean, disabled?: boolean, run: () => void }>} actions
+   * @param {number} x
+   * @param {number} y
+   */
+  function openContextMenu(actions, x, y) {
+    contextMenuList.replaceChildren();
+    for (const action of actions) {
+      const item = document.createElement("li");
+      item.setAttribute("role", "none");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `menu-item${action.danger ? " danger" : ""}`;
+      button.setAttribute("role", "menuitem");
+      button.disabled = Boolean(action.disabled);
+      const iconSlot = document.createElement("span");
+      iconSlot.className = "menu-item-icon";
+      iconSlot.append(icon(action.icon));
+      const text = document.createElement("span");
+      text.className = "menu-item-text";
+      text.textContent = action.label;
+      button.append(iconSlot, text);
+      button.addEventListener("click", () => {
+        contextMenu.hidePopover();
+        action.run();
       });
-      shiftStored("live");
-      record("realtime move: “Live sync” +1h");
+      item.append(button);
+      contextMenuList.append(item);
+    }
+    afterPointerRelease(() => {
+      if (contextMenu.matches(":popover-open")) contextMenu.hidePopover();
+      contextMenu.showPopover();
+      // Coordinate-driven placement: no reference element exists, and the
+      // menu clamps itself to the viewport instead of guessing its own size.
+      repositionAt(x, y, contextMenu, { placement: "bottom-start", distance: 2 });
     });
+  }
 
-    document.getElementById("rt-remove").addEventListener("click", () => {
-      if (calendar.removeEvent("live")) {
-        store = store.filter((item) => item.id !== "live");
-        record("realtime remove: “Live sync”");
-        refreshChrome();
-      } else {
-        record("realtime remove: already gone");
-      }
-    });
+  calendar.addEventListener("calendar:eventcontextmenu", (event) => {
+    event.preventDefault();
+    const detail = event.detail;
+    hideTip();
+    const item = detail.event;
+    const x = detail.clientX ?? detail.nativeEvent?.clientX ?? 0;
+    const y = detail.clientY ?? detail.nativeEvent?.clientY ?? 0;
 
-    // --- Shell chrome ----------------------------------------------------------
-    const scrim = document.getElementById("sidebar-scrim");
-    const sidebarToggle = document.getElementById("sidebar-toggle");
-
-    /** @param {boolean} open */
-    function openDrawer(open) {
-      shell.dataset.drawer = open ? "open" : "closed";
-      sidebarToggle.setAttribute("aria-expanded", String(open));
-      scrim.hidden = !open;
+    if (item) {
+      const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
+      openContextMenu([
+        { label: "Open booking", icon: "arrow-up-right", run: () => openDetail(item) },
+        { label: "Move +1h", icon: "clock-play", disabled: locked, run: () => shiftById(String(item.id)) },
+        { label: "Duplicate", icon: "copy", run: () => duplicate(item) },
+        {
+          label: "Delete",
+          icon: "trash",
+          danger: true,
+          disabled: locked,
+          run: () => {
+            if (!calendar.removeEvent(item.id)) return;
+            store = store.filter((entry) => entry.id !== item.id);
+            record(`removed via menu: ${item.id}`);
+            refreshChrome();
+          },
+        },
+      ], x, y);
+      record(`eventcontextmenu: ${item.id}`);
+      return;
     }
 
-    sidebarToggle.addEventListener("click", () => openDrawer(shell.dataset.drawer !== "open"));
-    scrim.addEventListener("click", () => openDrawer(false));
+    // Empty slot: `time` is already slot-snapped, so the menu can propose a
+    // real range instead of telling the user to drag.
+    const date = String(detail.date);
+    const minutes = detail.time ? wallMinutesOf(`0000-00-00T${String(detail.time)}`) : POLICY.opensAt;
+    const resourceId = detail.resourceId ?? null;
+    openContextMenu([
+      {
+        label: "Book 30 minutes here",
+        icon: "calendar-plus",
+        run: () => {
+          const start = `${date}T${clock(minutes)}:00+02:00[${ZONE}]`;
+          const end = `${date}T${clock(minutes + 30)}:00+02:00[${ZONE}]`;
+          const reason = violation({ start, end, resourceId });
+          if (reason) {
+            record(`create refused: ${reason}`);
+            toast(reason);
+            return;
+          }
+          openCreate(start, end, resourceId);
+        },
+      },
+      {
+        label: "Block this hour",
+        icon: "ban",
+        run: () => {
+          const id = `blocked-${Date.now()}`;
+          backgroundKey = "";
+          calendar.backgrounds = [...calendar.backgrounds, {
+            id,
+            title: "Blocked by the operator",
+            start: `${date}T${clock(minutes)}:00+02:00[${ZONE}]`,
+            end: `${date}T${clock(minutes + 60)}:00+02:00[${ZONE}]`,
+            classNames: ["sc-blocked"],
+            ...(resourceId ? { resourceId } : {}),
+          }];
+          record(`blocked ${date} ${clock(minutes)} for an hour`);
+        },
+      },
+    ], x, y);
+    record(`eventcontextmenu: empty slot ${date} ${clock(minutes)}`);
+  });
 
-    const focusToggle = document.getElementById("focus-toggle");
-    focusToggle.addEventListener("click", () => {
-      const on = shell.dataset.focus !== "true";
-      shell.dataset.focus = String(on);
-      focusToggle.setAttribute("aria-pressed", String(on));
-    });
-
-    document.getElementById("theme-switcher").addEventListener("change", (event) => {
-      const value = event.target.value;
-      if (value) document.documentElement.dataset.theme = value;
-      else document.documentElement.removeAttribute("data-theme");
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        menu.hidden = true;
-        openDrawer(false);
-        return;
-      }
-      const target = event.target;
-      const typing = target instanceof HTMLElement &&
-        (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
-      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key === "/") {
-        event.preventDefault();
-        focusSearch();
-      } else if (event.key === "t" || event.key === "T") {
-        calendar.today();
-      } else if (event.key === "ArrowLeft") {
-        calendar.prev();
-      } else if (event.key === "ArrowRight") {
-        calendar.next();
-      } else if (event.key === "f" || event.key === "F") {
-        focusToggle.click();
-      }
-    });
-
-    // Narrow viewports open on a single day, with the log out of the way.
-    if (window.innerWidth < 1024) document.getElementById("dock").open = false;
-    if (window.innerWidth < 640) calendar.setView("day");
+  /** @param {any} item */
+  function duplicate(item) {
+    const id = `copy-${Date.now()}`;
+    const created = {
+      id,
+      title: `${item.title} (copy)`,
+      start: String(item.start),
+      end: String(item.end),
+      ...(item.resourceId ? { resourceId: String(item.resourceId) } : {}),
+      extendedProps: { ...item.extendedProps },
+    };
+    store.push(created);
+    markFresh(id);
+    calendar.addEvent(created);
+    record(`duplicated ${item.id} → ${id}`);
     refreshChrome();
-    calendar.scrollToTime("08:00");
-    record("shell ready: core renders, app owns the chrome");
-  })();
+  }
+
+  // The core reports that a month day has more than it can show; this
+  // application answers by opening that day.
+  calendar.addEventListener("calendar:moreclick", (event) => {
+    const { date, hidden } = event.detail;
+    calendar.gotoDate(String(date));
+    calendar.setView("day");
+    record(`moreclick: ${date} (+${hidden} not shown) - opened the day`);
+  });
+
+  // --- Hover intent --------------------------------------------------------
+  // Short cards drop their tag and their meta line; the tooltip is where
+  // the application gives that detail back. No core hook is involved:
+  // events carry `data-event-id`, and that is enough.
+  const tip = document.getElementById("event-tip");
+  /** @type {(() => void) | undefined} */
+  let tipStop;
+  let tipTimer = 0;
+  let tipId = "";
+
+  function hideTip() {
+    window.clearTimeout(tipTimer);
+    tipStop?.();
+    tipStop = undefined;
+    tipId = "";
+    if (tip.matches(":popover-open")) tip.hidePopover();
+  }
+
+  /**
+   * @param {HTMLElement} node
+   * @param {any} item
+   */
+  function showTip(node, item) {
+    const kind = item.extendedProps?.kind ?? "review";
+    const start = String(item.start);
+    const end = String(item.end);
+    tip.replaceChildren();
+    tip.dataset.kind = kind;
+
+    const title = document.createElement("strong");
+    title.textContent = item.title ?? "Booking";
+    const rows = document.createElement("dl");
+    /** @param {string} label @param {string} value */
+    const row = (label, value) => {
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      rows.append(dt, dd);
+    };
+    row("When", `${longFormat.format(asDate(start))}, ${wallClock(start)}–${wallClock(end)}`);
+    row("Room", roomTitle(String(item.resourceId ?? "")));
+    row("Kind", kind);
+    row("Seats", String(item.extendedProps?.seats ?? "?"));
+    tip.append(title, rows);
+
+    if (POLICY.lockedKinds.includes(kind)) {
+      const note = document.createElement("p");
+      note.className = "sc-tip-note";
+      note.style.margin = "0";
+      note.append(icon("lock"));
+      note.append(document.createTextNode("Locked by facilities"));
+      tip.append(note);
+    } else if (POLICY.reviewedKinds.includes(kind)) {
+      const note = document.createElement("p");
+      note.className = "sc-tip-note";
+      note.style.margin = "0";
+      note.append(icon("clipboard-check"));
+      note.append(document.createTextNode("Moves need desk confirmation"));
+      tip.append(note);
+    }
+
+    tip.showPopover();
+    const place = () => reposition(node, tip, { placement: "right-start", distance: 8 });
+    place();
+    // The calendar scroller moves independently of the page, so an overlay
+    // anchored to an event has to follow the scroller, not the document.
+    tipStop = autoUpdate(node, tip, place);
+  }
+
+  calendar.addEventListener("pointerover", (event) => {
+    if (event.pointerType !== "mouse" || dragging) return;
+    const node = event.target instanceof Element ? event.target.closest("[data-event-id]") : null;
+    if (!(node instanceof HTMLElement)) return;
+    const id = node.dataset.eventId ?? "";
+    if (!id || id === tipId) return;
+    const item = calendar.getEventById(id);
+    if (!item) return;
+    hideTip();
+    tipId = id;
+    tipTimer = window.setTimeout(() => showTip(node, item), 140);
+  });
+
+  calendar.addEventListener("pointerout", (event) => {
+    const node = event.target instanceof Element ? event.target.closest("[data-event-id]") : null;
+    if (!node) return;
+    const next = event.relatedTarget;
+    if (next instanceof Node && node.contains(next)) return;
+    hideTip();
+  });
+
+  calendar.addEventListener("pointerdown", () => {
+    dragging = true;
+    hideTip();
+  });
+
+  // --- Tools menu ----------------------------------------------------------
+  const sources = {
+    local: undefined,
+    slow: async ({ signal }) => {
+      await new Promise((resolve, reject) => {
+        const timer = window.setTimeout(resolve, 600);
+        signal.addEventListener("abort", () => {
+          window.clearTimeout(timer);
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      });
+      record("slow source resolved (stale responses are dropped by the core)");
+      return visibleStore();
+    },
+    failing: async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      throw new Error("room service unavailable");
+    },
+  };
+
+  const sourceMenu = document.getElementById("source-menu");
+  sourceMenu.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-source]");
+    if (!button) return;
+    const mode = button.dataset.source;
+    for (const item of sourceMenu.querySelectorAll("[data-source]")) {
+      item.setAttribute("aria-checked", String(item === button));
+    }
+    calendar.configure({ eventSource: sources[mode] });
+    record(`event source → ${mode}`);
+    if (mode === "local") calendar.events = visibleStore();
+    else void calendar.refetchEvents();
+  });
+
+  // Grid density and derivation options, all of them `configure()` calls.
+  const gridMenu = document.getElementById("grid-menu");
+  gridMenu.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-grid]");
+    if (!button) return;
+    const on = button.getAttribute("aria-checked") !== "true";
+    button.setAttribute("aria-checked", String(on));
+    const option = button.dataset.grid;
+    if (option === "weeks") {
+      miniGrid.dataset.weeks = String(on);
+      renderMiniMonth();
+    } else if (option === "sunday") {
+      calendar.configure({ hiddenDays: on ? [7] : [] });
+      backgroundKey = "";
+      refreshChrome();
+    } else if (option === "dense") {
+      calendar.configure({ pxPerMinute: on ? 1 : 1.5 });
+    } else if (option === "halfhour") {
+      calendar.configure({ slotLabelInterval: on ? 30 : 60 });
+    }
+    record(`grid → ${option} ${on ? "on" : "off"}`);
+  });
+
+  toolsMenu.addEventListener("click", (event) => {
+    const tool = event.target.closest("[data-tool]")?.dataset?.tool;
+    if (!tool) return;
+    if (tool === "refetch") {
+      void calendar.refetchEvents();
+      record("refetch requested");
+    } else if (tool === "activity") {
+      toggleActivity();
+      return;
+    } else if (tool === "now") {
+      calendar.today();
+      calendar.scrollToTime(nowStamp().slice(11));
+      record("revealed now");
+    } else if (tool === "shortcuts") {
+      toolsMenu.hidePopover();
+      shortcutsDialog.showModal();
+      return;
+    }
+    toolsMenu.hidePopover();
+  });
+
+  // --- Account menu, including the theme switcher --------------------------
+  const THEMES = [
+    { value: "", label: "System", icon: "device-desktop" },
+    { value: "light", label: "Light", icon: "sun" },
+    { value: "dark", label: "Dark", icon: "moon" },
+    { value: "indigo", label: "Indigo", icon: "palette" },
+    { value: "ocean", label: "Ocean", icon: "palette" },
+    { value: "forest", label: "Forest", icon: "palette" },
+    { value: "sunset", label: "Sunset", icon: "palette" },
+    { value: "brutalist", label: "Brutalist", icon: "palette" },
+  ];
+
+  const themeMenu = document.getElementById("theme-menu");
+
+  function renderThemes() {
+    const current = document.documentElement.dataset.theme ?? "";
+    themeMenu.replaceChildren();
+    for (const theme of THEMES) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "menu-item";
+      button.setAttribute("role", "menuitemradio");
+      button.setAttribute("aria-checked", String(theme.value === current));
+      // Not `data-theme`: Actual's theme stylesheet keys on that attribute,
+      // so putting it on a button would re-theme the button itself.
+      button.dataset.themeValue = theme.value;
+      const iconSlot = document.createElement("span");
+      iconSlot.className = "menu-item-icon";
+      iconSlot.append(icon(theme.icon));
+      const text = document.createElement("span");
+      text.className = "menu-item-text";
+      text.textContent = theme.label;
+      const end = document.createElement("span");
+      end.className = "menu-item-end";
+      const tick = icon("check");
+      tick.classList.add("sc-tick");
+      end.append(tick);
+      button.append(iconSlot, text, end);
+      button.addEventListener("click", () => {
+        if (theme.value) document.documentElement.dataset.theme = theme.value;
+        else document.documentElement.removeAttribute("data-theme");
+        renderThemes();
+        record(`theme → ${theme.label.toLowerCase()}`);
+      });
+      item.append(button);
+      themeMenu.append(item);
+    }
+  }
+
+  accountMenu.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-account]")?.dataset?.account;
+    if (!action) return;
+    accountMenu.hidePopover();
+    if (action === "shortcuts") {
+      shortcutsDialog.showModal();
+      return;
+    }
+    record(`account → ${action} (the shell stops at the intent)`);
+    toast(`“${action}” is a stand-in in this demo.`, "success");
+  });
+
+  // --- Search: navigation primitives, application index --------------------
+  const toolsSearch = document.getElementById("tools-search");
+  const toolsResults = document.getElementById("tools-results");
+
+  function focusSearch() {
+    if (sidebar.hasAttribute("popover") && !sidebar.matches(":popover-open")) sidebar.showPopover();
+    toolsSearch.focus();
+    toolsSearch.select();
+  }
+
+  document.getElementById("search-toggle").addEventListener("click", focusSearch);
+
+  toolsSearch.addEventListener("input", () => {
+    const query = toolsSearch.value.trim().toLowerCase();
+    toolsResults.replaceChildren();
+    if (query.length < 2) return;
+    const hits = store
+      .filter((item) =>
+        `${item.title} ${roomTitle(String(item.resourceId ?? ""))}`.toLowerCase().includes(query))
+      .sort((a, b) => (a.start < b.start ? -1 : 1))
+      .slice(0, 8);
+    if (hits.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "muted";
+      empty.textContent = "No loaded booking matches — a backend search would live here.";
+      toolsResults.append(empty);
+      return;
+    }
+    for (const hit of hits) {
+      const row = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      const title = document.createElement("strong");
+      title.textContent = hit.title;
+      const meta = document.createElement("small");
+      meta.textContent = `${rangeFormat.format(asDate(String(hit.start)))} · ${wallClock(String(hit.start))} · ${roomTitle(String(hit.resourceId ?? ""))}`;
+      button.append(title, meta);
+      button.addEventListener("click", () => {
+        calendar.gotoDate(String(hit.start).slice(0, 10));
+        calendar.scrollToTime(wallClock(String(hit.start)));
+        record(`search → ${hit.id}`);
+        if (sidebar.matches(":popover-open")) sidebar.hidePopover();
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          calendar.querySelector(`[data-event-id="${CSS.escape(hit.id)}"]`)?.focus();
+        }));
+      });
+      row.append(button);
+      toolsResults.append(row);
+    }
+  });
+
+  // --- Realtime stand-ins --------------------------------------------------
+  document.getElementById("rt-add").addEventListener("click", () => {
+    const id = `pushed-${Date.now()}`;
+    const created = {
+      id,
+      title: "Pushed booking",
+      start: stamp(calendar.date, 13 * 60),
+      end: stamp(calendar.date, 13 * 60 + 30),
+      resourceId: "room-a",
+      extendedProps: { kind: "planning", seats: 5 },
+    };
+    store.push(created);
+    markFresh(id);
+    calendar.addEvent(created);
+    record(`realtime add: ${id}`);
+    refreshChrome();
+    toolsMenu.hidePopover();
+  });
+
+  document.getElementById("rt-move").addEventListener("click", () => {
+    if (!calendar.getEventById("live")) {
+      record("realtime move: “Live sync” no longer exists");
+      toast("“Live sync” is not loaded any more.", "warning");
+    } else {
+      shiftById("live");
+    }
+    toolsMenu.hidePopover();
+  });
+
+  document.getElementById("rt-remove").addEventListener("click", () => {
+    if (calendar.removeEvent("live")) {
+      store = store.filter((item) => item.id !== "live");
+      record("realtime remove: “Live sync”");
+      refreshChrome();
+    } else {
+      record("realtime remove: already gone");
+    }
+    toolsMenu.hidePopover();
+  });
+
+  // --- Shell chrome ---------------------------------------------------------
+  // Below 64rem the sidebar is off-canvas. Making the same element a
+  // `popover` is what supplies the backdrop, the outside click and the
+  // Escape key, so the shell keeps no dismissal bookkeeping of its own.
+  const drawerQuery = window.matchMedia("(max-width: 63.999rem)");
+  const sidebarToggle = document.getElementById("sidebar-toggle");
+
+  function syncDrawerMode() {
+    if (drawerQuery.matches) {
+      if (!sidebar.hasAttribute("popover")) sidebar.setAttribute("popover", "auto");
+      return;
+    }
+    if (sidebar.matches(":popover-open")) sidebar.hidePopover();
+    sidebar.removeAttribute("popover");
+    sidebarToggle.setAttribute("aria-expanded", "false");
+  }
+
+  drawerQuery.addEventListener("change", syncDrawerMode);
+  syncDrawerMode();
+
+  sidebar.addEventListener("toggle", (event) => {
+    const open = event.newState === "open";
+    shell.dataset.drawer = open ? "open" : "closed";
+    sidebarToggle.setAttribute("aria-expanded", String(open));
+  });
+
+  const focusToggle = document.getElementById("focus-toggle");
+  const focusIcon = document.getElementById("focus-icon");
+  focusToggle.addEventListener("click", () => {
+    const on = shell.dataset.focus !== "true";
+    shell.dataset.focus = String(on);
+    focusToggle.setAttribute("aria-pressed", String(on));
+    focusIcon.className = `ti ti-lg ti-layout-sidebar-left-${on ? "expand" : "collapse"}`;
+  });
+
+  const activity = document.getElementById("activity");
+  const activityToggle = document.getElementById("activity-toggle");
+  const activityMenuItem = document.getElementById("activity-menu-item");
+
+  /** @param {boolean} [force] */
+  function toggleActivity(force) {
+    const open = force ?? activity.hidden;
+    activity.hidden = !open;
+    activityToggle.setAttribute("aria-expanded", String(open));
+    activityMenuItem.setAttribute("aria-checked", String(open));
+  }
+
+  activityToggle.addEventListener("click", () => toggleActivity());
+  document.getElementById("activity-close").addEventListener("click", () => toggleActivity(false));
+
+  const shortcutsDialog = document.getElementById("shortcuts-dialog");
+  const SHORTCUTS = [
+    [["T"], "today"],
+    [["←", "→"], "previous / next range"],
+    [["1", "…", "7"], "switch view"],
+    [["/"], "search loaded bookings"],
+    [["A"], "activity log"],
+    [["F"], "focus mode (hide the side panel)"],
+    [["?"], "this dialog"],
+  ];
+
+  function renderShortcuts() {
+    const list = document.getElementById("shortcuts-list");
+    list.replaceChildren();
+    for (const [keys, description] of SHORTCUTS) {
+      const dt = document.createElement("dt");
+      for (const key of keys) {
+        const kbd = document.createElement("kbd");
+        kbd.className = "key";
+        kbd.textContent = key;
+        dt.append(kbd);
+      }
+      const dd = document.createElement("dd");
+      dd.textContent = description;
+      list.append(dt, dd);
+    }
+  }
+
+  document.getElementById("shortcuts-open").addEventListener("click", () => {
+    if (sidebar.matches(":popover-open")) sidebar.hidePopover();
+    shortcutsDialog.showModal();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    const target = event.target;
+    const typing = target instanceof HTMLElement &&
+      (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
+    if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+    const digit = Number(event.key);
+    if (digit >= 1 && digit <= VIEWS.length) {
+      calendar.setView(VIEWS[digit - 1].id);
+      return;
+    }
+    if (event.key === "/") {
+      event.preventDefault();
+      focusSearch();
+    } else if (event.key === "?") {
+      event.preventDefault();
+      shortcutsDialog.showModal();
+    } else if (event.key === "t" || event.key === "T") {
+      calendar.today();
+    } else if (event.key === "a" || event.key === "A") {
+      toggleActivity();
+    } else if (event.key === "ArrowLeft") {
+      calendar.prev();
+    } else if (event.key === "ArrowRight") {
+      calendar.next();
+    } else if (event.key === "f" || event.key === "F") {
+      focusToggle.click();
+    }
+  });
+
+  renderRules();
+  renderThemes();
+  renderShortcuts();
+  refreshChrome();
+  calendar.scrollToTime("08:00");
+  record("shell ready: core renders, app owns the chrome");
 </script>
 </body>
 </html>

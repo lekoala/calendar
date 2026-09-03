@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — showcase: demo coverage debt, views and mobile
+
+Closes the demo coverage debt recorded in `docs/ROADMAP.md`, and gives the grid back the room the chrome was taking. All of it is application code in `demo/showcase.html`; the core is unchanged.
+
+Contracts that were implemented but invisible:
+
+- **Move/resize rejection.** The shell now carries a booking policy - opening hours, a maximum duration, a view-only weekday, per-room non-bookable ranges, facilities-owned kinds - and one `violation()` function answers for pointer drags, keyboard moves, commands and range selection alike. A refusal calls `preventDefault()` synchronously, so the core reverts its own optimistic change, and a status bar says why. Deadlines demonstrate the asynchronous half instead: accepted optimistically, then rolled back with `detail.revert()` once the simulated round-trip answers. Maintenance bookings are handed to the core as `editable: false`, so the core refuses the drag itself.
+- **The rules are visible before they are enforced.** Closed hours and blocked ranges are generated as background ranges from the same constants the guard reads, with `classNames` telling the two policies apart - the core still hard-codes no meaning for a background.
+- **Hover intent.** An application tooltip keyed on `data-event-id`, with no core hook: `popover="manual"` for the top layer, `reposition()` for placement and `autoUpdate()` so it follows the calendar scroller rather than the page. It gives back exactly the detail the `@container` queries drop on short cards.
+- **The context menu is rewritten properly.** It was clamping itself with hardcoded `innerWidth - 200` / `innerHeight - 140` guesses and hand-rolling outside-click and Escape. It is now a native `popover` placed with `repositionAt()`, and it proposes a real range on an empty slot instead of telling the user to drag. `contextmenu` is dispatched before the pointer release in some engines, where light dismiss would close a menu opened during the press, so the menu opens after the release - cooperating with the platform's dismissal instead of replacing it.
+- **Week numbers** in the mini month, from `Temporal.PlainDate.weekOfYear`. Still no date library in the demo.
+- **Aura on a new booking**, reusing the `--aura-angle` property and `aura-rotate` keyframes Actual already registers, and reduced to a static ring under `prefers-reduced-motion`.
+
+Views, mobile and layout:
+
+- The seven view buttons are one trigger naming the current view, opening a grouped popover menu with icons and `1`-`7` shortcuts. A fifth of the width, and it reads the same on a phone.
+- Tools is a real mega menu: event source (including a failing source, which exercises `calendar:loaderror`), realtime stand-ins, grid options (`hiddenDays`, `pxPerMinute`, `slotLabelInterval`, mini-month week numbers) and diagnostics. The debug and test controls no longer sit in the chrome.
+- The avatar opens an account menu with the theme switcher in it, which is where an application keeps it.
+- The activity dock is gone: the newest intent rides the live strip so nothing looks inert, and the full log is a panel that stays hidden until asked for. On a 390x780 viewport the chrome went from ~230px to ~130px, and `.cv-scroller` now keeps over 70% of the viewport at every width.
+- Toolbar collapsed to a single row at every width; the live strip is one scrollable line instead of a wrapping block; day and resource headers are compact, with the core's fixed 3rem sticky offset replaced by one `--sc-resource-row` value used by both rules.
+- Below 64rem the side panel is the same element with a `popover` attribute, which supplies the backdrop, the outside click and Escape - the scrim element and the keydown bookkeeping are gone.
+- Icons are the Tabler webfont (pinned CDN) rather than text glyphs, which is what fixed the alignment: they are flex items with `line-height: 1` inside Actual's controls. `.icon-only` inside a `.join` is stretched, since a fixed square box left a pale sliver under the chevrons.
+- `@lekoala/floating` is pinned in the demo the way Actual CSS already is - an application dependency, never a runtime dependency of the core. The showcase script is a module now; the classic-script demos stay untouched and keep working over `file://`.
+
+- `test/browser/showcase.spec.js`: 21 tests, green on Chromium, Firefox, WebKit and the mobile project. Adds refusal (synchronous and after the round-trip), the blocked-range drop, the hover tooltip, context-menu placement and clamping, the empty-slot menu, view-menu switching and digit shortcuts, grid options through `configure()`, the activity panel's cost in grid height, and the side panel's popover/column split.
+
 ## Unreleased — M8 contract gaps
 
 Additive core seams found by auditing the public surface against a comparable MIT scheduler used as a specification reference. No architecture change: every item closes a seam an application could not reach.

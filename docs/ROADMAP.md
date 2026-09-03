@@ -145,44 +145,73 @@ Exit condition, met: an application can render a busy state, style events
 uniformly across views, react to a finished render, and choose which
 weekdays exist, without reaching into internals.
 
-## Demo coverage debt
+## Demo coverage debt, cleared
 
-Demos are part of the definition of done, and two already-implemented
-core contracts are still invisible in them:
+Demos are part of the definition of done, and `demo/showcase.html` now
+covers every contract it was missing:
 
-- move/resize rejection: `calendar:eventmove` and `calendar:eventresize` are cancelable and carry `revert()`, but no demo refuses a drop. Add application business rules to `demo/showcase.html` - a bookable window plus non-bookable ranges is enough;
-- hover intent: events carry `data-event-id`, so an application-owned tooltip needs no core hook at all. Show one, and use it to recover the detail that short cards drop.
+- move/resize rejection: the shell carries a booking policy - opening
+  hours, a maximum duration, a view-only weekday, per-room non-bookable
+  ranges, facilities-owned kinds - and one `violation()` answers for
+  pointer drags, keyboard moves, commands and range selection alike. A
+  refusal calls `preventDefault()` synchronously, so the core reverts;
+  deadlines take the asynchronous path instead and are rolled back with
+  `detail.revert()` after a simulated round-trip. Maintenance is handed
+  over as `editable: false`, so the core refuses the drag itself. The
+  policies are drawn as background ranges from the same constants the
+  guard reads, so a rule is visible before it is enforced;
+- hover intent: an application tooltip keyed on `data-event-id`, with no
+  core hook, giving back the detail the short cards drop;
+- the context menu no longer clamps itself with hardcoded
+  `innerWidth - 200` / `innerHeight - 140` guesses and no longer
+  hand-rolls outside-click and Escape;
+- week numbers in the mini month, from `Temporal.PlainDate.weekOfYear`;
+- proper icons (Tabler webfont, pinned CDN) instead of text glyphs, which
+  is what fixed the alignment;
+- a tools mega menu holding the event source, the realtime stand-ins, the
+  grid options and the diagnostics, so the debug and test controls are
+  out of the chrome;
+- an aura on a freshly created booking, reusing the `--aura-angle`
+  property and `aura-rotate` keyframes Actual already registers;
+- the seven view buttons are one trigger naming the current view, with a
+  grouped popover menu and `1`-`7` shortcuts;
+- the avatar opens a working account menu, with the theme switcher in it;
+- mobile gets the room it was owed: the chrome is a slim topbar, one
+  toolbar row and one scrollable status line, and the grid keeps over
+  70% of the viewport at every width.
 
-The showcase context menu is a third case, already written but written
-badly: it clamps itself with hardcoded `innerWidth - 200` /
-`innerHeight - 140` guesses that are wrong as soon as the menu's own size
-changes, and it hand-rolls outside-click and Escape dismissal.
-
-All three are overlay work, and the mechanism is settled in
+The overlay mechanism is the one settled in
 [INTEGRATION.md](INTEGRATION.md#overlays): native `popover` for the top
 layer and dismissal, `@lekoala/floating` for placement (`repositionAt()`
-for the coordinate-driven menu, `reposition()` + `autoUpdate()` for
-anything anchored to an event, since the calendar scroller moves
-independently of the page). An application dependency, pinned in the demo
-the way Actual CSS already is - never a runtime dependency of the core.
-It must also stay out of the classic-script demos, which keep working
-over `file://`.
+for the coordinate-driven menu, `reposition()` + `autoUpdate()` for the
+tooltip, since the calendar scroller moves independently of the page).
+`floating` is pinned in the demo the way Actual CSS already is - an
+application dependency, never a runtime dependency of the core. The
+showcase script is a module; the classic-script demos stay free of it and
+keep working over `file://`.
 
-Still cheap and generic: week numbers in the demo mini-month
-(`Temporal.PlainDate.weekOfYear`).
+One platform detail worth recording: `popover="auto"` light dismiss
+closes on the pointer *release*, measured against the element the press
+started on, and engines disagree on whether `contextmenu` is dispatched
+before or after that release. A menu opened during the press is therefore
+closed again by it in Firefox and WebKit. The showcase opens the context
+menu after the release, which cooperates with the platform's dismissal
+rather than replacing it.
 
-Done with milestone 8: the showcase reports `calendar:loading` in its live
-strip and dims the grid while a source is in flight, and month `+n more`
-opens the day it belongs to.
+Below 64rem the side panel is the same element with a `popover`
+attribute, which supplies the backdrop, the outside click and Escape; the
+scrim element and the keydown bookkeeping are gone.
 
-Others:
-- Use proper icons (eg: tabler from cdn), not font glyphs (fix alignment, improve consistency)
-- Add tools menu demo (eg: an actual css mega menu, with icons)
-- Aura on new event
-- The views buttons take too much visual space - keep it light. It must work on mobile (maybe adjust text)
-- In mobile, not enough screen state is granted for the calendar itself : this is what matters and should come first
-- The avatar (SO) menu should work, and display some dummy menu for full credibility
-- Debug/test tools should not clutter the ui (could be hidden in the tools or a dedicated menu)
+Follow-ups this uncovered, both in the core rather than the demo:
+
+- the time axis width is hardcoded three times (`.cv-axis`,
+  `.cv-resource-corner`, `.cv-grid`'s first track). A `3.5rem` gutter is
+  a tenth of a phone's width, and the showcase narrows it by overriding
+  all three. It should be one `--calendar-axis-size` custom property;
+- the sticky offset for day headers under a resource row is a hardcoded
+  `3rem`, so an application that makes its resource headers compact has
+  to restate the value. The showcase keeps both in one
+  `--sc-resource-row`; the core should expose the same seam.
 
 ## Post-0.x candidates (only with use cases)
 

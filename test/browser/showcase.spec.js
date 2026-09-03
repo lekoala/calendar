@@ -2,8 +2,9 @@ import { expect, test } from "@playwright/test";
 
 /**
  * Showcase shell: generic room-booking application around the core, in a
- * full-viewport Actual CSS layout (sidebar with mini-month and filters,
- * agenda toolbar, live strip, app-owned dialogs, activity dock).
+ * full-viewport Actual CSS layout (side panel with mini-month and filters,
+ * one-row agenda toolbar, popover menus, application booking rules, hover
+ * tooltip, app-owned sheets).
  *
  * @param {import("@playwright/test").Page} page
  */
@@ -14,9 +15,9 @@ function flushRender(page) {
 }
 
 /**
- * Under 64rem the side panel is off-canvas and the activity dock starts
- * collapsed. Tests that drive either one open it first, the way a user would,
- * instead of assuming the desktop layout.
+ * Under 64rem the side panel is a popover. Tests that drive it open it the
+ * way a user would instead of assuming the desktop layout, and close it
+ * again so it stops covering the toolbar.
  *
  * @param {import("@playwright/test").Page} page
  */
@@ -26,10 +27,24 @@ async function openPanel(page) {
 }
 
 /** @param {import("@playwright/test").Page} page */
-function openDock(page) {
-  return page.evaluate(() => {
-    /** @type {HTMLDetailsElement} */ (document.getElementById("dock")).open = true;
-  });
+async function closePanel(page) {
+  if (await page.evaluate(() => document.getElementById("sidebar")?.matches(":popover-open"))) {
+    await page.keyboard.press("Escape");
+  }
+}
+
+/**
+ * View switching goes through the view menu now. Driving it by keyboard
+ * digit keeps the test independent of the menu's own geometry.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} view
+ */
+async function setView(page, view) {
+  await page.evaluate((name) => {
+    /** @type {any} */ (document.querySelector("calendar-view")).setView(name);
+  }, view);
+  await flushRender(page);
 }
 
 test("showcase renders seeded team events with kind cards", async ({ page }) => {
@@ -53,28 +68,35 @@ test("the shell fills the viewport and only the calendar scrolls", async ({ page
   }));
   expect(box.documentOverflow).toBe(0);
   expect(Math.round(box.shellHeight)).toBe(box.viewport);
-  // The core's own 70vh cap is replaced by the frame, so the grid keeps a
-  // real share of the viewport.
-  expect(box.scroller).toBeGreaterThan(box.viewport * 0.4);
+  // The chrome is one topbar, one toolbar row and one status line: the grid
+  // gets the rest of the viewport, on a phone as much as on a desktop.
+  expect(box.scroller).toBeGreaterThan(box.viewport * 0.7);
 });
 
-test("view switching preserves the anchor date and marks the active view", async ({ page }) => {
+test("the view menu switches views and names the current one", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  // Narrow viewports deliberately open on a single day, so the active view is
-  // whatever the shell chose: assert the marker follows it, not a fixed name.
+  // Narrow viewports deliberately open on a single day, so the label is
+  // whatever the shell chose: assert it follows, not a fixed name.
   const initial = await page.evaluate(
     () => /** @type {any} */ (document.querySelector("calendar-view")).view,
   );
-  await expect(page.locator(`.join [data-view="${initial}"]`)).toHaveAttribute("aria-pressed", "true");
-  await page.click('.join [data-view="month"]');
+  await page.click("#view-toggle");
+  await expect(page.locator("#view-menu")).toBeVisible();
+  await expect(page.locator(`#view-menu [data-view="${initial}"]`)).toHaveAttribute("aria-checked", "true");
+
+  await page.click('#view-menu [data-view="month"]');
   await flushRender(page);
+  await expect(page.locator("#view-menu")).toBeHidden();
   await expect(page.locator(".cv-month-day").first()).toBeVisible();
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-03");
-  await expect(page.locator('.join [data-view="month"]')).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(`.join [data-view="${initial}"]`)).toHaveAttribute("aria-pressed", "false");
-  await page.click('.join [data-view="list"]');
+  await expect(page.locator("#view-label")).toHaveText("Month");
+
+  // Digit shortcuts are the reason one trigger can replace seven buttons.
+  await page.locator("calendar-view").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("7");
   await flushRender(page);
+  await expect(page.locator("#view-label")).toHaveText("List");
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-03");
 });
 
@@ -84,13 +106,13 @@ test("clicking an event opens the app-owned detail sheet", async ({ page }) => {
   await page.locator(".cv-event").first().click();
   await expect(page.locator("#detail-dialog")).toBeVisible();
   await expect(page.locator("#detail-title")).not.toBeEmpty();
-  await expect(page.locator("#event-log li").first()).toContainText("eventclick");
+  await expect(page.locator("#cockpit .sc-last")).toContainText("eventclick");
 });
 
-test("tools search reveals a loaded event on its date", async ({ page }) => {
+test("search reveals a loaded event on its date", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await page.click("#tools-toggle");
+  await openPanel(page);
   await page.fill("#tools-search", "live sync");
   await expect(page.locator('#tools-results button:has-text("Live sync")')).toBeVisible();
   await page.locator('#tools-results button:has-text("Live sync")').click();
@@ -98,11 +120,13 @@ test("tools search reveals a loaded event on its date", async ({ page }) => {
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-04");
 });
 
-test("the mini month navigates the anchor date", async ({ page }) => {
+test("the mini month navigates the anchor date and shows ISO weeks", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
   await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText("3");
+  // Temporal already answers this: no date library, no extra option.
+  await expect(page.locator(".sc-mini-week").first()).toHaveText("36");
   await page.click('.sc-mini-day[data-date="2026-09-10"]');
   await flushRender(page);
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-10");
@@ -115,10 +139,7 @@ test("room and kind filters change what the core is given", async ({ page }) => 
   await openPanel(page);
   // Resource headers only exist in resource views; the filter itself does not
   // depend on the view the shell happened to open on.
-  await page.evaluate(() =>
-    /** @type {any} */ (document.querySelector("calendar-view")).setView("resourceThreeDays"),
-  );
-  await flushRender(page);
+  await setView(page, "resourceThreeDays");
   await expect(page.locator(".cv-resource-header")).toHaveCount(3);
 
   await page.locator("#room-list input").nth(2).uncheck();
@@ -148,34 +169,235 @@ test("the live strip reports the visible range", async ({ page }) => {
 test("the shell reports the source lifecycle while a slow source runs", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openPanel(page);
-  await page.selectOption("#source-mode", "slow");
+  await closePanel(page);
+  await page.click("#tools-toggle");
+  await page.click('#source-menu [data-source="slow"]');
   await expect(page.locator("#shell")).toHaveAttribute("data-busy", "true");
   await expect(page.locator("#cockpit")).toContainText("Loading");
   await expect(page.locator("#shell")).toHaveAttribute("data-busy", "false");
   await expect(page.locator("#cockpit")).toContainText("bookings in view");
+  await expect(page.locator('#source-menu [data-source="slow"]')).toHaveAttribute("aria-checked", "true");
+});
+
+test("a failing source is reported without clearing the grid", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await closePanel(page);
+  await page.click("#tools-toggle");
+  await page.click('#source-menu [data-source="failing"]');
+  await expect(page.locator("#toast")).toContainText("The event source failed");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
 });
 
 test("month +n more opens the day it belongs to", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await page.click('.join [data-view="month"]');
-  await flushRender(page);
+  await setView(page, "month");
   const more = page.locator(".cv-month-more").first();
   const date = await more.getAttribute("data-date");
   await more.click();
   await flushRender(page);
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", /** @type {string} */ (date));
-  await expect(page.locator('.join [data-view="day"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#view-label")).toHaveText("Day");
 });
 
-test("realtime stand-in adds an event without navigation", async ({ page }) => {
+test("realtime stand-in adds an event with an aura, without navigation", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openDock(page);
+  await closePanel(page);
   const before = await page.locator(".cv-event").count();
+  await page.click("#tools-toggle");
   await page.click("#rt-add");
   await flushRender(page);
   await expect(page.locator(".cv-event")).toHaveCount(before + 1);
-  await expect(page.locator("#event-log li").first()).toContainText("realtime add");
+  await expect(page.locator('.cv-event[data-fresh="true"]')).toHaveCount(1);
+  await expect(page.locator("#cockpit .sc-last")).toContainText("realtime add");
+});
+
+test("the activity log stays out of the way until it is asked for", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await expect(page.locator("#activity")).toBeHidden();
+  const withoutLog = await page.evaluate(() => document.querySelector(".cv-scroller")?.clientHeight ?? 0);
+  await page.click("#activity-toggle");
+  await expect(page.locator("#activity")).toBeVisible();
+  await expect(page.locator("#event-log li").first()).toContainText("shell ready");
+  const withLog = await page.evaluate(() => document.querySelector(".cv-scroller")?.clientHeight ?? 0);
+  expect(withLog).toBeLessThan(withoutLog);
+  await page.click("#activity-close");
+  await expect(page.locator("#activity")).toBeHidden();
+});
+
+test("the application refuses a move that breaks its own booking rules", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // `calendar:eventmove` is cancelable: a synchronous preventDefault() makes
+  // the core revert its own optimistic change.
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const before = String(calendar.getEventById("live").start);
+    const returned = calendar.moveEvent("live", {
+      start: before.replace(/T\d\d:/, "T19:"),
+      end: String(calendar.getEventById("live").end).replace(/T\d\d:/, "T19:"),
+    });
+    return { before, returned, after: String(calendar.getEventById("live").start) };
+  });
+  expect(outcome.returned).toBeNull();
+  expect(outcome.after).toBe(outcome.before);
+  await expect(page.locator("#toast")).toContainText("Bookings stay inside 08:00–18:00");
+  await expect(page.locator("#cockpit .sc-last")).toContainText("refused");
+});
+
+test("a non-bookable range refuses the drop it is drawn over", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "resourceThreeDays");
+  // The rule is visible before it is enforced: the hatched background and
+  // the refusal come from the same application constant.
+  await expect(page.locator(".cv-background.sc-blocked").first()).toBeVisible();
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const before = String(calendar.getEventById("live").start);
+    const returned = calendar.moveEvent("live", {
+      start: before.replace(/T\d\d:\d\d/, "T12:15"),
+      end: before.replace(/T\d\d:\d\d/, "T12:45"),
+      resourceId: "room-c",
+    });
+    return { returned, after: String(calendar.getEventById("live").start), before };
+  });
+  expect(outcome.returned).toBeNull();
+  expect(outcome.after).toBe(outcome.before);
+  await expect(page.locator("#toast")).toContainText("Daily reset");
+});
+
+test("an accepted move can still be reverted after the round-trip", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // The asynchronous half of the same contract: `detail.revert()` is
+  // idempotent and may be called long after the dispatch returned.
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const item = calendar.getEventById("seed-overlap");
+    const before = String(item.start);
+    const returned = calendar.moveEvent("seed-overlap", {
+      start: before.replace(/T\d\d:\d\d/, "T14:00"),
+      end: String(item.end).replace(/T\d\d:\d\d/, "T15:00"),
+    });
+    const optimistic = String(calendar.getEventById("seed-overlap").start);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    return {
+      accepted: returned !== null,
+      optimistic,
+      after: String(calendar.getEventById("seed-overlap").start),
+      before,
+    };
+  });
+  expect(outcome.accepted).toBe(true);
+  expect(outcome.optimistic).toContain("T14:00");
+  expect(outcome.after).toBe(outcome.before);
+  await expect(page.locator("#toast")).toContainText("did not confirm");
+});
+
+test("a hovered event gets an application tooltip with the dropped detail", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  const card = page.locator('.cv-event[data-kind="maintenance"]').first();
+  const title = await card.locator(".sc-card strong span").textContent();
+  await card.hover();
+  await expect(page.locator("#event-tip")).toBeVisible();
+  await expect(page.locator("#event-tip strong")).toHaveText(/** @type {string} */ (title ?? ""));
+  await expect(page.locator("#event-tip")).toContainText("Seats");
+  // No core hook is involved: the tooltip is keyed on `data-event-id`.
+  await expect(page.locator("#event-tip")).toContainText("Locked by facilities");
+  await page.locator(".sc-toolbar").hover();
+  await expect(page.locator("#event-tip")).toBeHidden();
+});
+
+test("the context menu is placed from the coordinates the core reports", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  const card = page.locator('.cv-event[data-kind="maintenance"]').first();
+  const box = await card.boundingBox();
+  await card.click({ button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  // Locked bookings expose the read-only rule instead of hiding the menu.
+  await expect(page.locator('#context-menu [role="menuitem"]:has-text("Move +1h")')).toBeDisabled();
+  await expect(page.locator('#context-menu [role="menuitem"]:has-text("Delete")')).toBeDisabled();
+  const menu = await page.locator("#context-menu").boundingBox();
+  expect(menu).not.toBeNull();
+  expect(box).not.toBeNull();
+  // Placement, not guesswork: the menu stays inside the viewport and next
+  // to the point that was clicked.
+  const viewport = page.viewportSize();
+  expect(menu?.x).toBeGreaterThanOrEqual(0);
+  expect(menu?.y).toBeGreaterThanOrEqual(0);
+  expect((menu?.x ?? 0) + (menu?.width ?? 0)).toBeLessThanOrEqual((viewport?.width ?? 0) + 1);
+  expect((menu?.y ?? 0) + (menu?.height ?? 0)).toBeLessThanOrEqual((viewport?.height ?? 0) + 1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#context-menu")).toBeHidden();
+});
+
+test("the empty-slot context menu proposes a real range", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "resourceDay");
+  // Backgrounds are `pointer-events: none`, so the first hit on a free slot
+  // is the day body itself: that is the empty-slot intent.
+  const point = await page.evaluate(() => {
+    const scroller = document.querySelector(".cv-scroller");
+    if (!scroller) return null;
+    const rect = scroller.getBoundingClientRect();
+    for (let y = rect.bottom - 10; y > rect.top + 80; y -= 12) {
+      for (let x = rect.left + 80; x < rect.right - 20; x += 40) {
+        const node = document.elementFromPoint(x, y);
+        if (node instanceof Element && node.classList.contains("cv-day-body")) return { x, y };
+      }
+    }
+    return null;
+  });
+  expect(point).not.toBeNull();
+  await page.mouse.move(point?.x ?? 0, point?.y ?? 0);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.up({ button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  await expect(page.locator("#context-menu")).toContainText("Book 30 minutes here");
+  await expect(page.locator("#context-menu")).toContainText("Block this hour");
+});
+
+test("grid options travel through configure(), not through the toolbar", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await closePanel(page);
+  await setView(page, "week");
+  const withoutSunday = await page.locator(".cv-day").count();
+  await page.click("#tools-toggle");
+  await page.click('#grid-menu [data-grid="sunday"]');
+  await flushRender(page);
+  await expect(page.locator('#grid-menu [data-grid="sunday"]')).toHaveAttribute("aria-checked", "false");
+  expect(await page.locator(".cv-day").count()).toBe(withoutSunday + 1);
+
+  const hourly = await page.locator(".cv-axis-label").count();
+  await page.click('#grid-menu [data-grid="halfhour"]');
+  await flushRender(page);
+  expect(await page.locator(".cv-axis-label").count()).toBeGreaterThan(hourly);
+});
+
+test("the side panel is a popover below 64rem and a column above it", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  const narrow = await page.evaluate(() => window.innerWidth < 1024);
+  const popover = await page.evaluate(() => document.getElementById("sidebar")?.hasAttribute("popover"));
+  expect(popover).toBe(narrow);
+  if (!narrow) {
+    await expect(page.locator("#sidebar")).toBeVisible();
+    return;
+  }
+  await expect(page.locator("#sidebar")).toBeHidden();
+  await page.click("#sidebar-toggle");
+  await expect(page.locator("#sidebar")).toBeVisible();
+  const drawer = await page.locator("#sidebar").boundingBox();
+  expect(Math.round(drawer?.y ?? -1)).toBe(0);
+  // Escape and light dismiss come from the platform, not from the shell.
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#sidebar")).toBeHidden();
 });
