@@ -4,7 +4,7 @@
  * @property {string} [title]
  * @property {unknown} start
  * @property {unknown} end
- * @property {string} [resourceId]
+ * @property {string | null} [resourceId]
  * @property {boolean} [editable]
  * @property {boolean} [movable]
  * @property {boolean} [resizable]
@@ -25,7 +25,7 @@
  * @property {string} [title]
  * @property {unknown} [start]
  * @property {unknown} [end]
- * @property {string} [resourceId]
+ * @property {string | null} [resourceId]
  * @property {boolean} [editable]
  * @property {boolean} [movable]
  * @property {boolean} [resizable]

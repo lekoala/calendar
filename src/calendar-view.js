@@ -7,7 +7,13 @@ import {
   minutesFromMidnight,
   toPlainDate,
 } from "./core/dates.js";
-import { normalizeBackground, normalizeEvent, normalizeResource } from "./core/model.js";
+import {
+  isMovable,
+  isResizable,
+  normalizeBackground,
+  normalizeEvent,
+  normalizeResource,
+} from "./core/model.js";
 import { renderTimeGrid } from "./render/time-grid.js";
 
 /**
@@ -204,6 +210,121 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Optimistic mutation path shared by pointer interactions and programmatic
+   * commands. Applies `current` immediately, dispatches a cancelable event
+   * carrying an idempotent `revert()`, and reverts automatically when the
+   * dispatch is prevented synchronously.
+   *
+   * @param {object} input
+   * @param {import("./core/model.js").NormalizedEvent} input.event
+   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.previous
+   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.current
+   * @param {string} input.name
+   * @param {Event | null} input.nativeEvent
+   * @returns {import("./core/model.js").NormalizedEvent | null} the optimistic event, or null when rejected immediately
+   */
+  _commitEventMutation({ event, previous, current, name, nativeEvent }) {
+    const index = this._events.findIndex((item) => item.id === event.id);
+    if (index < 0) return null;
+    const before = this._events[index];
+    /**
+     * @param {{ start: unknown, end: unknown, resourceId: string | null }} state
+     * @returns {void}
+     */
+    const apply = (state) => {
+      this._events = this._events.map((item, i) => (i === index ? { ...item, ...state } : item));
+      this._queueRender();
+    };
+    apply({ start: current.start, end: current.end, resourceId: current.resourceId });
+    let reverted = false;
+    const revert = () => {
+      if (reverted) return;
+      reverted = true;
+      this._events = this._events.map((item, i) => (i === index ? before : item));
+      this._queueRender();
+    };
+    const accepted = this.dispatchEvent(
+      new CustomEvent(name, {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        detail: { event: this._events[index], previous, current, nativeEvent, revert },
+      }),
+    );
+    if (!accepted) revert();
+    return reverted ? null : this._events[index];
+  }
+
+  /**
+   * @param {object} input
+   * @param {import("./core/model.js").NormalizedEvent} input.event
+   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.previous
+   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.current
+   * @param {Event | null} [input.nativeEvent]
+   * @returns {import("./core/model.js").NormalizedEvent | null}
+   */
+  _commitEventMove({ event, previous, current, nativeEvent = null }) {
+    return this._commitEventMutation({ event, previous, current, name: "calendar:eventmove", nativeEvent });
+  }
+
+  /**
+   * @param {object} input
+   * @param {import("./core/model.js").NormalizedEvent} input.event
+   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.previous
+   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.current
+   * @param {Event | null} [input.nativeEvent]
+   * @returns {import("./core/model.js").NormalizedEvent | null}
+   */
+  _commitEventResize({ event, previous, current, nativeEvent = null }) {
+    return this._commitEventMutation({ event, previous, current, name: "calendar:eventresize", nativeEvent });
+  }
+
+  /**
+   * Non-pointer equivalent of dragging an event. Runs the same optimistic
+   * commit as the pointer path, so keyboard and application commands share
+   * one contract.
+   *
+   * @param {string | number} id
+   * @param {{ start?: unknown, end?: unknown, resourceId?: string | null }} current
+   * @returns {import("./core/model.js").NormalizedEvent | null}
+   */
+  moveEvent(id, current) {
+    const event = this.getEventById(id);
+    if (!event || !isMovable(event, this._config.editable)) return null;
+    return this._commitEventMove({
+      event,
+      previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+      current: {
+        start: current.start ?? event.start,
+        end: current.end ?? event.end,
+        resourceId: current.resourceId ?? event.resourceId ?? null,
+      },
+    });
+  }
+
+  /**
+   * Non-pointer equivalent of resizing an event. Runs the same optimistic
+   * commit as the pointer path.
+   *
+   * @param {string | number} id
+   * @param {{ start?: unknown, end?: unknown }} current
+   * @returns {import("./core/model.js").NormalizedEvent | null}
+   */
+  resizeEvent(id, current) {
+    const event = this.getEventById(id);
+    if (!event || !isResizable(event, this._config.editable)) return null;
+    return this._commitEventResize({
+      event,
+      previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+      current: {
+        start: current.start ?? event.start,
+        end: current.end ?? event.end,
+        resourceId: event.resourceId ?? null,
+      },
+    });
+  }
+
+  /**
    * @param {import("./core/model.js").EventInput} event
    * @returns {import("./core/model.js").NormalizedEvent}
    */
@@ -308,6 +429,7 @@ export class CalendarViewElement extends HTMLElement {
   _options() {
     return {
       timeZone: this._config.timeZone ?? DEFAULTS.timeZone,
+      editable: this._config.editable,
       slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
       slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
       slotDuration: Number(this.getAttribute("slot-duration") || DEFAULTS.slotDuration),
@@ -339,6 +461,7 @@ export class CalendarViewElement extends HTMLElement {
         events: this._events,
         backgrounds: this._backgrounds,
         options,
+        calendar: this,
         eventContent: this._config.eventContent,
         dayHeaderContent: this._config.dayHeaderContent,
         resourceHeaderContent: this._config.resourceHeaderContent,

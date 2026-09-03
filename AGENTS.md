@@ -54,6 +54,8 @@ Source JavaScript targets ES2022 and is shipped without transpilation. `jsconfig
 
 Language target and browser compatibility are separate contracts. The supported browser floor is Chromium 99+, Firefox 98+, and Safari 15.4+. New Web APIs must be checked against the browser floor; the DOM lib known to the installed TypeScript is not that check. Automated per-browser API auditing remains a later packaging/CI concern.
 
+The baseline is a floor, not a ceiling: it may be raised deliberately when newer JavaScript enables a clearly better solution, but never broken incidentally for minor conveniences. Any raise must update the documented floor, the `tsc` contract, and the affected docs/tests together.
+
 ## Date/time contract
 
 - Use `Temporal.PlainDate` for civil navigation dates.

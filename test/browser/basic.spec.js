@@ -10,6 +10,7 @@ test("solo demo renders calendar events", async ({ page }) => {
 
 test("overlapping events share the column width", async ({ page }) => {
   await page.goto("/demo/");
+  await expect(page.locator(".cv-event")).toHaveCount(3);
   const widths = await page.evaluate(() =>
     ["a", "c"].map(
       (id) => /** @type {any} */ (document.querySelector(`[data-event-id="${id}"]`)).style.width,
@@ -148,6 +149,18 @@ async function selectionCount(page) {
   return page.evaluate(() => /** @type {any} */ (window).__select.length);
 }
 
+/**
+ * Rendering is queued on requestAnimationFrame: wait two frames so a state
+ * change is guaranteed to be flushed to the DOM before interacting.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+function flushRender(page) {
+  return page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+}
+
 test("hovering an empty slot shows a duration preview", async ({ page }) => {
   await page.goto("/demo/");
   const box = await firstBodyBox(page);
@@ -205,4 +218,272 @@ test("range selection in a resource column returns the resource id", async ({ pa
   const [selection] = await readSelections(page);
   expect(selection.resourceId).toBe("room-a");
   expect(selection.start).toContain("T11:00:00+02:00");
+});
+
+/**
+ * Pre-interaction coordinates. boundingBox() never waits, so ensure layout
+ * happened first. Only use before interacting; after a state change prefer
+ * eventTop, which reads atomically.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} id
+ */
+async function eventBox(page, id) {
+  const target = page.locator(`[data-event-id="${id}"]`).first();
+  await target.waitFor({ state: "visible" });
+  const box = await target.boundingBox();
+  assert(box, `expected event ${id} to have a bounding box`);
+  return box;
+}
+
+/**
+ * Atomic post-mutation position read. Unlike waitFor + boundingBox, a single
+ * evaluate never observes the detached window of a re-render: _render clears
+ * and rebuilds synchronously, so the query always sees a stable tree.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} id
+ */
+function eventTop(page, id) {
+  return page.evaluate(
+    (eventId) =>
+      /** @type {any} */ (document.querySelector(`[data-event-id="${eventId}"]`))?.style.top ?? null,
+    id,
+  );
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {string} id
+ * @param {"n" | "s"} edge
+ */
+async function resizeHandleBox(page, id, edge) {
+  const target = page.locator(`[data-event-id="${id}"] .cv-resize-${edge}`).first();
+  await target.waitFor({ state: "visible" });
+  const box = await target.boundingBox();
+  assert(box, `expected a resize handle for event ${id}`);
+  return box;
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ */
+function trackMoves(page) {
+  return page.evaluate(() => {
+    const hooks = /** @type {any} */ (window);
+    hooks.__moves = [];
+    hooks.__resizes = [];
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.addEventListener("calendar:eventmove", (/** @type {Event} */ event) => {
+      const detail = /** @type {CustomEvent} */ (event).detail;
+      hooks.__moves.push({
+        start: String(detail.current.start),
+        end: String(detail.current.end),
+        resourceId: detail.current.resourceId,
+        previousResourceId: detail.previous.resourceId,
+        hasRevert: typeof detail.revert === "function",
+      });
+    });
+    calendar.addEventListener("calendar:eventresize", (/** @type {Event} */ event) => {
+      const detail = /** @type {CustomEvent} */ (event).detail;
+      hooks.__resizes.push({
+        start: String(detail.current.start),
+        end: String(detail.current.end),
+        hasRevert: typeof detail.revert === "function",
+      });
+    });
+  });
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ */
+async function readMoves(page) {
+  return /** @type {any[]} */ (await page.evaluate(() => /** @type {any} */ (window).__moves));
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ */
+async function readResizes(page) {
+  return /** @type {any[]} */ (await page.evaluate(() => /** @type {any} */ (window).__resizes));
+}
+
+test("dragging an event in time dispatches a reversible eventmove", async ({ page }) => {
+  await page.goto("/demo/");
+  await trackMoves(page);
+  const box = await eventBox(page, "a");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 90, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => readMoves(page)).toHaveLength(1);
+  const [move] = await readMoves(page);
+  expect(move.start).toContain("T09:45:00+02:00");
+  expect(move.end).toContain("T10:45:00+02:00");
+  expect(move.hasRevert).toBe(true);
+  // 09:45 sits 105 minutes after the 08:00 slot start at 1.8px per minute.
+  await expect.poll(() => eventTop(page, "a")).toBe("189px");
+});
+
+test("dragging an event across resources changes its resource", async ({ page }) => {
+  await page.goto("/demo/resources.html");
+  await trackMoves(page);
+  const from = await eventBox(page, "a");
+  const bodies = page.locator(".cv-day-body");
+  await bodies.first().waitFor({ state: "visible" });
+  const target = await bodies.nth(3).boundingBox();
+  assert(target, "expected the room-b column");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, from.y + from.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => readMoves(page)).toHaveLength(1);
+  const [move] = await readMoves(page);
+  expect(move.previousResourceId).toBe("room-a");
+  expect(move.resourceId).toBe("room-b");
+});
+
+test("a rejected move reverts to its previous position", async ({ page }) => {
+  await page.goto("/demo/");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__moves = [];
+    /** @type {any} */ (document.querySelector("calendar-view")).addEventListener(
+      "calendar:eventmove",
+      (/** @type {Event} */ event) => {
+        /** @type {any} */ (window).__moves.push(1);
+        event.preventDefault();
+      },
+    );
+  });
+  const box = await eventBox(page, "a");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 90, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__moves.length)).toBe(1);
+  // 09:00 sits 60 minutes after the 08:00 slot start at 1.8px per minute.
+  await expect.poll(() => eventTop(page, "a")).toBe("108px");
+});
+
+test("resizing an event dispatches eventresize", async ({ page }) => {
+  await page.goto("/demo/");
+  await trackMoves(page);
+  const box = await resizeHandleBox(page, "a", "s");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 54, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => readResizes(page)).toHaveLength(1);
+  const [resize] = await readResizes(page);
+  expect(resize.start).toContain("T09:00:00+02:00");
+  expect(resize.end).toContain("T10:30:00+02:00");
+  expect(resize.hasRevert).toBe(true);
+});
+
+test("resizing from the top moves the start", async ({ page }) => {
+  await page.goto("/demo/");
+  await trackMoves(page);
+  const box = await resizeHandleBox(page, "a", "n");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 36, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => readResizes(page)).toHaveLength(1);
+  const [resize] = await readResizes(page);
+  expect(resize.start).toContain("T08:30:00+02:00");
+  expect(resize.end).toContain("T10:00:00+02:00");
+});
+
+test("pointercancel aborts a drag without dispatching", async ({ page }) => {
+  await page.goto("/demo/");
+  await trackMoves(page);
+  const box = await eventBox(page, "a");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 40, { steps: 4 });
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector('[data-event-id="a"]')).dispatchEvent(
+      new PointerEvent("pointercancel", { bubbles: true }),
+    );
+  });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  expect(await readMoves(page)).toHaveLength(0);
+  await expect.poll(() => eventTop(page, "a")).toBe("108px");
+});
+
+test("a non-movable event cannot be dragged or moved by command", async ({ page }) => {
+  await page.goto("/demo/");
+  await trackMoves(page);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.updateEvent({ ...calendar.getEventById("b"), movable: false });
+  });
+  await flushRender(page);
+  const box = await eventBox(page, "b");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 60, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  expect(await readMoves(page)).toHaveLength(0);
+  const rejected = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return calendar.moveEvent("b", { start: "2026-09-04T15:00:00+02:00[Europe/Brussels]" });
+  });
+  expect(rejected).toBeNull();
+});
+
+test("dropping on a non-droppable resource reverts silently", async ({ page }) => {
+  await page.goto("/demo/resources.html");
+  await trackMoves(page);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.resources = [
+      { id: "room-a", title: "Room A" },
+      { id: "room-b", title: "Room B", droppable: false },
+    ];
+  });
+  await flushRender(page);
+  const from = await eventBox(page, "a");
+  const column = page.locator(".cv-day-body").nth(3);
+  await column.waitFor({ state: "visible" });
+  const target = await column.boundingBox();
+  assert(target, "expected the room-b column");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, from.y + from.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  expect(await readMoves(page)).toHaveLength(0);
+  // Event a starts at 09:00, 60 minutes after the 08:00 slot start.
+  await expect.poll(() => eventTop(page, "a")).toBe("108px");
+});
+
+test("moveEvent and resizeEvent commands share the pointer contract", async ({ page }) => {
+  await page.goto("/demo/");
+  await trackMoves(page);
+  const moved = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return (
+      calendar.moveEvent("b", {
+        start: "2026-09-04T14:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-04T14:30:00+02:00[Europe/Brussels]",
+      }) !== null
+    );
+  });
+  expect(moved).toBe(true);
+  await expect.poll(() => readMoves(page)).toHaveLength(1);
+  const resized = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return (
+      calendar.resizeEvent("b", {
+        start: "2026-09-04T14:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-04T15:00:00+02:00[Europe/Brussels]",
+      }) !== null
+    );
+  });
+  expect(resized).toBe(true);
+  await expect.poll(() => readResizes(page)).toHaveLength(1);
 });

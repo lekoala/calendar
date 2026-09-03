@@ -54,7 +54,13 @@ The engine must eventually support:
 - optimistic application with `detail.revert()`;
 - revert on `preventDefault()` or on persistence rejection.
 
-Resource `droppable: false` or event `movable: false` must prevent drag before it starts.
+Resource `droppable: false` or event `movable: false` must prevent drag before it starts. Dropping on a non-droppable resource reverts silently without dispatching.
+
+During a drag the original node stays in place while a detached mirror follows the pointer across time, days and resources. The calendar commits optimistically on drop and re-renders; the residual click after a moved drag is suppressed.
+
+A viewport autoscroller advances the scroll while the pointer rests near the scroller edge. It is a separate helper, not part of layout math.
+
+Event nodes use `touch-action: none` so pointer drag works on touch. Touch range selection remains a later milestone.
 
 `calendar:eventmove` detail shape:
 
@@ -64,7 +70,7 @@ Resource `droppable: false` or event `movable: false` must prevent drag before i
 
 ## 5. Resize
 
-Support end resize first; start resize is also desirable and should be part of the design rather than an afterthought.
+Support end resize first; start resize is also desirable and should be part of the design rather than an afterthought. Both edges expose a resize handle on resizable events; the start edge snaps with floor and the end edge with ceil, keeping at least one snap step of duration.
 
 `calendar:eventresize` follows the same optimistic contract as move:
 

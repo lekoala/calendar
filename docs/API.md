@@ -154,6 +154,13 @@ calendar.removeEvent(id)
 calendar.batch(() => { ... })
 ```
 
+Non-pointer equivalents of the drag and resize interactions. They run the same optimistic commit (event, `revert()`, synchronous `preventDefault()` handling) and return the optimistic event, or `null` when rejected immediately:
+
+```js
+calendar.moveEvent(id, { start, end, resourceId })
+calendar.resizeEvent(id, { start, end })
+```
+
 The server/application remains source of truth. Applications may attach an opaque `extendedProps.revision` to reconcile optimistic updates with realtime echoes.
 
 ## DOM events

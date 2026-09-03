@@ -101,12 +101,51 @@
   background: var(--calendar-event-bg);
   color: var(--calendar-text);
   text-align: start;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cv-event:active {
+  cursor: grabbing;
 }
 
 .cv-event:focus-visible {
   outline: 2px solid var(--calendar-accent);
   outline-offset: 1px;
+}
+
+.cv-drag-source {
+  opacity: 0.35;
+}
+
+.cv-drag-mirror {
+  z-index: 6;
+  margin: 0;
+  opacity: 0.92;
+  pointer-events: none;
+  box-shadow: 0 0.5rem 1.5rem rgb(15 23 42 / 0.25);
+}
+
+.cv-drag-mirror.cv-invalid {
+  outline: 2px dashed #dc2626;
+  outline-offset: -2px;
+}
+
+.cv-resize-handle {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 3;
+  height: 0.65rem;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.cv-resize-n {
+  top: 0;
+}
+
+.cv-resize-s {
+  bottom: 0;
 }
 
 .cv-now {

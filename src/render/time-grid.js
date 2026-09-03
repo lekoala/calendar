@@ -3,6 +3,25 @@ import { durationMinutes, formatClock, minutesFromMidnight, zonedDateTimeAt } fr
 import { eventGeometry, snapMinutes } from "../core/geometry.js";
 import { hitTest } from "../core/hit.js";
 import { layoutEvents } from "../core/layout.js";
+import { isMovable, isResizable } from "../core/model.js";
+import { createAutoscroller } from "./autoscroll.js";
+
+/**
+ * @typedef {object} CommitTarget
+ * @property {boolean} [editable]
+ * @property {(input: {
+ *   event: import("../core/model.js").NormalizedEvent,
+ *   previous: { start: unknown, end: unknown, resourceId: string | null },
+ *   current: { start: unknown, end: unknown, resourceId: string | null },
+ *   nativeEvent: Event | null,
+ * }) => import("../core/model.js").NormalizedEvent | null} _commitEventMove
+ * @property {(input: {
+ *   event: import("../core/model.js").NormalizedEvent,
+ *   previous: { start: unknown, end: unknown, resourceId: string | null },
+ *   current: { start: unknown, end: unknown, resourceId: string | null },
+ *   nativeEvent: Event | null,
+ * }) => import("../core/model.js").NormalizedEvent | null} _commitEventResize
+ */
 
 /**
  * @typedef {object} TimeGridColumn
@@ -16,6 +35,7 @@ import { layoutEvents } from "../core/layout.js";
  * @property {string} slotMax
  * @property {number} pxPerMinute
  * @property {string} [timeZone]
+ * @property {boolean} [editable]
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
  */
@@ -49,6 +69,7 @@ function eventMinutes(isoLike) {
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {import("../core/model.js").NormalizedBackground[]} input.backgrounds
  * @param {TimeGridOptions} input.options
+ * @param {CommitTarget} input.calendar
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
  * @param {(info: object) => unknown} [input.resourceHeaderContent]
@@ -60,6 +81,7 @@ export function renderTimeGrid({
   events,
   backgrounds,
   options,
+  calendar,
   eventContent,
   dayHeaderContent,
   resourceHeaderContent,
@@ -142,6 +164,31 @@ export function renderTimeGrid({
     : dates.map((date) => ({ date, resource: null }));
 
   root.style.gridTemplateColumns = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
+
+  /** @type {Array<{ column: TimeGridColumn, body: HTMLDivElement }>} */
+  const bodies = [];
+
+  /**
+   * Grid-wide hit test across every rendered day column. Used by event drag
+   * to resolve day and resource changes while the pointer moves.
+   *
+   * @param {number} clientX
+   * @param {number} clientY
+   */
+  function gridHit(clientX, clientY) {
+    return hitTest({
+      x: clientX,
+      y: clientY,
+      columns: bodies.map(({ column, body }) => ({
+        date: column.date,
+        resource: column.resource,
+        rect: body.getBoundingClientRect(),
+      })),
+      slotMin: startMinutes,
+      slotMax: endMinutes,
+      pxPerMinute,
+    });
+  }
 
   for (const column of columns) {
     const day = document.createElement("section");
@@ -233,6 +280,203 @@ export function renderTimeGrid({
           }),
         );
       });
+
+      // A drag or resize that moved must not leak an eventclick from its residual click.
+      node.addEventListener(
+        "click",
+        (nativeEvent) => {
+          if (!suppressClick) return;
+          suppressClick = false;
+          nativeEvent.stopPropagation();
+          nativeEvent.preventDefault();
+        },
+        true,
+      );
+
+      const movable = isMovable(event, calendar.editable);
+      const resizable = isResizable(event, calendar.editable);
+
+      if (resizable) {
+        for (const edge of /** @type {["start", "end"]} */ (["start", "end"])) {
+          const handle = document.createElement("div");
+          handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "n" : "s"}`;
+          node.append(handle);
+          handle.addEventListener("pointerdown", (nativeEvent) => {
+            beginResize(nativeEvent, edge);
+          });
+        }
+      }
+
+      if (movable) {
+        node.addEventListener("pointerdown", beginDrag);
+      }
+
+      /**
+       * @param {PointerEvent} nativeEvent
+       * @param {"start" | "end"} edge
+       * @returns {void}
+       */
+      function beginResize(nativeEvent, edge) {
+        if (nativeEvent.button !== 0) return;
+        nativeEvent.stopPropagation();
+        nativeEvent.preventDefault();
+        node.setPointerCapture(nativeEvent.pointerId);
+        const savedTop = node.style.top;
+        const savedHeight = node.style.height;
+        const downX = nativeEvent.clientX;
+        const downY = nativeEvent.clientY;
+        let moved = false;
+        /** @type {{ start: number, end: number } | null} */
+        let pending = null;
+
+        /** @param {PointerEvent} moveEvent @returns {void} */
+        const onMove = (moveEvent) => {
+          if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
+          if (!moved) return;
+          const hit = columnHit(column, body, moveEvent.clientX, moveEvent.clientY);
+          if (!hit) return;
+          let start = item.start;
+          let end = item.end;
+          if (edge === "end") {
+            end = Math.max(snapMinutes(hit.minutes, snapStep, "ceil"), start + snapStep);
+          } else {
+            start = Math.min(snapMinutes(hit.minutes, snapStep, "floor"), end - snapStep);
+          }
+          pending = { start, end };
+          node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
+          node.style.height = `${(end - start) * pxPerMinute}px`;
+        };
+
+        /** @param {PointerEvent} upEvent @returns {void} */
+        const onUp = (upEvent) => {
+          node.removeEventListener("pointermove", onMove);
+          node.removeEventListener("pointercancel", onCancel);
+          if (!moved || !pending) return;
+          suppressClick = true;
+          const result = calendar._commitEventResize({
+            event,
+            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+            current: {
+              start: zonedDateTimeAt(column.date, pending.start, timeZone),
+              end: zonedDateTimeAt(column.date, pending.end, timeZone),
+              resourceId: event.resourceId ?? null,
+            },
+            nativeEvent: upEvent,
+          });
+          if (!result) {
+            node.style.top = savedTop;
+            node.style.height = savedHeight;
+          }
+        };
+
+        /** @param {PointerEvent} _cancelEvent @returns {void} */
+        const onCancel = (_cancelEvent) => {
+          node.removeEventListener("pointermove", onMove);
+          node.removeEventListener("pointerup", onUp);
+          node.style.top = savedTop;
+          node.style.height = savedHeight;
+        };
+
+        node.addEventListener("pointermove", onMove);
+        node.addEventListener("pointerup", onUp);
+        node.addEventListener("pointercancel", onCancel);
+      }
+
+      /**
+       * Drag an event across time, days and resources. The original node
+       * stays in place while a detached mirror follows the pointer; the
+       * calendar commits optimistically on drop and re-renders.
+       *
+       * @param {PointerEvent} nativeEvent
+       * @returns {void}
+       */
+      function beginDrag(nativeEvent) {
+        if (nativeEvent.button !== 0) return;
+        if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
+          return;
+        }
+        const downHit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
+        if (!downHit) return;
+        node.setPointerCapture(nativeEvent.pointerId);
+        const duration = item.end - item.start;
+        const grabOffset = downHit.minutes - item.start;
+        const downX = nativeEvent.clientX;
+        const downY = nativeEvent.clientY;
+        const scroller = body.closest(".cv-scroller");
+        const autoscroll = scroller ? createAutoscroller(scroller) : null;
+        let moved = false;
+        /** @type {HTMLButtonElement | null} */
+        let mirror = null;
+        /** @type {{ start: number, end: number, column: TimeGridColumn, droppable: boolean } | null} */
+        let pending = null;
+
+        /** @param {PointerEvent} moveEvent @returns {void} */
+        const onMove = (moveEvent) => {
+          if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
+          if (!moved) return;
+          if (!mirror) {
+            mirror = /** @type {HTMLButtonElement} */ (node.cloneNode(true));
+            mirror.classList.add("cv-drag-mirror");
+            mirror.classList.remove("cv-drag-source");
+            mirror.tabIndex = -1;
+            mirror.setAttribute("aria-hidden", "true");
+            node.classList.add("cv-drag-source");
+          }
+          autoscroll?.update(moveEvent.clientY);
+          const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
+          if (!hit) return;
+          const start = Math.min(
+            Math.max(snapMinutes(hit.minutes - grabOffset, snapStep, "floor"), startMinutes),
+            endMinutes - duration,
+          );
+          const target = bodies[hit.column];
+          const droppable = target.column.resource?.droppable !== false;
+          pending = { start, end: start + duration, column: target.column, droppable };
+          if (mirror.parentNode !== target.body) target.body.append(mirror);
+          mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
+          mirror.style.height = `${duration * pxPerMinute}px`;
+          mirror.classList.toggle("cv-invalid", !droppable);
+        };
+
+        const cleanup = () => {
+          node.removeEventListener("pointermove", onMove);
+          node.removeEventListener("pointerup", onUp);
+          node.removeEventListener("pointercancel", onCancel);
+          autoscroll?.stop();
+          mirror?.remove();
+          node.classList.remove("cv-drag-source");
+        };
+
+        /** @param {PointerEvent} upEvent @returns {void} */
+        const onUp = (upEvent) => {
+          const wasMoved = moved;
+          const range = pending;
+          cleanup();
+          if (!wasMoved || !range) return;
+          // A non-droppable target reverts silently: no dispatch, no state change.
+          if (!range.droppable) return;
+          suppressClick = true;
+          calendar._commitEventMove({
+            event,
+            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+            current: {
+              start: zonedDateTimeAt(range.column.date, range.start, timeZone),
+              end: zonedDateTimeAt(range.column.date, range.end, timeZone),
+              resourceId: range.column.resource?.id ?? null,
+            },
+            nativeEvent: upEvent,
+          });
+        };
+
+        /** @param {PointerEvent} _cancelEvent @returns {void} */
+        const onCancel = (_cancelEvent) => {
+          cleanup();
+        };
+
+        node.addEventListener("pointermove", onMove);
+        node.addEventListener("pointerup", onUp);
+        node.addEventListener("pointercancel", onCancel);
+      }
 
       body.append(node);
     }
@@ -367,6 +611,7 @@ export function renderTimeGrid({
       }
     }
     day.append(body);
+    bodies.push({ column, body });
     root.append(day);
   }
 
