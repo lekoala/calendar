@@ -1,5 +1,5 @@
-import http from "node:http";
 import { readFile } from "node:fs/promises";
+import http from "node:http";
 import { extname, join, normalize } from "node:path";
 
 const root = process.cwd();

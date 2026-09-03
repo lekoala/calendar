@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { layoutEvents } from "../../src/core/layout.js";
 
 test("prototype layout keeps events full width until overlap engine lands", () => {

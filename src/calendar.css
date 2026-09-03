@@ -13,7 +13,9 @@
   min-width: 0;
   color: var(--calendar-text);
   background: var(--calendar-bg);
-  font: 14px/1.35 system-ui, sans-serif;
+  font:
+    14px / 1.35 system-ui,
+    sans-serif;
 }
 
 .calendar-view *,
@@ -105,6 +107,14 @@
 .cv-event:focus-visible {
   outline: 2px solid var(--calendar-accent);
   outline-offset: 1px;
+}
+
+.cv-now {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 2;
+  border-top: 2px solid var(--calendar-accent);
+  pointer-events: none;
 }
 
 /* TODO: selection/hover/drop overlays and density policies by data-view. */

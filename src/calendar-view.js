@@ -1,6 +1,13 @@
 import { Temporal } from "temporal-polyfill";
-import { getViewRange, getVisibleDates, isResourceView, toPlainDate } from "./core/dates.js";
-import { normalizeEvent, normalizeResource } from "./core/model.js";
+import {
+  getViewDays,
+  getViewRange,
+  getVisibleDates,
+  isResourceView,
+  minutesFromMidnight,
+  toPlainDate,
+} from "./core/dates.js";
+import { normalizeBackground, normalizeEvent, normalizeResource } from "./core/model.js";
 import { renderTimeGrid } from "./render/time-grid.js";
 
 const DEFAULTS = {
@@ -88,7 +95,7 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   set backgrounds(value) {
-    this.#backgrounds = Array.from(value ?? []);
+    this.#backgrounds = Array.from(value ?? [], normalizeBackground);
     this.#queueRender();
   }
 
@@ -111,6 +118,29 @@ export class CalendarViewElement extends HTMLElement {
 
   getVisibleRange() {
     return getViewRange(this.date, this.view);
+  }
+
+  prev() {
+    this.gotoDate(this.date.add({ days: -getViewDays(this.view) }));
+  }
+
+  next() {
+    this.gotoDate(this.date.add({ days: getViewDays(this.view) }));
+  }
+
+  today() {
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    this.gotoDate(Temporal.Now.plainDateISO(timeZone));
+  }
+
+  scrollToTime(value) {
+    const scroller = this.querySelector(".cv-scroller");
+    if (!scroller) return 0;
+    const options = this.#options();
+    const startMinutes = minutesFromMidnight(options.slotMin);
+    const top = Math.max(0, (minutesFromMidnight(value) - startMinutes) * options.pxPerMinute);
+    scroller.scrollTop = top;
+    return top;
   }
 
   getEventById(id) {
@@ -175,7 +205,7 @@ export class CalendarViewElement extends HTMLElement {
       ]);
       if (controller.signal.aborted || version !== this.#requestVersion) return;
       this.#events = Array.from(events ?? [], normalizeEvent);
-      this.#backgrounds = Array.from(backgrounds ?? []);
+      this.#backgrounds = Array.from(backgrounds ?? [], normalizeBackground);
       this.#queueRender();
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -194,8 +224,8 @@ export class CalendarViewElement extends HTMLElement {
     });
   }
 
-  #render() {
-    const options = {
+  #options() {
+    return {
       timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
       slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
       slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
@@ -204,6 +234,10 @@ export class CalendarViewElement extends HTMLElement {
       snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
       defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
     };
+  }
+
+  #render() {
+    const options = this.#options();
 
     const dates = getVisibleDates(this.date, this.view);
     const resources = isResourceView(this.view) ? this.#resources : [];

@@ -1,3 +1,4 @@
+import { Temporal } from "temporal-polyfill";
 import { eventGeometry } from "../core/geometry.js";
 import { layoutEvents } from "../core/layout.js";
 
@@ -129,10 +130,33 @@ export function renderTimeGrid({
       if (content instanceof Node) node.append(content);
       else node.textContent = content == null ? (event.title ?? "Event") : String(content);
 
+      // Native <button> activation covers pointer click and Enter/Space equally.
+      node.addEventListener("click", (nativeEvent) => {
+        node.dispatchEvent(
+          new CustomEvent("calendar:eventclick", {
+            bubbles: true,
+            composed: true,
+            cancelable: true,
+            detail: { event, date: column.date, resource: column.resource, nativeEvent },
+          }),
+        );
+      });
+
       body.append(node);
     }
 
-    // TODO: hover-slot overlay, selection ghost, current-time line and resize handles.
+    // TODO: hover-slot overlay, selection ghost and resize handles.
+    const now = Temporal.Now.zonedDateTimeISO(options.timeZone ?? "UTC");
+    if (column.date.toString() === now.toPlainDate().toString()) {
+      const nowMinutes = now.hour * 60 + now.minute + now.second / 60;
+      if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {
+        const indicator = document.createElement("div");
+        indicator.className = "cv-now";
+        indicator.style.top = `${(nowMinutes - startMinutes) * pxPerMinute}px`;
+        indicator.setAttribute("aria-hidden", "true");
+        body.append(indicator);
+      }
+    }
     day.append(body);
     root.append(day);
   }

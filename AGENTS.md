@@ -183,6 +183,9 @@ If code/algorithms are later reused from an MIT project (for example EventCalend
 
 ## Working style
 
+- Package manager is bun (see `packageManager`). Run `dev`, `test`, `audit` and browser suites with bun.
+- Audit/debug tooling lives in `scripts/` as committed reusable scripts, never as one-shot files at the repository root.
+- Personal scratch goes to the gitignored `.temp/` directory, never to versionable paths.
 - Keep the implementation readable before making it clever.
 - Extract pure geometry/date/layout helpers and unit-test them.
 - Browser interactions need browser tests; DOM shims are not a substitute for pointer/focus/layout behavior.

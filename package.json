@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "private": true,
-  "packageManager": "npm@10",
+  "packageManager": "bun@1.4.0",
   "sideEffects": [
     "./src/calendar.css",
     "./src/define.js"
@@ -16,11 +16,13 @@
     "./calendar.css": "./src/calendar.css"
   },
   "scripts": {
-    "dev": "node scripts/dev.js",
-    "test": "node --test test/core/*.test.js",
+    "dev": "bun scripts/dev.js",
+    "audit:page": "bun scripts/audit-page.js",
+    "test": "bun test test/core",
     "test:browser": "playwright test",
+    "test:browser:headed": "playwright test --headed",
     "lint": "biome check src test scripts",
-    "check": "npm run lint && npm run test"
+    "check": "bun run lint && bun run test"
   },
   "peerDependencies": {
     "temporal-polyfill": "^1.0.4"

@@ -9,11 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-      - run: npm install
-      - run: npm run check
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
+          bun-version: 1.4.0
+      - run: bun install
+      - run: bun run check
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run test:browser

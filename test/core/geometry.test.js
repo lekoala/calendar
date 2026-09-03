@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { eventGeometry, minutesToPixels, pixelsToMinutes, snapMinutes } from "../../src/core/geometry.js";
 
 test("minutes and pixels are inverse operations", () => {

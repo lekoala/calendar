@@ -7,7 +7,8 @@ export function snapMinutes(minutes, step, mode = "round") {
     throw new TypeError("minutes and step must be finite; step must be > 0");
   }
   const ratio = minutes / step;
-  const snapped = mode === "floor" ? Math.floor(ratio) : mode === "ceil" ? Math.ceil(ratio) : Math.round(ratio);
+  const snapped =
+    mode === "floor" ? Math.floor(ratio) : mode === "ceil" ? Math.ceil(ratio) : Math.round(ratio);
   return snapped * step;
 }
 
