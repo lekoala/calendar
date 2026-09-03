@@ -9,6 +9,8 @@
 - Responsive: the sidebar becomes an off-canvas panel under 64rem, the toolbar wraps, the live strip drops secondary chips and narrow viewports open on `day` with the dock collapsed.
 - Seed fixture widened to six weeks of bookings across three rooms so month view is as populated as the time grids; the store now lives in the application and the core holds the filtered projection.
 - `test/browser/showcase.spec.js`: 9 Chromium tests (adds viewport-fill, mini-month navigation, room/kind filtering and live-strip assertions; `#anchor-label` is asserted through `data-date` now that the label is human-readable).
+- `docs/ROADMAP.md`: new milestone 8 (contract gaps), a demo coverage-debt section, and a record of the option families audited and deliberately left out, after comparing our public surface against a comparable MIT scheduler used as a specification reference.
+- `docs/INTEGRATION.md`: new "Overlays" section fixing the boundary and the mechanism for application-owned menus, tooltips and day popovers - native `popover` for the top layer and dismissal, `@lekoala/floating` for placement, `autoUpdate()` because the calendar scroller moves independently of the page. Positioning is an application dependency, never a runtime dependency of the core; CSS anchor positioning is noted as above our browser floor for now.
 
 ## Unreleased — showcase polish + demo hub
 

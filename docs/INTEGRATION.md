@@ -80,6 +80,45 @@ calendar.updateEvent(updatedOccurrence);
 
 or refetch if the change has broader scheduling effects.
 
+## Overlays
+
+The core dispatches intent plus the coordinates needed to place something,
+and stops there. `calendar:eventcontextmenu` carries the `nativeEvent`, so
+`clientX`/`clientY` are available; events and month chips carry
+`data-event-id`, so an application can attach hover behaviour without a
+core hook. Menus, tooltips, day popovers and editors are application code.
+
+The reference mechanism for those overlays is the platform first, geometry
+second:
+
+- native `popover` for the top layer, light dismiss and Escape - it removes the manual outside-click and keydown bookkeeping an application would otherwise write;
+- [`@lekoala/floating`](https://github.com/lekoala/floating) for placement: `reposition(reference, floating, options)` against an element, `repositionAt(x, y, floating, options)` for coordinate-driven menus, and `autoUpdate()` to follow movement.
+
+`floating` does not wire itself to the `popover` attribute - that is an
+explicit non-goal on its side - so the application repositions on
+`toggle`, and calls `autoUpdate()` while the overlay is open. That last
+part matters here: the calendar scroller moves independently of the page,
+so an overlay anchored to an event must follow the scroller, not the
+document.
+
+```js
+menu.addEventListener("toggle", (event) => {
+  if (event.newState !== "open") return stop?.();
+  reposition(eventNode, menu, { placement: "right-start", distance: 6 });
+  stop = autoUpdate(eventNode, menu, () =>
+    reposition(eventNode, menu, { placement: "right-start", distance: 6 }),
+  );
+});
+```
+
+Positioning stays outside the package: it is an application dependency,
+never a runtime dependency of the core. `floating` shares our
+compatibility baseline (ES2022, Chromium 99+, Firefox 98+, Safari 15.4+)
+and has no runtime dependencies, so it is a safe demo dependency, but the
+core keeps shipping only geometry it computes itself. CSS anchor
+positioning is the eventual platform answer and is deliberately not the
+one used yet: it is above our browser floor.
+
 ## Realtime
 
 ```js
