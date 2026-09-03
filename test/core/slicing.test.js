@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Temporal } from "temporal-polyfill";
-import { sliceRangeForDay, sliceTimedEventForDay, toZonedDateTime } from "../../src/core/slicing.js";
+import {
+  describeEvent,
+  sliceRangeForDay,
+  sliceTimedEventForDay,
+  toZonedDateTime,
+} from "../../src/core/slicing.js";
 
 const ZONE = "Europe/Brussels";
 const SLOT = { timeZone: ZONE, slotMin: 480, slotMax: 1080 };
@@ -122,4 +127,31 @@ test("ZonedDateTime instances are projected into the calendar zone", () => {
   const start = Temporal.ZonedDateTime.from("2026-09-03T09:00:00+02:00[Europe/Brussels]");
   const slice = sliceRangeForDay({ start, end: start.add({ hours: 1 }), date: "2026-09-03", ...SLOT });
   assert.deepEqual(slice, { start: 540, end: 600 });
+});
+
+test("describeEvent summarizes same-day events", () => {
+  assert.equal(
+    describeEvent(
+      {
+        title: "Workshop",
+        start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+      },
+      ZONE,
+    ),
+    "Workshop, 2026-09-03, 09:00 to 10:00",
+  );
+});
+
+test("describeEvent repeats the end date only across days", () => {
+  assert.equal(
+    describeEvent(
+      {
+        start: "2026-09-07T17:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-08T09:00:00+02:00[Europe/Brussels]",
+      },
+      ZONE,
+    ),
+    "Event, 2026-09-07, 17:00 to 2026-09-08, 09:00",
+  );
 });

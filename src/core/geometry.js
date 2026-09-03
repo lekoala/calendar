@@ -18,9 +18,17 @@ export function snapMinutes(minutes, step, mode = "round") {
   if (!Number.isFinite(minutes) || !Number.isFinite(step) || step <= 0) {
     throw new TypeError("minutes and step must be finite; step must be > 0");
   }
+  // Epsilon absorbs float noise from rect/pointer math (e.g. 659.9999999999
+  // for an exact 660): far above ulp-level error (~1e-12 here), far below any
+  // meaningful sub-step difference (seconds resolve to ~1e-3 of a 15m step).
+  const epsilon = 1e-9;
   const ratio = minutes / step;
   const snapped =
-    mode === "floor" ? Math.floor(ratio) : mode === "ceil" ? Math.ceil(ratio) : Math.round(ratio);
+    mode === "floor"
+      ? Math.floor(ratio + epsilon)
+      : mode === "ceil"
+        ? Math.ceil(ratio - epsilon)
+        : Math.round(ratio);
   return snapped * step;
 }
 

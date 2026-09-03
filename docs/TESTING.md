@@ -158,7 +158,9 @@ Manual stress only: 12 resources × 3 days, 6 resources × 7 days. Columns keep 
 
 ## Browser matrix
 
-Start development in Chromium for speed. Before a stable 0.x release, run Chromium + Firefox + WebKit because scheduling bugs frequently involve scroll/layout/pointer behavior.
+Chromium, Firefox and WebKit run the whole suite on every change, plus a touch-enabled narrow-viewport Chromium project (`mobile`). Scheduling bugs live in scroll/layout/pointer behavior, and the matrix has already caught real ones: Firefox/WebKit fractional layout pixels exposed float-boundary snapping, and `scrollIntoViewIfNeeded` scrolls oversized elements differently per browser.
+
+Media emulation (`prefers-reduced-motion`, `forced-colors`) is asserted where the driver supports it (currently Chromium only) while the CSS itself is driver-independent.
 
 ## Test fixture rule
 

@@ -16,12 +16,15 @@ import {
   getResourceColumns,
   getTimeGridColumns,
 } from "../core/resources.js";
-import { sliceTimedEventForDay } from "../core/slicing.js";
+import { describeEvent, sliceTimedEventForDay, toZonedDateTime, wallMinutes } from "../core/slicing.js";
 import { createAutoscroller } from "./autoscroll.js";
 
 /**
  * @typedef {object} CommitTarget
  * @property {boolean} [editable]
+ * @property {boolean} isConnected
+ * @property {(message: string) => void} _announce
+ * @property {(selectors: string) => Element | null} querySelector
  * @property {(input: {
  *   event: import("../core/model.js").NormalizedEvent,
  *   previous: { start: unknown, end: unknown, resourceId: string | null },
@@ -104,7 +107,6 @@ export function renderTimeGrid({
     const resourceRow = document.createElement("div");
     resourceRow.className = "cv-resource-row";
     resourceRow.style.gridTemplateColumns = gridTemplate;
-    resourceRow.setAttribute("role", "row");
     const corner = document.createElement("div");
     corner.className = "cv-resource-corner";
     corner.setAttribute("aria-hidden", "true");
@@ -114,7 +116,6 @@ export function renderTimeGrid({
       header.className = "cv-resource-header";
       header.dataset.resourceId = resource.id;
       header.style.gridColumn = `span ${Math.max(1, dates.length)}`;
-      header.setAttribute("role", "columnheader");
       const custom = resourceHeaderContent?.({ resource, dates, element: header });
       if (custom instanceof Node) header.append(custom);
       else if (custom != null) header.textContent = String(custom);
@@ -146,6 +147,120 @@ export function renderTimeGrid({
   /** @type {ActiveSelection | null} */
   let selecting = null;
   let suppressClick = false;
+  // Set when a press-and-hold fires: the pointer release that follows must
+  // not start a drag, commit a move, or leak a click/select.
+  let longPressConsumed = false;
+
+  const LONG_PRESS_MS = 550;
+  const LONG_PRESS_PX = 12;
+
+  /**
+   * Pointer capture is best-effort: a released or synthetic pointer throws,
+   * and the interaction still works without capture.
+   *
+   * @param {HTMLElement} target
+   * @param {number} pointerId
+   * @returns {void}
+   */
+  function tryCapture(target, pointerId) {
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {
+      // Capture is an enhancement, not a requirement.
+    }
+  }
+
+  /**
+   * Dispatch a cancelable context intent. The core never calls
+   * `preventDefault()` on the native event; the application suppresses the
+   * browser menu when it handles the intent.
+   *
+   * @param {Element} target
+   * @param {object} detail
+   * @param {Event} nativeEvent
+   * @returns {void}
+   */
+  function dispatchContextMenu(target, detail, nativeEvent) {
+    target.dispatchEvent(
+      new CustomEvent("calendar:eventcontextmenu", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        detail: { ...detail, nativeEvent },
+      }),
+    );
+  }
+
+  /**
+   * Press-and-hold for touch/pen pointers. Mouse pointers use right-click
+   * instead and never arm the timer, so mouse drags are unaffected. The
+   * timer is dropped on movement, release, cancel, or disconnect.
+   *
+   * @param {HTMLElement} target
+   * @param {(press: PointerEvent) => void} onFire
+   * @param {(press: PointerEvent) => boolean} [shouldIgnore] skip presses handled elsewhere (e.g. event presses bubbling to the day body)
+   * @returns {void}
+   */
+  function watchLongPress(target, onFire, shouldIgnore) {
+    let timer = 0;
+    let pointerId = -1;
+    let startX = 0;
+    let startY = 0;
+    const clear = () => {
+      if (timer !== 0) {
+        clearTimeout(timer);
+        timer = 0;
+      }
+    };
+    target.addEventListener("pointerdown", (nativeEvent) => {
+      if (nativeEvent.pointerType === "mouse" || nativeEvent.button !== 0) return;
+      if (shouldIgnore?.(nativeEvent)) return;
+      pointerId = nativeEvent.pointerId;
+      startX = nativeEvent.clientX;
+      startY = nativeEvent.clientY;
+      clear();
+      timer = window.setTimeout(() => {
+        timer = 0;
+        if (!calendar.isConnected) return;
+        longPressConsumed = true;
+        suppressClick = true;
+        onFire(nativeEvent);
+      }, LONG_PRESS_MS);
+    });
+    target.addEventListener("pointermove", (nativeEvent) => {
+      if (timer === 0 || nativeEvent.pointerId !== pointerId) return;
+      if (Math.hypot(nativeEvent.clientX - startX, nativeEvent.clientY - startY) > LONG_PRESS_PX) {
+        clear();
+      }
+    });
+    target.addEventListener("pointerup", clear);
+    target.addEventListener("pointercancel", clear);
+  }
+
+  /**
+   * @param {HTMLDivElement} body
+   * @returns {HTMLButtonElement[]}
+   */
+  function focusableEvents(body) {
+    const nodes = /** @type {HTMLButtonElement[]} */ ([...body.querySelectorAll(".cv-event")]);
+    return nodes.sort((a, b) => Number.parseFloat(a.style.top) - Number.parseFloat(b.style.top));
+  }
+
+  /**
+   * Refocus an event after an optimistic commit re-rendered the grid.
+   *
+   * @param {string} id
+   * @returns {void}
+   */
+  function refocusEvent(id) {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        /** @type {HTMLElement | null} */ (
+          calendar.querySelector(`[data-event-id="${CSS.escape(id)}"]`)
+        )?.focus();
+      }),
+    );
+  }
 
   /**
    * @param {TimeGridColumn} column
@@ -308,7 +423,7 @@ export function renderTimeGrid({
       node.style.height = `${geometry.height}px`;
       node.style.left = `${item.left * 100}%`;
       node.style.width = `${item.width * 100}%`;
-      node.setAttribute("aria-label", `${event.title ?? "Event"}, ${event.start} – ${event.end}`);
+      node.setAttribute("aria-label", describeEvent(event, timeZone));
 
       const content = eventContent?.({ event, date: column.date, resource: column.resource, element: node });
       if (content instanceof Node) node.append(content);
@@ -326,12 +441,14 @@ export function renderTimeGrid({
         );
       });
 
-      // A drag or resize that moved must not leak an eventclick from its residual click.
+      // A drag, resize or long-press that moved must not leak an eventclick
+      // from its residual click.
       node.addEventListener(
         "click",
         (nativeEvent) => {
           if (!suppressClick) return;
           suppressClick = false;
+          longPressConsumed = false;
           nativeEvent.stopPropagation();
           nativeEvent.preventDefault();
         },
@@ -340,6 +457,175 @@ export function renderTimeGrid({
 
       const movable = isMovable(event, calendar.editable);
       const resizable = isResizable(event, calendar.editable);
+
+      node.addEventListener("contextmenu", (nativeEvent) => {
+        dispatchContextMenu(
+          node,
+          {
+            event,
+            date: column.date,
+            resourceId: column.resource?.id ?? null,
+            clientX: nativeEvent.clientX,
+            clientY: nativeEvent.clientY,
+          },
+          nativeEvent,
+        );
+      });
+
+      watchLongPress(node, (press) => {
+        dispatchContextMenu(
+          node,
+          {
+            event,
+            date: column.date,
+            resourceId: column.resource?.id ?? null,
+            clientX: press.clientX,
+            clientY: press.clientY,
+          },
+          press,
+        );
+      });
+
+      /**
+       * Focus navigation between events. Data-changing keys reuse the same
+       * optimistic commit as pointer and commands; cross-resource moves stay
+       * a command operation (`moveEvent` with `resourceId`).
+       *
+       * @param {KeyboardEvent} keyboardEvent
+       * @returns {void}
+       */
+      function onEventKeyDown(keyboardEvent) {
+        if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
+        const key = keyboardEvent.key;
+        const shift = keyboardEvent.shiftKey;
+        const alt = keyboardEvent.altKey;
+        if (!shift && !alt) {
+          if (
+            key === "ArrowUp" ||
+            key === "ArrowDown" ||
+            key === "ArrowLeft" ||
+            key === "ArrowRight" ||
+            key === "Home" ||
+            key === "End"
+          ) {
+            keyboardEvent.preventDefault();
+            moveEventFocus(key);
+          }
+          return;
+        }
+        if (shift && !alt && key.startsWith("Arrow")) {
+          if (!movable) return;
+          keyboardEvent.preventDefault();
+          keyboardMoveEvent(key, keyboardEvent);
+          return;
+        }
+        if (alt && !shift && key.startsWith("Arrow")) {
+          if (!resizable) return;
+          keyboardEvent.preventDefault();
+          keyboardResizeEvent(key, keyboardEvent);
+        }
+      }
+
+      /**
+       * @param {string} key
+       * @returns {void}
+       */
+      function moveEventFocus(key) {
+        const currentBody = node.closest(".cv-day-body");
+        if (!(currentBody instanceof HTMLDivElement)) return;
+        if (key === "ArrowUp" || key === "ArrowDown" || key === "Home" || key === "End") {
+          const peers = focusableEvents(currentBody);
+          const index = peers.indexOf(node);
+          if (index < 0) return;
+          const target =
+            key === "Home"
+              ? peers[0]
+              : key === "End"
+                ? peers[peers.length - 1]
+                : peers[index + (key === "ArrowDown" ? 1 : -1)];
+          target?.focus();
+          return;
+        }
+        const bodyIndex = bodies.findIndex((entry) => entry.body === currentBody);
+        const target = bodies[bodyIndex + (key === "ArrowRight" ? 1 : -1)];
+        if (!target) return;
+        const peers = focusableEvents(target.body);
+        if (peers.length === 0) return;
+        const top = Number.parseFloat(node.style.top);
+        let best = peers[0];
+        for (const peer of peers) {
+          if (
+            Math.abs(Number.parseFloat(peer.style.top) - top) <
+            Math.abs(Number.parseFloat(best.style.top) - top)
+          ) {
+            best = peer;
+          }
+        }
+        best.focus();
+      }
+
+      /**
+       * @param {string} key
+       * @param {KeyboardEvent} nativeEvent
+       * @returns {void}
+       */
+      function keyboardMoveEvent(key, nativeEvent) {
+        const startZoned = toZonedDateTime(event.start, timeZone);
+        const endZoned = toZonedDateTime(event.end, timeZone);
+        const previous = { start: event.start, end: event.end, resourceId: event.resourceId ?? null };
+        let current;
+        if (key === "ArrowUp" || key === "ArrowDown") {
+          const delta = key === "ArrowDown" ? snapStep : -snapStep;
+          current = {
+            start: startZoned.add({ minutes: delta }),
+            end: endZoned.add({ minutes: delta }),
+            resourceId: event.resourceId ?? null,
+          };
+        } else {
+          const targetDate = column.date.add({ days: key === "ArrowRight" ? 1 : -1 });
+          const nextStart = zonedDateTimeAt(targetDate, wallMinutes(startZoned), timeZone);
+          const duration = Temporal.Duration.from({
+            milliseconds: endZoned.epochMilliseconds - startZoned.epochMilliseconds,
+          });
+          const nextEnd = nextStart.add(duration);
+          current = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
+        }
+        const result = calendar._commitEventMove({ event, previous, current, nativeEvent });
+        if (!result) return;
+        calendar._announce(describeEvent(result, timeZone));
+        refocusEvent(event.id);
+      }
+
+      /**
+       * Alt + arrows resize: Up/Down adjust the start edge, Left/Right the
+       * end edge, keeping at least one snap step of duration.
+       *
+       * @param {string} key
+       * @param {KeyboardEvent} nativeEvent
+       * @returns {void}
+       */
+      function keyboardResizeEvent(key, nativeEvent) {
+        const startZoned = toZonedDateTime(event.start, timeZone);
+        const endZoned = toZonedDateTime(event.end, timeZone);
+        let nextStart = startZoned;
+        let nextEnd = endZoned;
+        if (key === "ArrowUp") nextStart = startZoned.subtract({ minutes: snapStep });
+        else if (key === "ArrowDown") nextStart = startZoned.add({ minutes: snapStep });
+        else if (key === "ArrowLeft") nextEnd = endZoned.subtract({ minutes: snapStep });
+        else nextEnd = endZoned.add({ minutes: snapStep });
+        if (nextEnd.epochMilliseconds - nextStart.epochMilliseconds < snapStep * 60 * 1000) return;
+        const result = calendar._commitEventResize({
+          event,
+          previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+          current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
+          nativeEvent,
+        });
+        if (!result) return;
+        calendar._announce(describeEvent(result, timeZone));
+        refocusEvent(event.id);
+      }
+
+      node.addEventListener("keydown", onEventKeyDown);
 
       if (resizable) {
         for (const edge of /** @type {["start", "end"]} */ (["start", "end"])) {
@@ -365,7 +651,7 @@ export function renderTimeGrid({
         if (nativeEvent.button !== 0) return;
         nativeEvent.stopPropagation();
         nativeEvent.preventDefault();
-        node.setPointerCapture(nativeEvent.pointerId);
+        tryCapture(node, nativeEvent.pointerId);
         const savedTop = node.style.top;
         const savedHeight = node.style.height;
         const downX = nativeEvent.clientX;
@@ -376,6 +662,7 @@ export function renderTimeGrid({
 
         /** @param {PointerEvent} moveEvent @returns {void} */
         const onMove = (moveEvent) => {
+          if (longPressConsumed) return;
           if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
           if (!moved) return;
           const hit = columnHit(column, body, moveEvent.clientX, moveEvent.clientY);
@@ -396,6 +683,11 @@ export function renderTimeGrid({
         const onUp = (upEvent) => {
           node.removeEventListener("pointermove", onMove);
           node.removeEventListener("pointercancel", onCancel);
+          if (longPressConsumed) {
+            node.style.top = savedTop;
+            node.style.height = savedHeight;
+            return;
+          }
           if (!moved || !pending) return;
           suppressClick = true;
           const result = calendar._commitEventResize({
@@ -420,6 +712,9 @@ export function renderTimeGrid({
           node.removeEventListener("pointerup", onUp);
           node.style.top = savedTop;
           node.style.height = savedHeight;
+          // No click follows a cancel: drop both suppression flags.
+          longPressConsumed = false;
+          suppressClick = false;
         };
 
         node.addEventListener("pointermove", onMove);
@@ -442,7 +737,7 @@ export function renderTimeGrid({
         }
         const downHit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
         if (!downHit) return;
-        node.setPointerCapture(nativeEvent.pointerId);
+        tryCapture(node, nativeEvent.pointerId);
         const duration = item.end - item.start;
         const grabOffset = downHit.minutes - item.start;
         const downX = nativeEvent.clientX;
@@ -457,6 +752,7 @@ export function renderTimeGrid({
 
         /** @param {PointerEvent} moveEvent @returns {void} */
         const onMove = (moveEvent) => {
+          if (longPressConsumed) return;
           if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
           if (!moved) return;
           if (!mirror) {
@@ -497,6 +793,9 @@ export function renderTimeGrid({
           const wasMoved = moved;
           const range = pending;
           cleanup();
+          // A fired long-press owns the gesture: no commit, and the residual
+          // click stays suppressed for its own capture-phase handler.
+          if (longPressConsumed) return;
           if (!wasMoved || !range) return;
           // A non-droppable target reverts silently: no dispatch, no state change.
           if (!range.droppable) return;
@@ -516,6 +815,9 @@ export function renderTimeGrid({
         /** @param {PointerEvent} _cancelEvent @returns {void} */
         const onCancel = (_cancelEvent) => {
           cleanup();
+          // No click follows a cancel: drop both suppression flags.
+          longPressConsumed = false;
+          suppressClick = false;
         };
 
         node.addEventListener("pointermove", onMove);
@@ -573,7 +875,7 @@ export function renderTimeGrid({
         const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
         if (!hit) return;
         hover.hidden = true;
-        body.setPointerCapture(nativeEvent.pointerId);
+        tryCapture(body, nativeEvent.pointerId);
         ghost = document.createElement("div");
         ghost.className = "cv-select-ghost";
         ghost.setAttribute("aria-hidden", "true");
@@ -618,12 +920,17 @@ export function renderTimeGrid({
        * @returns {void}
        */
       const finishSelection = (nativeEvent, cancelled) => {
+        // A fired long-press owns the gesture: drop the pending selection and
+        // keep the residual click suppressed for its own handler below.
+        const wasLongPress = longPressConsumed;
+        longPressConsumed = false;
         if (!selecting) return;
         const { anchor, moved, start, end } = selecting;
         selecting = null;
         ghost?.remove();
         ghost = null;
-        if (cancelled) return;
+        ghostChip = null;
+        if (cancelled || wasLongPress) return;
         if (moved) {
           suppressClick = true;
           dispatchSelect(body, column, start, end, nativeEvent);
@@ -642,6 +949,53 @@ export function renderTimeGrid({
         nativeEvent.stopPropagation();
         nativeEvent.preventDefault();
       });
+
+      body.addEventListener("contextmenu", (nativeEvent) => {
+        if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-event")) {
+          return;
+        }
+        const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
+        if (!hit) return;
+        const snapped = snapMinutes(hit.minutes, snapStep, "floor");
+        dispatchContextMenu(
+          body,
+          {
+            event: null,
+            date: column.date,
+            time: zonedDateTimeAt(column.date, snapped, timeZone),
+            resourceId: column.resource?.id ?? null,
+            clientX: nativeEvent.clientX,
+            clientY: nativeEvent.clientY,
+          },
+          nativeEvent,
+        );
+      });
+
+      watchLongPress(
+        body,
+        (press) => {
+          selecting = null;
+          ghost?.remove();
+          ghost = null;
+          ghostChip = null;
+          const hit = columnHit(column, body, press.clientX, press.clientY);
+          if (!hit) return;
+          const snapped = snapMinutes(hit.minutes, snapStep, "floor");
+          dispatchContextMenu(
+            body,
+            {
+              event: null,
+              date: column.date,
+              time: zonedDateTimeAt(column.date, snapped, timeZone),
+              resourceId: column.resource?.id ?? null,
+              clientX: press.clientX,
+              clientY: press.clientY,
+            },
+            press,
+          );
+        },
+        (press) => press.target instanceof Element && press.target.closest(".cv-event") !== null,
+      );
     }
 
     const now = Temporal.Now.zonedDateTimeISO(timeZone);

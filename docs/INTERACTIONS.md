@@ -80,17 +80,19 @@ Support end resize first; start resize is also desirable and should be part of t
 
 ## 6. Context actions
 
-The core may dispatch a context event and provide anchor coordinates. It should not ship business menu items.
+The core dispatches a context event and provides anchor coordinates. It does not ship business menu items.
 
-Desktop:
+```js
+calendar.addEventListener("calendar:eventcontextmenu", (event) => {
+  // detail: { event|null, date, time, resourceId, clientX, clientY, nativeEvent }
+});
+```
 
-- right click;
-- optional event action button authored by renderer/application.
+Desktop: right-click (`contextmenu`) on an event or an empty slot. The core never calls `preventDefault()` on the native event; the application suppresses the browser menu when it handles the intent.
 
-Touch:
+Touch/pen: press-and-hold (550 ms, 12 px tolerance) on an event or an empty slot fires the same event. A fired long-press suppresses the residual click/select/drag that would otherwise follow. Mouse pointers never trigger long-press; they use right-click.
 
-- optional long press with movement threshold;
-- haptics are application/platform enhancement, not required core behavior.
+`time` is the slot-snapped (`snapDuration`, floor) wall time at the pointer, resolved through the shared hit testing. For events, `event` carries the target; for empty slots it is `null` and `date`/`resourceId` describe the column.
 
 ## 7. Pointer engine
 
@@ -127,16 +129,36 @@ Hover preview, select, drag and drop should all consume this result.
 
 ## 9. Keyboard
 
-Minimum accessible path to design/test:
+Events are native `<button>` elements: Tab reaches them, Enter/Space fires `calendar:eventclick`, and the accessible name (`title, date, start to end` in wall-clock time) survives custom `eventContent()` output. Focus is `:focus-visible` styled.
 
-- events focusable with `tabindex="0"` inside a core-owned wrapper;
-- Enter/Space activates an event exactly like click;
-- the accessible name survives custom `eventContent()` output;
-- visible `:focus-visible` styling;
-- keyboard users can invoke equivalent creation/edit actions;
-- arrows/PageUp/PageDown navigation policy documented before implementation;
-- drag/resize must have a non-pointer alternative, even if provided through commands rather than literal keyboard dragging.
+Arrow keys move focus between events without changing data:
+
+```text
+Up/Down     previous/next event in the same column (time order)
+Left/Right  nearest-by-time event in the previous/next column
+Home/End    first/last event of the column
+```
+
+PageUp/PageDown keep their native scroll behavior and are never hijacked.
+
+Data-changing keys act on the focused event through the same optimistic commit as pointer and commands (`calendar:eventmove` / `calendar:eventresize` with `revert()`, reverted on synchronous `preventDefault()`). They honor `movable`/`resizable`/`editable`; moving across resources stays a command/API operation (`moveEvent` with `resourceId`) so applications can expose their own resource picker UI:
+
+```text
+Shift + Up/Down       move ± snapDuration (same day)
+Shift + Left/Right    move ∓/± 1 day, wall time and resource preserved
+Alt + Up/Down         resize start ∓/± snapDuration (earlier/later)
+Alt + Left/Right      resize end ∓/± snapDuration (shorter/longer)
+```
+
+Minimum duration is one snap step. After a committed key operation the re-rendered event regains focus and a polite live region announces the result (`title, date, start to end`); navigation keys announce nothing. Escape is reserved and currently a no-op.
+
+Range creation stays pointer-initiated: applications expose creation through their own controls and feed the resulting range back through events/sources. Day bodies are intentionally not tab stops.
+
+View/date changes (`setView`, `gotoDate`, `prev/next/today`) announce the new anchor (`view, date`) through the same live region.
 
 ## 10. Reduced motion / forced colors
 
 Interaction feedback must remain understandable with reduced motion and forced colors. Do not encode state through color alone.
+
+- `prefers-reduced-motion: reduce` disables transitions/animations inside the component. Autoscroll stays functional (it is viewport movement, not decoration).
+- `forced-colors: active` maps surfaces to system colors: event borders to `CanvasText`, interactive overlays and focus to `Highlight`, the now-indicator to `Highlight`, invalid drop targets keep a dashed outline. Background tints that cannot render become transparent with a visible border.

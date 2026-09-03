@@ -83,6 +83,10 @@ At some point the UX, not rendering speed, becomes the first problem.
 
 The core should allow horizontal scrolling and author-defined minimum column sizes. It should not hide resources/events automatically without an explicit policy.
 
+### Responsive guidance
+
+Narrow viewports change density, never semantics: below 640 px the default column minimum shrinks (`--calendar-column-min: 7.5rem`, still author-overridable) and the grid keeps scrolling horizontally. Applications should prefer `day` / `resourceDay` on phones and keep 3-day views for larger screens; safe-area and shell chrome remain host concerns. Touch targets follow the event geometry (slot heights), with resize handles kept at least 0.65 rem tall; precise Multitouch gestures beyond press-and-hold are out of scope.
+
 ## Month
 
 Month should not necessarily mimic the time grid. It may be a summary-oriented renderer with configurable event rows/indicators.

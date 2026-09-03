@@ -115,6 +115,81 @@
   color: var(--calendar-muted);
 }
 
+.cv-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+/* Narrow viewports change density, never semantics: smaller column minimum,
+   still author-overridable, horizontal scroll preserved. */
+@media (max-width: 640px) {
+  .calendar-view {
+    --calendar-column-min: 7.5rem;
+  }
+}
+
+/* Motion inside the component is decorative; autoscroll stays functional
+   because it is viewport movement, not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .calendar-view *,
+  .calendar-view *::before,
+  .calendar-view *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .cv-event {
+    border-color: ButtonText;
+  }
+
+  .cv-event:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .cv-resource-header,
+  .cv-day-header,
+  .cv-day {
+    border-color: CanvasText;
+  }
+
+  .cv-background {
+    border: 1px dashed CanvasText;
+    background: transparent;
+  }
+
+  .cv-now {
+    border-top-color: Highlight;
+  }
+
+  .cv-hover,
+  .cv-select-ghost {
+    border-color: Highlight;
+    background: transparent;
+  }
+
+  .cv-hover-chip,
+  .cv-select-chip {
+    color: Highlight;
+  }
+
+  .cv-drag-mirror.cv-invalid {
+    outline-color: Mark;
+  }
+
+  .cv-axis-label {
+    color: CanvasText;
+  }
+}
+
 .cv-day-body {
   position: relative;
 }

@@ -14,5 +14,16 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
+    { name: "firefox", use: { browserName: "firefox" } },
+    { name: "webkit", use: { browserName: "webkit" } },
+    {
+      name: "mobile",
+      use: {
+        browserName: "chromium",
+        hasTouch: true,
+        isMobile: true,
+        viewport: { width: 390, height: 844 },
+      },
+    },
   ],
 });

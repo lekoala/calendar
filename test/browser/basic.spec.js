@@ -75,6 +75,7 @@ test("scrollToTime moves the scroller to the requested hour", async ({ page }) =
 
 test("pointer click dispatches calendar:eventclick", async ({ page }) => {
   await page.goto("/demo/");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__seen = [];
@@ -89,6 +90,7 @@ test("pointer click dispatches calendar:eventclick", async ({ page }) => {
 
 test("keyboard Enter on a focused event dispatches calendar:eventclick", async ({ page }) => {
   await page.goto("/demo/");
+  await expect(page.locator('[data-event-id="b"]')).toBeVisible();
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__seen = [];
@@ -101,17 +103,6 @@ test("keyboard Enter on a focused event dispatches calendar:eventclick", async (
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__seen)).toEqual(["b"]);
 });
-
-/**
- * @param {import("@playwright/test").Page} page
- */
-async function firstBodyBox(page) {
-  const body = page.locator(".cv-day-body").first();
-  await body.scrollIntoViewIfNeeded();
-  const box = await body.boundingBox();
-  assert(box, "expected the first day body to have a bounding box");
-  return box;
-}
 
 /**
  * @param {import("@playwright/test").Page} page
@@ -164,7 +155,9 @@ function flushRender(page) {
 test("hovering an empty slot shows a duration preview", async ({ page }) => {
   await page.goto("/demo/");
   const box = await firstBodyBox(page);
-  await page.mouse.move(box.x + box.width / 2, box.y + 180 * 1.8);
+  // 187 minutes sits inside the 11:00 snap step: cross-API sub-pixel slop
+  // (~1px) must never flip the asserted step.
+  await page.mouse.move(box.x + box.width / 2, box.y + 187 * 1.8);
   await expect(page.locator(".cv-hover").first()).toBeVisible();
   await expect(page.locator(".cv-hover-chip").first()).toContainText("+ 11:00");
 });
@@ -172,7 +165,7 @@ test("hovering an empty slot shows a duration preview", async ({ page }) => {
 test("hovering an event shows no slot preview", async ({ page }) => {
   await page.goto("/demo/");
   const box = await firstBodyBox(page);
-  await page.mouse.move(box.x + box.width / 2, box.y + 180 * 1.8);
+  await page.mouse.move(box.x + box.width / 2, box.y + 187 * 1.8);
   await expect(page.locator(".cv-hover").first()).toBeVisible();
   await page.mouse.move(box.x + box.width * 0.25, box.y + 75 * 1.8);
   await expect(page.locator(".cv-hover").first()).toBeHidden();
@@ -196,9 +189,11 @@ test("dragging selects a snapped range without a residual click selection", asyn
   await trackSelections(page);
   const box = await firstBodyBox(page);
   const x = box.x + box.width / 2;
-  await page.mouse.move(x, box.y + 180 * 1.8);
+  // Interior snap steps (182/252): exact boundaries would let sub-pixel
+  // cross-API slop flip the asserted range on some browsers.
+  await page.mouse.move(x, box.y + 182 * 1.8);
   await page.mouse.down();
-  await page.mouse.move(x, box.y + 250 * 1.8, { steps: 5 });
+  await page.mouse.move(x, box.y + 252 * 1.8, { steps: 5 });
   await expect(page.locator(".cv-select-chip").first()).toContainText("11:00 - 12:15");
   await page.mouse.up();
   await expect.poll(() => selectionCount(page)).toBe(1);
@@ -221,9 +216,27 @@ test("range selection in a resource column returns the resource id", async ({ pa
 });
 
 /**
- * Pre-interaction coordinates. boundingBox() never waits, so ensure layout
- * happened first. Only use before interacting; after a state change prefer
- * eventTop, which reads atomically.
+ * Pre-interaction coordinates. Resets the inner scroll to the top so the
+ * point below always lands on the body itself: `scrollIntoViewIfNeeded`
+ * scrolls oversized elements differently per browser and can leave a sticky
+ * day header covering the target point.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function firstBodyBox(page) {
+  const body = page.locator(".cv-day-body").first();
+  await body.waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector(".cv-scroller")).scrollTop = 0;
+  });
+  const box = await body.boundingBox();
+  assert(box, "expected the first day body to have a bounding box");
+  return box;
+}
+
+/**
+ * Pre-interaction event coordinates. Waits for visibility, then measures;
+ * only use before interacting — after a state change prefer eventTop.
  *
  * @param {import("@playwright/test").Page} page
  * @param {string} id

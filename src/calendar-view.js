@@ -154,6 +154,7 @@ export class CalendarViewElement extends HTMLElement {
     if (oldView === view) return;
     this.setAttribute("view", view);
     this.dispatchEvent(new CustomEvent("calendar:viewchange", { detail: { oldView, view } }));
+    this._announce(`${view}, ${this.getAttribute("date")}`);
     void this.refetchEvents();
   }
 
@@ -167,6 +168,7 @@ export class CalendarViewElement extends HTMLElement {
     if (previous === next) return;
     this.setAttribute("date", next);
     this.dispatchEvent(new CustomEvent("calendar:datechange", { detail: { date: toPlainDate(next) } }));
+    this._announce(`${this.view}, ${next}`);
     void this.refetchEvents();
   }
 
@@ -426,6 +428,24 @@ export class CalendarViewElement extends HTMLElement {
     });
   }
 
+  /**
+   * Polite announcement for view/date changes and keyboard commits. The
+   * status node is rebuilt on every render, so the message is written after
+   * the next frame flush; the last message wins.
+   *
+   * @param {string} message
+   * @returns {void}
+   */
+  _announce(message) {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!this.isConnected) return;
+        const status = this.querySelector(".cv-status");
+        if (status) status.textContent = message;
+      }),
+    );
+  }
+
   _options() {
     return {
       timeZone: this._config.timeZone ?? DEFAULTS.timeZone,
@@ -454,6 +474,8 @@ export class CalendarViewElement extends HTMLElement {
 
     const scroller = document.createElement("div");
     scroller.className = "cv-scroller";
+    scroller.setAttribute("role", "region");
+    scroller.setAttribute("aria-label", "Calendar");
     scroller.append(
       renderTimeGrid({
         dates,
@@ -471,6 +493,11 @@ export class CalendarViewElement extends HTMLElement {
     this.append(scroller);
     scroller.scrollTop = scrollTop;
     scroller.scrollLeft = scrollLeft;
+
+    const status = document.createElement("p");
+    status.className = "cv-status";
+    status.setAttribute("role", "status");
+    this.append(status);
 
     // TODO: use keyed/incremental reconciliation rather than full replacement.
     // TODO: route click/select/drag/resize through a dedicated pointer engine.

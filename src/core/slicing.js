@@ -1,5 +1,5 @@
 import { Temporal } from "temporal-polyfill";
-import { toPlainDate } from "./dates.js";
+import { formatClock, toPlainDate } from "./dates.js";
 
 /**
  * Temporal day slicing for timed events and backgrounds.
@@ -105,4 +105,25 @@ export function sliceTimedEventForDay(event, date, options) {
     slotMin: options.slotMin,
     slotMax: options.slotMax,
   });
+}
+
+/**
+ * Human-readable event summary for accessible names and live announcements.
+ * Wall-clock based, locale-independent: `Title, 2026-09-03, 09:00 to 10:30`.
+ * The end date is repeated only when it differs from the start date.
+ *
+ * @param {{ title?: unknown, start: unknown, end: unknown }} event
+ * @param {string} timeZone
+ * @returns {string}
+ */
+export function describeEvent(event, timeZone) {
+  const start = toZonedDateTime(event.start, timeZone);
+  const end = toZonedDateTime(event.end, timeZone);
+  const title = event.title ?? "Event";
+  const startDay = start.toPlainDate().toString();
+  const endDay = end.toPlainDate().toString();
+  const startText = `${startDay}, ${formatClock(wallMinutes(start))}`;
+  const endText =
+    startDay === endDay ? formatClock(wallMinutes(end)) : `${endDay}, ${formatClock(wallMinutes(end))}`;
+  return `${title}, ${startText} to ${endText}`;
 }

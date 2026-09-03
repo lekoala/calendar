@@ -185,7 +185,7 @@ Namespaced working names:
 - `calendar:datechange`
 - `calendar:loaderror`
 - `calendar:eventclick`
-- `calendar:eventcontextmenu` (planned)
+- `calendar:eventcontextmenu`
 - `calendar:select`
 - `calendar:eventmove`
 - `calendar:eventresize`
@@ -215,6 +215,24 @@ calendar.addEventListener("calendar:eventmove", async (event) => {
 ```
 
 Calling `preventDefault()` synchronously rejects the operation immediately; the core then reverts automatically.
+
+`calendar:eventcontextmenu` carries a context intent from right-click or press-and-hold:
+
+```js
+detail: {
+  event, // null on empty slots
+  date,
+  time, // slot-snapped wall time, empty slots only
+  resourceId,
+  clientX,
+  clientY,
+  nativeEvent,
+}
+```
+
+The core never suppresses the native menu; the application calls `preventDefault()` on the native event when it handles the intent.
+
+Keyboard operation follows the pointer contract: arrows move focus between events, `Shift` + arrows move the focused event (time/day, same resource), `Alt` + arrows resize it. Cross-resource moves stay a command operation (`moveEvent` with `resourceId`). Committed key operations refocus the event and announce `title, date, start to end` through a polite live region; view/date changes announce `view, date` the same way.
 
 `calendar:select` is an intention with no mutated event, so it carries no `revert()`:
 
