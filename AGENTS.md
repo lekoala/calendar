@@ -40,13 +40,13 @@ Examples use fictitious generic resources and events.
 
 ## Internal state
 
-Avoid JavaScript private class fields (`#field`) in public library classes.
+Internal instance state and helpers are private by default. Use JavaScript private class fields (`#field`) for implementation details of public library classes.
 
-Use conventional internal properties (`_state`, `_interaction`, etc.) and keep implementation details in module-scoped functions where possible.
+Keep platform lifecycle entry points (`connectedCallback`, `disconnectedCallback`, `attributeChangedCallback`) and documented public APIs accessible. Pure algorithms belong in module-scoped functions rather than private class methods.
 
-Underscore-prefixed members are internal implementation details. They are not public or protected API and may change without notice.
+Cross-module seams (for example element → renderer) must not reach into private state: inject narrow, explicit callbacks instead.
 
-Do not introduce subclassing contracts around underscore-prefixed members. If extension becomes a supported use case, expose an explicit public hook/API.
+Do not introduce underscore-prefixed members as a visibility convention, and do not build subclassing contracts around internals. If extension becomes a supported use case, expose an explicit public hook/API.
 
 ## Compatibility baseline
 

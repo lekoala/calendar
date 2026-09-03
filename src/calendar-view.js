@@ -54,34 +54,34 @@ export class CalendarViewElement extends HTMLElement {
   static observedAttributes = ["view", "date", "slot-min", "slot-max", "slot-duration"];
 
   /** @type {Array<import("./core/model.js").NormalizedEvent>} */
-  _events = [];
+  #events = [];
   /** @type {Array<import("./core/model.js").NormalizedResource>} */
-  _resources = [];
+  #resources = [];
   /** @type {Array<import("./core/model.js").NormalizedBackground>} */
-  _backgrounds = [];
+  #backgrounds = [];
   /** @type {CalendarConfig} */
-  _config = {};
+  #config = {};
   /** @type {AbortController | null} */
-  _abortController = null;
-  _requestVersion = 0;
-  _batchDepth = 0;
-  _renderQueued = false;
+  #abortController = null;
+  #requestVersion = 0;
+  #batchDepth = 0;
+  #renderQueued = false;
 
   connectedCallback() {
     this.classList.add("calendar-view");
     if (!this.hasAttribute("date")) {
       this.setAttribute("date", "2026-09-03");
     }
-    this._queueRender();
+    this.#queueRender();
   }
 
   disconnectedCallback() {
-    this._abortController?.abort();
+    this.#abortController?.abort();
     // TODO: pointer engine/window listener teardown.
   }
 
   attributeChangedCallback() {
-    if (this.isConnected) this._queueRender();
+    if (this.isConnected) this.#queueRender();
   }
 
   /**
@@ -89,8 +89,8 @@ export class CalendarViewElement extends HTMLElement {
    * @returns {this}
    */
   configure(options = {}) {
-    this._config = { ...this._config, ...options };
-    this._queueRender();
+    this.#config = { ...this.#config, ...options };
+    this.#queueRender();
     return this;
   }
 
@@ -116,33 +116,33 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   get events() {
-    return [...this._events];
+    return [...this.#events];
   }
 
   /** @param {import("./core/model.js").EventInput[] | null | undefined} value */
   set events(value) {
-    this._events = Array.from(value ?? [], normalizeEvent);
-    this._queueRender();
+    this.#events = Array.from(value ?? [], normalizeEvent);
+    this.#queueRender();
   }
 
   get resources() {
-    return [...this._resources];
+    return [...this.#resources];
   }
 
   /** @param {import("./core/model.js").ResourceInput[] | null | undefined} value */
   set resources(value) {
-    this._resources = Array.from(value ?? [], normalizeResource);
-    this._queueRender();
+    this.#resources = Array.from(value ?? [], normalizeResource);
+    this.#queueRender();
   }
 
   get backgrounds() {
-    return [...this._backgrounds];
+    return [...this.#backgrounds];
   }
 
   /** @param {import("./core/model.js").BackgroundInput[] | null | undefined} value */
   set backgrounds(value) {
-    this._backgrounds = Array.from(value ?? [], normalizeBackground);
-    this._queueRender();
+    this.#backgrounds = Array.from(value ?? [], normalizeBackground);
+    this.#queueRender();
   }
 
   /**
@@ -154,7 +154,7 @@ export class CalendarViewElement extends HTMLElement {
     if (oldView === view) return;
     this.setAttribute("view", view);
     this.dispatchEvent(new CustomEvent("calendar:viewchange", { detail: { oldView, view } }));
-    this._announce(`${view}, ${this.getAttribute("date")}`);
+    this.#announce(`${view}, ${this.getAttribute("date")}`);
     void this.refetchEvents();
   }
 
@@ -168,7 +168,7 @@ export class CalendarViewElement extends HTMLElement {
     if (previous === next) return;
     this.setAttribute("date", next);
     this.dispatchEvent(new CustomEvent("calendar:datechange", { detail: { date: toPlainDate(next) } }));
-    this._announce(`${this.view}, ${next}`);
+    this.#announce(`${this.view}, ${next}`);
     void this.refetchEvents();
   }
 
@@ -185,7 +185,7 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   today() {
-    const timeZone = this._config.timeZone ?? DEFAULTS.timeZone;
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
     this.gotoDate(Temporal.Now.plainDateISO(timeZone));
   }
 
@@ -196,7 +196,7 @@ export class CalendarViewElement extends HTMLElement {
   scrollToTime(value) {
     const scroller = this.querySelector(".cv-scroller");
     if (!scroller) return 0;
-    const options = this._options();
+    const options = this.#options();
     const startMinutes = minutesFromMidnight(options.slotMin);
     const top = Math.max(0, (minutesFromMidnight(value) - startMinutes) * options.pxPerMinute);
     scroller.scrollTop = top;
@@ -208,7 +208,7 @@ export class CalendarViewElement extends HTMLElement {
    * @returns {import("./core/model.js").NormalizedEvent | null}
    */
   getEventById(id) {
-    return this._events.find((event) => event.id === String(id)) ?? null;
+    return this.#events.find((event) => event.id === String(id)) ?? null;
   }
 
   /**
@@ -225,36 +225,36 @@ export class CalendarViewElement extends HTMLElement {
    * @param {Event | null} input.nativeEvent
    * @returns {import("./core/model.js").NormalizedEvent | null} the optimistic event, or null when rejected immediately
    */
-  _commitEventMutation({ event, previous, current, name, nativeEvent }) {
-    const index = this._events.findIndex((item) => item.id === event.id);
+  #commitEventMutation({ event, previous, current, name, nativeEvent }) {
+    const index = this.#events.findIndex((item) => item.id === event.id);
     if (index < 0) return null;
-    const before = this._events[index];
+    const before = this.#events[index];
     /**
      * @param {{ start: unknown, end: unknown, resourceId: string | null }} state
      * @returns {void}
      */
     const apply = (state) => {
-      this._events = this._events.map((item, i) => (i === index ? { ...item, ...state } : item));
-      this._queueRender();
+      this.#events = this.#events.map((item, i) => (i === index ? { ...item, ...state } : item));
+      this.#queueRender();
     };
     apply({ start: current.start, end: current.end, resourceId: current.resourceId });
     let reverted = false;
     const revert = () => {
       if (reverted) return;
       reverted = true;
-      this._events = this._events.map((item, i) => (i === index ? before : item));
-      this._queueRender();
+      this.#events = this.#events.map((item, i) => (i === index ? before : item));
+      this.#queueRender();
     };
     const accepted = this.dispatchEvent(
       new CustomEvent(name, {
         bubbles: true,
         composed: true,
         cancelable: true,
-        detail: { event: this._events[index], previous, current, nativeEvent, revert },
+        detail: { event: this.#events[index], previous, current, nativeEvent, revert },
       }),
     );
     if (!accepted) revert();
-    return reverted ? null : this._events[index];
+    return reverted ? null : this.#events[index];
   }
 
   /**
@@ -265,8 +265,8 @@ export class CalendarViewElement extends HTMLElement {
    * @param {Event | null} [input.nativeEvent]
    * @returns {import("./core/model.js").NormalizedEvent | null}
    */
-  _commitEventMove({ event, previous, current, nativeEvent = null }) {
-    return this._commitEventMutation({ event, previous, current, name: "calendar:eventmove", nativeEvent });
+  #commitEventMove({ event, previous, current, nativeEvent = null }) {
+    return this.#commitEventMutation({ event, previous, current, name: "calendar:eventmove", nativeEvent });
   }
 
   /**
@@ -277,8 +277,8 @@ export class CalendarViewElement extends HTMLElement {
    * @param {Event | null} [input.nativeEvent]
    * @returns {import("./core/model.js").NormalizedEvent | null}
    */
-  _commitEventResize({ event, previous, current, nativeEvent = null }) {
-    return this._commitEventMutation({ event, previous, current, name: "calendar:eventresize", nativeEvent });
+  #commitEventResize({ event, previous, current, nativeEvent = null }) {
+    return this.#commitEventMutation({ event, previous, current, name: "calendar:eventresize", nativeEvent });
   }
 
   /**
@@ -292,8 +292,8 @@ export class CalendarViewElement extends HTMLElement {
    */
   moveEvent(id, current) {
     const event = this.getEventById(id);
-    if (!event || !isMovable(event, this._config.editable)) return null;
-    return this._commitEventMove({
+    if (!event || !isMovable(event, this.#config.editable)) return null;
+    return this.#commitEventMove({
       event,
       previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
       current: {
@@ -314,8 +314,8 @@ export class CalendarViewElement extends HTMLElement {
    */
   resizeEvent(id, current) {
     const event = this.getEventById(id);
-    if (!event || !isResizable(event, this._config.editable)) return null;
-    return this._commitEventResize({
+    if (!event || !isResizable(event, this.#config.editable)) return null;
+    return this.#commitEventResize({
       event,
       previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
       current: {
@@ -332,8 +332,8 @@ export class CalendarViewElement extends HTMLElement {
    */
   addEvent(event) {
     const normalized = normalizeEvent(event);
-    this._events = [...this._events, normalized];
-    this._queueRender();
+    this.#events = [...this.#events, normalized];
+    this.#queueRender();
     return normalized;
   }
 
@@ -343,13 +343,13 @@ export class CalendarViewElement extends HTMLElement {
    */
   updateEvent(event) {
     const normalized = normalizeEvent(event);
-    const index = this._events.findIndex((item) => item.id === normalized.id);
+    const index = this.#events.findIndex((item) => item.id === normalized.id);
     if (index < 0) return this.addEvent(normalized);
-    this._events = this._events.map((item, i) =>
-      i === index ? { ...this._events[index], ...normalized } : item,
+    this.#events = this.#events.map((item, i) =>
+      i === index ? { ...this.#events[index], ...normalized } : item,
     );
-    this._queueRender();
-    return this._events[index];
+    this.#queueRender();
+    return this.#events[index];
   }
 
   /**
@@ -358,10 +358,10 @@ export class CalendarViewElement extends HTMLElement {
    */
   removeEvent(id) {
     const key = String(id);
-    const next = this._events.filter((event) => event.id !== key);
-    if (next.length === this._events.length) return false;
-    this._events = next;
-    this._queueRender();
+    const next = this.#events.filter((event) => event.id !== key);
+    if (next.length === this.#events.length) return false;
+    this.#events = next;
+    this.#queueRender();
     return true;
   }
 
@@ -371,60 +371,60 @@ export class CalendarViewElement extends HTMLElement {
    * @returns {T}
    */
   batch(callback) {
-    this._batchDepth += 1;
+    this.#batchDepth += 1;
     try {
       return callback();
     } finally {
-      this._batchDepth -= 1;
-      if (this._batchDepth === 0) this._queueRender();
+      this.#batchDepth -= 1;
+      if (this.#batchDepth === 0) this.#queueRender();
     }
   }
 
   async refetchEvents() {
-    const eventSource = this._config.eventSource;
-    const backgroundSource = this._config.backgroundSource;
+    const eventSource = this.#config.eventSource;
+    const backgroundSource = this.#config.backgroundSource;
     if (!eventSource && !backgroundSource) return;
 
-    this._abortController?.abort();
+    this.#abortController?.abort();
     const controller = new AbortController();
-    this._abortController = controller;
-    const version = ++this._requestVersion;
+    this.#abortController = controller;
+    const version = ++this.#requestVersion;
     const { start, end } = this.getVisibleRange();
     // Source scope follows selected resources, not the renderer type:
     // solo with an active resource sends ["resource-a"], [] means no filter.
-    const resourceIds = this._resources.map((resource) => resource.id);
+    const resourceIds = this.#resources.map((resource) => resource.id);
     const context = { start, end, resourceIds, signal: controller.signal, calendar: this };
 
     this.setAttribute("aria-busy", "true");
     try {
       const [events, backgrounds] = await Promise.all([
-        eventSource ? eventSource(context) : this._events,
-        backgroundSource ? backgroundSource(context) : this._backgrounds,
+        eventSource ? eventSource(context) : this.#events,
+        backgroundSource ? backgroundSource(context) : this.#backgrounds,
       ]);
-      if (controller.signal.aborted || version !== this._requestVersion) return;
-      this._events = Array.from(
+      if (controller.signal.aborted || version !== this.#requestVersion) return;
+      this.#events = Array.from(
         /** @type {import("./core/model.js").EventInput[]} */ (events ?? []),
         normalizeEvent,
       );
-      this._backgrounds = Array.from(
+      this.#backgrounds = Array.from(
         /** @type {import("./core/model.js").BackgroundInput[]} */ (backgrounds ?? []),
         normalizeBackground,
       );
-      this._queueRender();
+      this.#queueRender();
     } catch (error) {
       if (controller.signal.aborted) return;
       this.dispatchEvent(new CustomEvent("calendar:loaderror", { detail: { error } }));
     } finally {
-      if (version === this._requestVersion) this.removeAttribute("aria-busy");
+      if (version === this.#requestVersion) this.removeAttribute("aria-busy");
     }
   }
 
-  _queueRender() {
-    if (this._batchDepth || this._renderQueued) return;
-    this._renderQueued = true;
+  #queueRender() {
+    if (this.#batchDepth || this.#renderQueued) return;
+    this.#renderQueued = true;
     requestAnimationFrame(() => {
-      this._renderQueued = false;
-      this._render();
+      this.#renderQueued = false;
+      this.#render();
     });
   }
 
@@ -436,7 +436,7 @@ export class CalendarViewElement extends HTMLElement {
    * @param {string} message
    * @returns {void}
    */
-  _announce(message) {
+  #announce(message) {
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         if (!this.isConnected) return;
@@ -446,24 +446,41 @@ export class CalendarViewElement extends HTMLElement {
     );
   }
 
-  _options() {
+  /**
+   * Refocus an event after an optimistic commit re-rendered the grid.
+   *
+   * @param {string} id
+   * @returns {void}
+   */
+  #refocusEvent(id) {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!this.isConnected) return;
+        /** @type {HTMLElement | null} */ (
+          this.querySelector(`[data-event-id="${CSS.escape(id)}"]`)
+        )?.focus();
+      }),
+    );
+  }
+
+  #options() {
     return {
-      timeZone: this._config.timeZone ?? DEFAULTS.timeZone,
-      editable: this._config.editable,
+      timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
+      editable: this.#config.editable,
       slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
       slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
       slotDuration: Number(this.getAttribute("slot-duration") || DEFAULTS.slotDuration),
-      pxPerMinute: this._config.pxPerMinute ?? DEFAULTS.pxPerMinute,
-      snapDuration: this._config.snapDuration ?? DEFAULTS.snapDuration,
-      defaultTimedEventDuration: this._config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
+      pxPerMinute: this.#config.pxPerMinute ?? DEFAULTS.pxPerMinute,
+      snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
+      defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
     };
   }
 
-  _render() {
-    const options = this._options();
+  #render() {
+    const options = this.#options();
 
     const dates = getVisibleDates(this.date, this.view);
-    const resources = isResourceView(this.view) ? this._resources : [];
+    const resources = isResourceView(this.view) ? this.#resources : [];
 
     const scroll = this.querySelector(".cv-scroller");
     const scrollTop = scroll?.scrollTop ?? 0;
@@ -481,13 +498,20 @@ export class CalendarViewElement extends HTMLElement {
         dates,
         resources,
         view: this.view,
-        events: this._events,
-        backgrounds: this._backgrounds,
+        events: this.#events,
+        backgrounds: this.#backgrounds,
         options,
-        calendar: this,
-        eventContent: this._config.eventContent,
-        dayHeaderContent: this._config.dayHeaderContent,
-        resourceHeaderContent: this._config.resourceHeaderContent,
+        host: {
+          editable: this.#config.editable,
+          isConnected: () => this.isConnected,
+          announce: (message) => this.#announce(message),
+          refocusEvent: (id) => this.#refocusEvent(id),
+          commitEventMove: (input) => this.#commitEventMove(input),
+          commitEventResize: (input) => this.#commitEventResize(input),
+        },
+        eventContent: this.#config.eventContent,
+        dayHeaderContent: this.#config.dayHeaderContent,
+        resourceHeaderContent: this.#config.resourceHeaderContent,
       }),
     );
     this.append(scroller);

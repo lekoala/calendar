@@ -20,23 +20,27 @@ import { describeEvent, sliceTimedEventForDay, toZonedDateTime, wallMinutes } fr
 import { createAutoscroller } from "./autoscroll.js";
 
 /**
- * @typedef {object} CommitTarget
+ * Narrow host seam between the element and the renderer. The grid never
+ * touches element internals: the class injects bound callbacks, so its own
+ * state and helpers can stay truly private (`#field`).
+ *
+ * @typedef {object} TimeGridHost
  * @property {boolean} [editable]
- * @property {boolean} isConnected
- * @property {(message: string) => void} _announce
- * @property {(selectors: string) => Element | null} querySelector
+ * @property {() => boolean} isConnected
+ * @property {(message: string) => void} announce
+ * @property {(id: string) => void} refocusEvent
  * @property {(input: {
  *   event: import("../core/model.js").NormalizedEvent,
  *   previous: { start: unknown, end: unknown, resourceId: string | null },
  *   current: { start: unknown, end: unknown, resourceId: string | null },
  *   nativeEvent: Event | null,
- * }) => import("../core/model.js").NormalizedEvent | null} _commitEventMove
+ * }) => import("../core/model.js").NormalizedEvent | null} commitEventMove
  * @property {(input: {
  *   event: import("../core/model.js").NormalizedEvent,
  *   previous: { start: unknown, end: unknown, resourceId: string | null },
  *   current: { start: unknown, end: unknown, resourceId: string | null },
  *   nativeEvent: Event | null,
- * }) => import("../core/model.js").NormalizedEvent | null} _commitEventResize
+ * }) => import("../core/model.js").NormalizedEvent | null} commitEventResize
  */
 
 /**
@@ -74,7 +78,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {import("../core/model.js").NormalizedBackground[]} input.backgrounds
  * @param {TimeGridOptions} input.options
- * @param {CommitTarget} input.calendar
+ * @param {TimeGridHost} input.host
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
  * @param {(info: object) => unknown} [input.resourceHeaderContent]
@@ -87,7 +91,7 @@ export function renderTimeGrid({
   events,
   backgrounds,
   options,
-  calendar,
+  host,
   eventContent,
   dayHeaderContent,
   resourceHeaderContent,
@@ -221,7 +225,7 @@ export function renderTimeGrid({
       clear();
       timer = window.setTimeout(() => {
         timer = 0;
-        if (!calendar.isConnected) return;
+        if (!host.isConnected()) return;
         longPressConsumed = true;
         suppressClick = true;
         onFire(nativeEvent);
@@ -248,18 +252,13 @@ export function renderTimeGrid({
 
   /**
    * Refocus an event after an optimistic commit re-rendered the grid.
+   * Rendering is async, so the host resolves the fresh node itself.
    *
    * @param {string} id
    * @returns {void}
    */
   function refocusEvent(id) {
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        /** @type {HTMLElement | null} */ (
-          calendar.querySelector(`[data-event-id="${CSS.escape(id)}"]`)
-        )?.focus();
-      }),
-    );
+    host.refocusEvent(id);
   }
 
   /**
@@ -455,8 +454,8 @@ export function renderTimeGrid({
         true,
       );
 
-      const movable = isMovable(event, calendar.editable);
-      const resizable = isResizable(event, calendar.editable);
+      const movable = isMovable(event, host.editable);
+      const resizable = isResizable(event, host.editable);
 
       node.addEventListener("contextmenu", (nativeEvent) => {
         dispatchContextMenu(
@@ -590,9 +589,9 @@ export function renderTimeGrid({
           const nextEnd = nextStart.add(duration);
           current = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
         }
-        const result = calendar._commitEventMove({ event, previous, current, nativeEvent });
+        const result = host.commitEventMove({ event, previous, current, nativeEvent });
         if (!result) return;
-        calendar._announce(describeEvent(result, timeZone));
+        host.announce(describeEvent(result, timeZone));
         refocusEvent(event.id);
       }
 
@@ -614,14 +613,14 @@ export function renderTimeGrid({
         else if (key === "ArrowLeft") nextEnd = endZoned.subtract({ minutes: snapStep });
         else nextEnd = endZoned.add({ minutes: snapStep });
         if (nextEnd.epochMilliseconds - nextStart.epochMilliseconds < snapStep * 60 * 1000) return;
-        const result = calendar._commitEventResize({
+        const result = host.commitEventResize({
           event,
           previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
           current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
           nativeEvent,
         });
         if (!result) return;
-        calendar._announce(describeEvent(result, timeZone));
+        host.announce(describeEvent(result, timeZone));
         refocusEvent(event.id);
       }
 
@@ -690,7 +689,7 @@ export function renderTimeGrid({
           }
           if (!moved || !pending) return;
           suppressClick = true;
-          const result = calendar._commitEventResize({
+          const result = host.commitEventResize({
             event,
             previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
             current: {
@@ -800,7 +799,7 @@ export function renderTimeGrid({
           // A non-droppable target reverts silently: no dispatch, no state change.
           if (!range.droppable) return;
           suppressClick = true;
-          calendar._commitEventMove({
+          host.commitEventMove({
             event,
             previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
             current: {
