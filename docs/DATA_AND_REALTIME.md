@@ -31,6 +31,18 @@ and:
 [A,B] → [A,B,C] → [B,C]
 ```
 
+## Observable loading state
+
+Every source run brackets itself:
+
+```js
+calendar.addEventListener("calendar:loading", (event) => {
+  shell.busy = event.detail.loading;
+});
+```
+
+The element also carries `aria-busy` for the same window. Both settle only on the newest request: an aborted or stale run never reports itself as finished while a newer one is still pending, so a spinner cannot flicker off mid-flight. Errors keep arriving separately on `calendar:loaderror`.
+
 ## Cache
 
 Do not build a complex cache before profiling. A simple range/resource key cache may later reduce repeated navigation loads.

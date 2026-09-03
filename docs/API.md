@@ -110,15 +110,26 @@ calendar.configure({
   snapDuration: Temporal.Duration.from({ minutes: 15 }),
   defaultTimedEventDuration: Temporal.Duration.from({ minutes: 30 }),
   monthEventLimit: 3,
+  firstDay: 1,
+  hiddenDays: [],
+  slotLabelInterval: 60,
   eventSource,
   backgroundSource,
   eventContent,
   dayHeaderContent,
   resourceHeaderContent,
+  slotLabelContent,
+  moreLinkContent,
 });
 ```
 
-`snapDuration` controls pointer snapping. `defaultTimedEventDuration` controls the hover preview and single-click creation proposal. An explicit drag selection carries its own `start/end` and does not depend on it. `monthEventLimit` caps the event chips per month day cell before a `+n more` indicator; no new render hooks are added for month/list — they reuse the frozen `eventContent` / `dayHeaderContent` hooks.
+`snapDuration` controls pointer snapping. `defaultTimedEventDuration` controls the hover preview and single-click creation proposal. An explicit drag selection carries its own `start/end` and does not depend on it. `monthEventLimit` caps the event chips per month day cell before the `+n more` button.
+
+`firstDay` and `hiddenDays` use the ISO weekday numbering Temporal exposes, `1` = Monday through `7` = Sunday. `0` is accepted as an alias for Sunday, since that is what `Date.prototype.getDay` returns and the two conventions agree on every other day. `firstDay` sets where a civil week starts, for both week anchoring and month week derivation. `hiddenDays` lists weekdays that are never rendered; hiding all seven is ignored rather than rendering an empty calendar.
+
+`slotLabelInterval` is the number of minutes between time axis labels. It is a density policy, not a format: what a label reads is `slotLabelContent`'s business.
+
+Everything here is set through `configure()` rather than through attributes. Content hooks cannot be attributes at all, and keeping the options that drive date derivation in one place avoids an attribute-versus-property precedence rule. Serializable options may still gain attributes later.
 
 ## Sources
 
@@ -178,18 +189,33 @@ The server/application remains source of truth. Applications may attach an opaqu
 
 ## DOM events
 
-All interaction events are `bubbles: true`, `composed: true` and `cancelable: true`.
+All interaction events are `bubbles: true` and `composed: true`. Intents an application can refuse are also `cancelable: true`; observations (`calendar:loading`, `calendar:render`) are not.
 
 Namespaced working names:
 
 - `calendar:viewchange`
 - `calendar:datechange`
+- `calendar:loading`
 - `calendar:loaderror`
+- `calendar:render`
 - `calendar:eventclick`
 - `calendar:eventcontextmenu`
+- `calendar:moreclick`
 - `calendar:select`
 - `calendar:eventmove`
 - `calendar:eventresize`
+
+`calendar:loading` brackets every async source run with `detail.loading`, alongside the `aria-busy` attribute the element already sets. Only the newest request settles the state, so an aborted or superseded run never reports `false` while a newer one is still in flight:
+
+```js
+calendar.addEventListener("calendar:loading", (event) => {
+  spinner.hidden = !event.detail.loading;
+});
+```
+
+`calendar:render` fires once the rendered subtree exists, with `detail: { view, dates, resources }`. It is the supported way to decorate rendered columns; listeners that mutate state simply queue the next frame, like any other mutation.
+
+`calendar:moreclick` reports that a month day has more events than `monthEventLimit` allows, with `detail: { date, events, hidden, nativeEvent }`. The core only carries the intent: whether that opens a popover, switches to the day view, or raises the chip limit is an application decision. The `+n more` control is a real button, so pointer and keyboard activation behave alike, and it does not fall through to the day cell's `calendar:select`.
 
 `dispatchEvent()` is synchronous: `preventDefault()` must be called synchronously during dispatch. `detail.revert()` is idempotent and may be called later, after an `await`.
 
@@ -258,4 +284,17 @@ eventContent({ event, date, resource, element }) {
 }
 ```
 
-Frozen hooks: `eventContent`, `dayHeaderContent`, `resourceHeaderContent`. Do not add further hooks before a use case requires them. Do not add `innerHTML`/`allowHtml` configuration.
+Hooks: `eventContent`, `dayHeaderContent`, `resourceHeaderContent`, `slotLabelContent`, `moreLinkContent`. Do not add further hooks before a use case requires them. Do not add `innerHTML`/`allowHtml` configuration.
+
+`slotLabelContent({ time, minutes, element })` renders one time axis label; `time` is a `Temporal.PlainTime` and `minutes` its offset from midnight. `moreLinkContent({ date, events, hidden, element })` renders the month `+n more` button, where `events` is the day's full list and `hidden` the count that did not fit.
+
+Every hook receives the `element` it fills, which is how an application attaches its own attributes, classes or listeners without a separate `didMount` hook and without a post-render pass:
+
+```js
+eventContent({ event, element }) {
+  element.dataset.kind = event.extendedProps.kind;
+  return event.title;
+}
+```
+
+Applications that need to decorate something no hook owns — a whole day column, for instance — listen for `calendar:render` instead.

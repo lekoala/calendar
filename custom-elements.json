@@ -156,6 +156,15 @@
               "name": "calendar:loaderror"
             },
             {
+              "name": "calendar:loading"
+            },
+            {
+              "name": "calendar:moreclick"
+            },
+            {
+              "name": "calendar:render"
+            },
+            {
               "name": "calendar:select"
             },
             {
@@ -183,6 +192,9 @@
             },
             {
               "name": "--calendar-line"
+            },
+            {
+              "name": "--calendar-month-columns"
             },
             {
               "name": "--calendar-muted"

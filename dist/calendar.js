@@ -3731,25 +3731,92 @@
     resourceThreeDays: 3,
     list: 7
   };
+  var WEEK_ANCHORED_VIEWS = new Set(["week"]);
+  function isoWeekday(value) {
+    const day = Number(value);
+    if (!Number.isInteger(day) || day < 0 || day > 7)
+      return null;
+    return day === 0 ? 7 : day;
+  }
+  function resolveDateOptions(options = {}) {
+    const firstDay = isoWeekday(options.firstDay) ?? 1;
+    const hiddenDays = new Set;
+    for (const value of options.hiddenDays ?? []) {
+      const day = isoWeekday(value);
+      if (day !== null)
+        hiddenDays.add(day);
+    }
+    if (hiddenDays.size >= 7)
+      hiddenDays.clear();
+    return { firstDay, hiddenDays };
+  }
   function toPlainDate(value) {
     return value instanceof Temporal2.PlainDate ? value : Temporal2.PlainDate.from(value);
   }
   function getViewDays(view) {
     return VIEW_DAYS[view] ?? 1;
   }
-  function getViewRange(date, view) {
-    if (isMonthView(view))
-      return getMonthRange(date);
-    const start = toPlainDate(date);
-    const end = start.add({ days: getViewDays(view) });
-    return { start, end };
+  function isWeekAnchoredView(view) {
+    return WEEK_ANCHORED_VIEWS.has(view);
   }
-  function getVisibleDates(date, view) {
+  function startOfWeek(date, firstDay = 1) {
+    const anchor = toPlainDate(date);
+    const start = isoWeekday(firstDay) ?? 1;
+    return anchor.subtract({ days: (anchor.dayOfWeek - start + 7) % 7 });
+  }
+  function getViewRange(date, view, options = {}) {
     if (isMonthView(view))
-      return getMonthWeeks(date).flat();
-    const start = toPlainDate(date);
+      return getMonthRange(date, options);
+    const dates = getVisibleDates(date, view, options);
+    if (dates.length === 0) {
+      const start = toPlainDate(date);
+      return { start, end: start };
+    }
+    return { start: dates[0], end: dates[dates.length - 1].add({ days: 1 }) };
+  }
+  function getVisibleDates(date, view, options = {}) {
+    if (isMonthView(view))
+      return getMonthWeeks(date, options).flat();
+    const { firstDay, hiddenDays } = resolveDateOptions(options);
     const count = getViewDays(view);
-    return Array.from({ length: count }, (_, index) => start.add({ days: index }));
+    if (isWeekAnchoredView(view)) {
+      const start = startOfWeek(date, firstDay);
+      return Array.from({ length: count }, (_, index) => start.add({ days: index })).filter((day) => !hiddenDays.has(day.dayOfWeek));
+    }
+    const dates = [];
+    let cursor = toPlainDate(date);
+    while (dates.length < count) {
+      if (!hiddenDays.has(cursor.dayOfWeek))
+        dates.push(cursor);
+      cursor = cursor.add({ days: 1 });
+    }
+    return dates;
+  }
+  function stepAnchor(date, view, direction, options = {}) {
+    const anchor = toPlainDate(date);
+    if (isMonthView(view))
+      return anchor.add({ months: direction });
+    if (isWeekAnchoredView(view))
+      return anchor.add({ days: 7 * direction });
+    if (direction > 0) {
+      const after = getViewRange(anchor, view, options).end;
+      return getVisibleDates(after, view, options)[0] ?? after;
+    }
+    const { hiddenDays } = resolveDateOptions(options);
+    const count = getViewDays(view);
+    const start = getVisibleDates(anchor, view, options)[0] ?? anchor;
+    let cursor = start.subtract({ days: 1 });
+    let earliest = cursor;
+    let found = 0;
+    while (found < count) {
+      if (!hiddenDays.has(cursor.dayOfWeek)) {
+        found += 1;
+        earliest = cursor;
+      }
+      if (found < count)
+        cursor = cursor.subtract({ days: 1 });
+    }
+    return earliest;
   }
   function isResourceView(view) {
     return view === "resourceDay" || view === "resourceThreeDays";
@@ -3757,13 +3824,12 @@
   function isMonthView(view) {
     return view === "month";
   }
-  function getMonthWeeks(date) {
+  function fullMonthWeeks(date, firstDay) {
     const anchor = toPlainDate(date);
     const monthStart = anchor.with({ day: 1 });
     const monthEnd = monthStart.add({ months: 1 }).subtract({ days: 1 });
-    const first = monthStart.subtract({ days: monthStart.dayOfWeek - 1 });
     const weeks = [];
-    let current = first;
+    let current = startOfWeek(monthStart, firstDay);
     for (;; ) {
       const week = Array.from({ length: 7 }, (_, index) => current.add({ days: index }));
       weeks.push(week);
@@ -3773,8 +3839,16 @@
     }
     return weeks;
   }
-  function getMonthRange(date) {
-    const weeks = getMonthWeeks(date);
+  function getMonthWeeks(date, options = {}) {
+    const { firstDay, hiddenDays } = resolveDateOptions(options);
+    const weeks = fullMonthWeeks(date, firstDay);
+    if (hiddenDays.size === 0)
+      return weeks;
+    return weeks.map((week) => week.filter((day) => !hiddenDays.has(day.dayOfWeek)));
+  }
+  function getMonthRange(date, options = {}) {
+    const { firstDay } = resolveDateOptions(options);
+    const weeks = fullMonthWeeks(date, firstDay);
     return { start: weeks[0][0], end: weeks[weeks.length - 1][6].add({ days: 1 }) };
   }
   function parseClock(value) {
@@ -3947,7 +4021,7 @@
       for (const event of dayEvents) {
         const item = document.createElement("button");
         item.type = "button";
-        item.className = "cv-list-event";
+        item.className = ["cv-list-event", ...event.classNames ?? []].join(" ");
         item.dataset.eventId = event.id;
         item.setAttribute("aria-label", describeEvent(event, timeZone));
         const content = eventContent?.({ event, date, resource: null, element: item });
@@ -3975,12 +4049,13 @@
   }
 
   // src/render/month-grid.js
-  function renderMonthGrid({ weeks, month, events, options, eventContent }) {
+  function renderMonthGrid({ weeks, month, events, options, eventContent, moreLinkContent }) {
     const timeZone = options.timeZone ?? "UTC";
     const limit = Math.max(1, options.monthEventLimit ?? 3);
     const fragment = document.createDocumentFragment();
     const root = document.createElement("div");
     root.className = "cv-month";
+    root.style.setProperty("--calendar-month-columns", String(Math.max(1, weeks[0]?.length ?? 7)));
     const head = document.createElement("div");
     head.className = "cv-month-weekdays";
     head.setAttribute("aria-hidden", "true");
@@ -4009,7 +4084,7 @@
         for (const event of dayEvents.slice(0, limit)) {
           const chip = document.createElement("button");
           chip.type = "button";
-          chip.className = "cv-month-event";
+          chip.className = ["cv-month-event", ...event.classNames ?? []].join(" ");
           chip.dataset.eventId = event.id;
           chip.setAttribute("aria-label", describeEvent(event, timeZone));
           const content = eventContent?.({ event, date, resource: null, element: chip });
@@ -4028,13 +4103,28 @@
           cell.append(chip);
         }
         if (dayEvents.length > limit) {
-          const more = document.createElement("span");
+          const hidden = dayEvents.length - limit;
+          const more = document.createElement("button");
+          more.type = "button";
           more.className = "cv-month-more";
-          more.textContent = `+${dayEvents.length - limit} more`;
+          more.dataset.date = date.toString();
+          const content = moreLinkContent?.({ date, events: dayEvents, hidden, element: more });
+          if (content instanceof Node)
+            more.append(content);
+          else
+            more.textContent = content == null ? `+${hidden} more` : String(content);
+          more.addEventListener("click", (nativeEvent) => {
+            more.dispatchEvent(new CustomEvent("calendar:moreclick", {
+              bubbles: true,
+              composed: true,
+              cancelable: true,
+              detail: { date, events: dayEvents, hidden, nativeEvent }
+            }));
+          });
           cell.append(more);
         }
         cell.addEventListener("click", (nativeEvent) => {
-          if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-month-event")) {
+          if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-month-event, .cv-month-more")) {
             return;
           }
           const start = zonedDateTimeAt(date, 0, timeZone);
@@ -4203,7 +4293,8 @@
     host,
     eventContent,
     dayHeaderContent,
-    resourceHeaderContent
+    resourceHeaderContent,
+    slotLabelContent
   }) {
     const fragment = document.createDocumentFragment();
     const resourceView = isResourceView(view);
@@ -4333,11 +4424,23 @@
         }
       }));
     }
-    for (let minute = startMinutes;minute <= endMinutes; minute += 60) {
+    const labelInterval = Math.max(1, options.slotLabelInterval ?? 60);
+    for (let minute = startMinutes;minute <= endMinutes; minute += labelInterval) {
       const label = document.createElement("div");
       label.className = "cv-axis-label";
       label.style.top = `${(minute - startMinutes) * pxPerMinute}px`;
-      label.textContent = `${String(Math.floor(minute / 60)).padStart(2, "0")}:00`;
+      const content = slotLabelContent?.({
+        time: Temporal2.PlainTime.from({
+          hour: Math.floor(minute / 60),
+          minute: Math.floor(minute % 60)
+        }),
+        minutes: minute,
+        element: label
+      });
+      if (content instanceof Node)
+        label.append(content);
+      else
+        label.textContent = content == null ? formatClock(minute) : String(content);
       axis.append(label);
     }
     root.style.gridTemplateColumns = gridTemplate;
@@ -4928,6 +5031,7 @@
     slotMin: "08:00",
     slotMax: "18:00",
     slotDuration: 20,
+    slotLabelInterval: 60,
     pxPerMinute: 1.8,
     snapDuration: Temporal2.Duration.from({ minutes: 15 }),
     defaultTimedEventDuration: Temporal2.Duration.from({ minutes: 30 })
@@ -5015,21 +5119,13 @@
       this.refetchEvents();
     }
     getVisibleRange() {
-      return getViewRange(this.date, this.view);
+      return getViewRange(this.date, this.view, this.#dateOptions());
     }
     prev() {
-      if (isMonthView(this.view)) {
-        this.gotoDate(this.date.add({ months: -1 }));
-        return;
-      }
-      this.gotoDate(this.date.add({ days: -getViewDays(this.view) }));
+      this.gotoDate(stepAnchor(this.date, this.view, -1, this.#dateOptions()));
     }
     next() {
-      if (isMonthView(this.view)) {
-        this.gotoDate(this.date.add({ months: 1 }));
-        return;
-      }
-      this.gotoDate(this.date.add({ days: getViewDays(this.view) }));
+      this.gotoDate(stepAnchor(this.date, this.view, 1, this.#dateOptions()));
     }
     today() {
       const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
@@ -5157,6 +5253,7 @@
       const resourceIds = this.#resources.map((resource) => resource.id);
       const context = { start, end, resourceIds, signal: controller.signal, calendar: this };
       this.setAttribute("aria-busy", "true");
+      this.#announceLoading(true);
       try {
         const [events, backgrounds] = await Promise.all([
           eventSource ? eventSource(context) : this.#events,
@@ -5172,9 +5269,18 @@
           return;
         this.dispatchEvent(new CustomEvent("calendar:loaderror", { detail: { error } }));
       } finally {
-        if (version === this.#requestVersion)
+        if (version === this.#requestVersion) {
           this.removeAttribute("aria-busy");
+          this.#announceLoading(false);
+        }
       }
+    }
+    #announceLoading(loading) {
+      this.dispatchEvent(new CustomEvent("calendar:loading", {
+        bubbles: true,
+        composed: true,
+        detail: { loading }
+      }));
     }
     #queueRender() {
       if (this.#batchDepth || this.#renderQueued)
@@ -5201,6 +5307,9 @@
         this.querySelector(`[data-event-id="${CSS.escape(id)}"]`)?.focus();
       }));
     }
+    #dateOptions() {
+      return { firstDay: this.#config.firstDay, hiddenDays: this.#config.hiddenDays };
+    }
     #options() {
       return {
         timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
@@ -5208,6 +5317,7 @@
         slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
         slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
         slotDuration: Number(this.getAttribute("slot-duration") || DEFAULTS.slotDuration),
+        slotLabelInterval: this.#config.slotLabelInterval ?? DEFAULTS.slotLabelInterval,
         pxPerMinute: this.#config.pxPerMinute ?? DEFAULTS.pxPerMinute,
         snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
         defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
@@ -5216,7 +5326,8 @@
     }
     #render() {
       const options = this.#options();
-      const dates = getVisibleDates(this.date, this.view);
+      const dateOptions = this.#dateOptions();
+      const dates = getVisibleDates(this.date, this.view, dateOptions);
       const resources = isResourceView(this.view) ? this.#resources : [];
       const scroll = this.querySelector(".cv-scroller");
       const scrollTop = scroll?.scrollTop ?? 0;
@@ -5229,11 +5340,12 @@
       scroller.setAttribute("aria-label", "Calendar");
       if (this.view === "month") {
         scroller.append(renderMonthGrid({
-          weeks: getMonthWeeks(this.date),
+          weeks: getMonthWeeks(this.date, dateOptions),
           month: this.date.month,
           events: this.#events,
           options,
-          eventContent: this.#config.eventContent
+          eventContent: this.#config.eventContent,
+          moreLinkContent: this.#config.moreLinkContent
         }));
       } else if (this.view === "list") {
         scroller.append(renderList({
@@ -5261,7 +5373,8 @@
           },
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,
-          resourceHeaderContent: this.#config.resourceHeaderContent
+          resourceHeaderContent: this.#config.resourceHeaderContent,
+          slotLabelContent: this.#config.slotLabelContent
         }));
       }
       this.append(scroller);
@@ -5271,6 +5384,11 @@
       status.className = "cv-status";
       status.setAttribute("role", "status");
       this.append(status);
+      this.dispatchEvent(new CustomEvent("calendar:render", {
+        bubbles: true,
+        composed: true,
+        detail: { view: this.view, dates, resources }
+      }));
     }
   }
 

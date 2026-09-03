@@ -58,6 +58,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @property {boolean} [editable]
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
+ * @property {number} [slotLabelInterval] minutes between axis labels (default 60)
  */
 
 /**
@@ -82,6 +83,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
  * @param {(info: object) => unknown} [input.resourceHeaderContent]
+ * @param {(info: object) => unknown} [input.slotLabelContent]
  * @returns {DocumentFragment}
  */
 export function renderTimeGrid({
@@ -95,6 +97,7 @@ export function renderTimeGrid({
   eventContent,
   dayHeaderContent,
   resourceHeaderContent,
+  slotLabelContent,
 }) {
   const fragment = document.createDocumentFragment();
 
@@ -302,11 +305,23 @@ export function renderTimeGrid({
     );
   }
 
-  for (let minute = startMinutes; minute <= endMinutes; minute += 60) {
+  // Axis density is a policy, not a format: the interval says how often a
+  // label appears, `slotLabelContent` says what it reads.
+  const labelInterval = Math.max(1, options.slotLabelInterval ?? 60);
+  for (let minute = startMinutes; minute <= endMinutes; minute += labelInterval) {
     const label = document.createElement("div");
     label.className = "cv-axis-label";
     label.style.top = `${(minute - startMinutes) * pxPerMinute}px`;
-    label.textContent = `${String(Math.floor(minute / 60)).padStart(2, "0")}:00`;
+    const content = slotLabelContent?.({
+      time: Temporal.PlainTime.from({
+        hour: Math.floor(minute / 60),
+        minute: Math.floor(minute % 60),
+      }),
+      minutes: minute,
+      element: label,
+    });
+    if (content instanceof Node) label.append(content);
+    else label.textContent = content == null ? formatClock(minute) : String(content);
     axis.append(label);
   }
 

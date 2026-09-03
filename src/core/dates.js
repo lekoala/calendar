@@ -11,6 +11,53 @@ const VIEW_DAYS = {
 };
 
 /**
+ * Views anchored on a civil week rather than on the anchor date. Everything
+ * else is a rolling range that simply starts at `date`.
+ *
+ * @type {Set<string>}
+ */
+const WEEK_ANCHORED_VIEWS = new Set(["week"]);
+
+/**
+ * @typedef {object} DateDerivationOptions
+ * @property {number} [firstDay] first weekday of a civil week, ISO 1-7 (default 1, Monday)
+ * @property {Iterable<number>} [hiddenDays] weekdays never rendered, ISO 1-7
+ */
+
+/**
+ * Weekdays use the ISO convention Temporal exposes: 1 = Monday through
+ * 7 = Sunday. `0` is accepted as an alias for Sunday, because that is what
+ * `Date.prototype.getDay` and most calendar APIs use, and the two
+ * conventions agree on every other day.
+ *
+ * @param {unknown} value
+ * @returns {number | null}
+ */
+function isoWeekday(value) {
+  const day = Number(value);
+  if (!Number.isInteger(day) || day < 0 || day > 7) return null;
+  return day === 0 ? 7 : day;
+}
+
+/**
+ * @param {DateDerivationOptions} [options]
+ * @returns {{ firstDay: number, hiddenDays: Set<number> }}
+ */
+function resolveDateOptions(options = {}) {
+  const firstDay = isoWeekday(options.firstDay) ?? 1;
+  /** @type {Set<number>} */
+  const hiddenDays = new Set();
+  for (const value of options.hiddenDays ?? []) {
+    const day = isoWeekday(value);
+    if (day !== null) hiddenDays.add(day);
+  }
+  // Hiding every weekday would leave nothing to render, and would make the
+  // rolling collector below spin forever: treat it as "hide nothing".
+  if (hiddenDays.size >= 7) hiddenDays.clear();
+  return { firstDay, hiddenDays };
+}
+
+/**
  * @param {Temporal.PlainDate | string} value
  * @returns {Temporal.PlainDate}
  */
@@ -27,27 +74,121 @@ export function getViewDays(view) {
 }
 
 /**
- * @param {Temporal.PlainDate | string} date
  * @param {string} view
- * @returns {{ start: Temporal.PlainDate, end: Temporal.PlainDate }}
+ * @returns {boolean}
  */
-export function getViewRange(date, view) {
-  if (isMonthView(view)) return getMonthRange(date);
-  const start = toPlainDate(date);
-  const end = start.add({ days: getViewDays(view) });
-  return { start, end };
+export function isWeekAnchoredView(view) {
+  return WEEK_ANCHORED_VIEWS.has(view);
 }
 
 /**
+ * Start of the civil week containing `date`.
+ *
+ * @param {Temporal.PlainDate | string} date
+ * @param {number} [firstDay] ISO 1-7, default Monday
+ * @returns {Temporal.PlainDate}
+ */
+export function startOfWeek(date, firstDay = 1) {
+  const anchor = toPlainDate(date);
+  const start = isoWeekday(firstDay) ?? 1;
+  return anchor.subtract({ days: (anchor.dayOfWeek - start + 7) % 7 });
+}
+
+/**
+ * Visible range with an exclusive end, covering every rendered date. Hidden
+ * days shrink what is rendered but not what a source is asked for: the range
+ * always spans from the first to the last rendered day.
+ *
  * @param {Temporal.PlainDate | string} date
  * @param {string} view
+ * @param {DateDerivationOptions} [options]
+ * @returns {{ start: Temporal.PlainDate, end: Temporal.PlainDate }}
+ */
+export function getViewRange(date, view, options = {}) {
+  if (isMonthView(view)) return getMonthRange(date, options);
+  const dates = getVisibleDates(date, view, options);
+  if (dates.length === 0) {
+    const start = toPlainDate(date);
+    return { start, end: start };
+  }
+  return { start: dates[0], end: dates[dates.length - 1].add({ days: 1 }) };
+}
+
+/**
+ * Dates rendered as columns or groups.
+ *
+ * Week-anchored views derive the civil week containing the anchor and then
+ * drop hidden days, because a week is a fixed civil unit: hiding Sunday
+ * leaves six columns. Rolling views instead fill their day count with
+ * visible days, because `threeDays` means three usable days, not three
+ * calendar days of which one may be blank.
+ *
+ * @param {Temporal.PlainDate | string} date
+ * @param {string} view
+ * @param {DateDerivationOptions} [options]
  * @returns {Temporal.PlainDate[]}
  */
-export function getVisibleDates(date, view) {
-  if (isMonthView(view)) return getMonthWeeks(date).flat();
-  const start = toPlainDate(date);
+export function getVisibleDates(date, view, options = {}) {
+  if (isMonthView(view)) return getMonthWeeks(date, options).flat();
+  const { firstDay, hiddenDays } = resolveDateOptions(options);
   const count = getViewDays(view);
-  return Array.from({ length: count }, (_, index) => start.add({ days: index }));
+
+  if (isWeekAnchoredView(view)) {
+    const start = startOfWeek(date, firstDay);
+    return Array.from({ length: count }, (_, index) => start.add({ days: index })).filter(
+      (day) => !hiddenDays.has(day.dayOfWeek),
+    );
+  }
+
+  /** @type {Temporal.PlainDate[]} */
+  const dates = [];
+  let cursor = toPlainDate(date);
+  while (dates.length < count) {
+    if (!hiddenDays.has(cursor.dayOfWeek)) dates.push(cursor);
+    cursor = cursor.add({ days: 1 });
+  }
+  return dates;
+}
+
+/**
+ * Anchor date for the previous (`-1`) or next (`1`) range.
+ *
+ * Month steps by calendar months and week-anchored views by whole weeks, so
+ * both keep the anchor weekday. Rolling views step by their own count of
+ * visible days rather than by a fixed number of calendar days, so hidden
+ * days never make two consecutive ranges overlap or skip a day.
+ *
+ * @param {Temporal.PlainDate | string} date
+ * @param {string} view
+ * @param {-1 | 1} direction
+ * @param {DateDerivationOptions} [options]
+ * @returns {Temporal.PlainDate}
+ */
+export function stepAnchor(date, view, direction, options = {}) {
+  const anchor = toPlainDate(date);
+  if (isMonthView(view)) return anchor.add({ months: direction });
+  if (isWeekAnchoredView(view)) return anchor.add({ days: 7 * direction });
+  if (direction > 0) {
+    // Land on a day that is actually rendered, so the anchor never sits on a
+    // hidden day just because the previous range ended on a Friday.
+    const after = getViewRange(anchor, view, options).end;
+    return getVisibleDates(after, view, options)[0] ?? after;
+  }
+
+  const { hiddenDays } = resolveDateOptions(options);
+  const count = getViewDays(view);
+  const start = getVisibleDates(anchor, view, options)[0] ?? anchor;
+  let cursor = start.subtract({ days: 1 });
+  let earliest = cursor;
+  let found = 0;
+  while (found < count) {
+    if (!hiddenDays.has(cursor.dayOfWeek)) {
+      found += 1;
+      earliest = cursor;
+    }
+    if (found < count) cursor = cursor.subtract({ days: 1 });
+  }
+  return earliest;
 }
 
 /**
@@ -67,21 +208,20 @@ export function isMonthView(view) {
 }
 
 /**
- * Full Monday → Sunday weeks covering the anchor date's calendar month,
- * including leading/trailing days of adjacent months. Week start is ISO
- * Monday; a `weekStart` option stays a future extension.
+ * Full seven-day weeks covering the anchor date calendar month, including
+ * leading/trailing days of adjacent months.
  *
  * @param {Temporal.PlainDate | string} date
+ * @param {number} firstDay ISO 1-7
  * @returns {Temporal.PlainDate[][]}
  */
-export function getMonthWeeks(date) {
+function fullMonthWeeks(date, firstDay) {
   const anchor = toPlainDate(date);
   const monthStart = anchor.with({ day: 1 });
   const monthEnd = monthStart.add({ months: 1 }).subtract({ days: 1 });
-  const first = monthStart.subtract({ days: monthStart.dayOfWeek - 1 });
   /** @type {Temporal.PlainDate[][]} */
   const weeks = [];
-  let current = first;
+  let current = startOfWeek(monthStart, firstDay);
   for (;;) {
     const week = Array.from({ length: 7 }, (_, index) => current.add({ days: index }));
     weeks.push(week);
@@ -92,14 +232,34 @@ export function getMonthWeeks(date) {
 }
 
 /**
- * Visible month range with an exclusive end, matching the `getViewRange`
- * convention sources rely on.
+ * Weeks covering the anchor date calendar month, starting on `firstDay` and
+ * with hidden days removed, so every row keeps the same length and the grid
+ * stays rectangular.
  *
  * @param {Temporal.PlainDate | string} date
+ * @param {DateDerivationOptions} [options]
+ * @returns {Temporal.PlainDate[][]}
+ */
+export function getMonthWeeks(date, options = {}) {
+  const { firstDay, hiddenDays } = resolveDateOptions(options);
+  const weeks = fullMonthWeeks(date, firstDay);
+  if (hiddenDays.size === 0) return weeks;
+  return weeks.map((week) => week.filter((day) => !hiddenDays.has(day.dayOfWeek)));
+}
+
+/**
+ * Visible month range with an exclusive end, matching the `getViewRange`
+ * convention sources rely on. Hidden days do not shrink it: the grid still
+ * spans whole weeks, and asking a source for a day that is not rendered is
+ * harmless where asking for too little is not.
+ *
+ * @param {Temporal.PlainDate | string} date
+ * @param {DateDerivationOptions} [options]
  * @returns {{ start: Temporal.PlainDate, end: Temporal.PlainDate }}
  */
-export function getMonthRange(date) {
-  const weeks = getMonthWeeks(date);
+export function getMonthRange(date, options = {}) {
+  const { firstDay } = resolveDateOptions(options);
+  const weeks = fullMonthWeeks(date, firstDay);
   return { start: weeks[0][0], end: weeks[weeks.length - 1][6].add({ days: 1 }) };
 }
 

@@ -1,12 +1,11 @@
 import { Temporal } from "temporal-polyfill";
 import {
   getMonthWeeks,
-  getViewDays,
   getViewRange,
   getVisibleDates,
-  isMonthView,
   isResourceView,
   minutesFromMidnight,
+  stepAnchor,
   toPlainDate,
 } from "./core/dates.js";
 import {
@@ -36,12 +35,17 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
  * @property {number} [monthEventLimit] event chips per month day cell before `+n more`
+ * @property {number} [firstDay] first weekday of a civil week, ISO 1-7 (default 1, Monday)
+ * @property {number[]} [hiddenDays] weekdays never rendered, ISO 1-7
+ * @property {number} [slotLabelInterval] minutes between time axis labels (default 60)
  * @property {boolean} [editable]
  * @property {(query: EventSourceQuery) => Promise<unknown[]>} [eventSource]
  * @property {(query: EventSourceQuery) => Promise<unknown[]>} [backgroundSource]
  * @property {(info: object) => unknown} [eventContent]
  * @property {(info: object) => unknown} [dayHeaderContent]
  * @property {(info: object) => unknown} [resourceHeaderContent]
+ * @property {(info: object) => unknown} [slotLabelContent]
+ * @property {(info: object) => unknown} [moreLinkContent]
  */
 
 const DEFAULTS = {
@@ -50,6 +54,7 @@ const DEFAULTS = {
   slotMin: "08:00",
   slotMax: "18:00",
   slotDuration: 20,
+  slotLabelInterval: 60,
   pxPerMinute: 1.8,
   snapDuration: Temporal.Duration.from({ minutes: 15 }),
   defaultTimedEventDuration: Temporal.Duration.from({ minutes: 30 }),
@@ -178,23 +183,15 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   getVisibleRange() {
-    return getViewRange(this.date, this.view);
+    return getViewRange(this.date, this.view, this.#dateOptions());
   }
 
   prev() {
-    if (isMonthView(this.view)) {
-      this.gotoDate(this.date.add({ months: -1 }));
-      return;
-    }
-    this.gotoDate(this.date.add({ days: -getViewDays(this.view) }));
+    this.gotoDate(stepAnchor(this.date, this.view, -1, this.#dateOptions()));
   }
 
   next() {
-    if (isMonthView(this.view)) {
-      this.gotoDate(this.date.add({ months: 1 }));
-      return;
-    }
-    this.gotoDate(this.date.add({ days: getViewDays(this.view) }));
+    this.gotoDate(stepAnchor(this.date, this.view, 1, this.#dateOptions()));
   }
 
   today() {
@@ -409,6 +406,7 @@ export class CalendarViewElement extends HTMLElement {
     const context = { start, end, resourceIds, signal: controller.signal, calendar: this };
 
     this.setAttribute("aria-busy", "true");
+    this.#announceLoading(true);
     try {
       const [events, backgrounds] = await Promise.all([
         eventSource ? eventSource(context) : this.#events,
@@ -428,8 +426,30 @@ export class CalendarViewElement extends HTMLElement {
       if (controller.signal.aborted) return;
       this.dispatchEvent(new CustomEvent("calendar:loaderror", { detail: { error } }));
     } finally {
-      if (version === this.#requestVersion) this.removeAttribute("aria-busy");
+      // Only the newest request settles the busy state: an aborted or stale
+      // one is always followed by a request that is still in flight.
+      if (version === this.#requestVersion) {
+        this.removeAttribute("aria-busy");
+        this.#announceLoading(false);
+      }
     }
+  }
+
+  /**
+   * Observable counterpart of `aria-busy`, so an application can render its
+   * own pending state instead of reading an attribute off the element.
+   *
+   * @param {boolean} loading
+   * @returns {void}
+   */
+  #announceLoading(loading) {
+    this.dispatchEvent(
+      new CustomEvent("calendar:loading", {
+        bubbles: true,
+        composed: true,
+        detail: { loading },
+      }),
+    );
   }
 
   #queueRender() {
@@ -476,6 +496,17 @@ export class CalendarViewElement extends HTMLElement {
     );
   }
 
+  /**
+   * Options that drive date derivation. They live together because
+   * `getVisibleRange()`, navigation and rendering must all agree on which
+   * dates exist.
+   *
+   * @returns {{ firstDay: number | undefined, hiddenDays: number[] | undefined }}
+   */
+  #dateOptions() {
+    return { firstDay: this.#config.firstDay, hiddenDays: this.#config.hiddenDays };
+  }
+
   #options() {
     return {
       timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
@@ -483,6 +514,7 @@ export class CalendarViewElement extends HTMLElement {
       slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
       slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
       slotDuration: Number(this.getAttribute("slot-duration") || DEFAULTS.slotDuration),
+      slotLabelInterval: this.#config.slotLabelInterval ?? DEFAULTS.slotLabelInterval,
       pxPerMinute: this.#config.pxPerMinute ?? DEFAULTS.pxPerMinute,
       snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
       defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
@@ -493,7 +525,8 @@ export class CalendarViewElement extends HTMLElement {
   #render() {
     const options = this.#options();
 
-    const dates = getVisibleDates(this.date, this.view);
+    const dateOptions = this.#dateOptions();
+    const dates = getVisibleDates(this.date, this.view, dateOptions);
     const resources = isResourceView(this.view) ? this.#resources : [];
 
     const scroll = this.querySelector(".cv-scroller");
@@ -510,11 +543,12 @@ export class CalendarViewElement extends HTMLElement {
     if (this.view === "month") {
       scroller.append(
         renderMonthGrid({
-          weeks: getMonthWeeks(this.date),
+          weeks: getMonthWeeks(this.date, dateOptions),
           month: this.date.month,
           events: this.#events,
           options,
           eventContent: this.#config.eventContent,
+          moreLinkContent: this.#config.moreLinkContent,
         }),
       );
     } else if (this.view === "list") {
@@ -547,6 +581,7 @@ export class CalendarViewElement extends HTMLElement {
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,
           resourceHeaderContent: this.#config.resourceHeaderContent,
+          slotLabelContent: this.#config.slotLabelContent,
         }),
       );
     }
@@ -558,6 +593,17 @@ export class CalendarViewElement extends HTMLElement {
     status.className = "cv-status";
     status.setAttribute("role", "status");
     this.append(status);
+
+    // Dispatched once the whole subtree exists, so applications can decorate
+    // rendered columns without observing mutations. Listeners that mutate
+    // state simply queue the next frame, like any other mutation.
+    this.dispatchEvent(
+      new CustomEvent("calendar:render", {
+        bubbles: true,
+        composed: true,
+        detail: { view: this.view, dates, resources },
+      }),
+    );
 
     // TODO: use keyed/incremental reconciliation rather than full replacement.
     // TODO: route click/select/drag/resize through a dedicated pointer engine.

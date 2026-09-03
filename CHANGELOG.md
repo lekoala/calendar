@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — M8 contract gaps
+
+Additive core seams found by auditing the public surface against a comparable MIT scheduler used as a specification reference. No architecture change: every item closes a seam an application could not reach.
+
+- `calendar:loading` brackets each async source run with `detail.loading`, alongside the `aria-busy` attribute. Only the newest request settles the state, so an aborted or superseded run never reports itself as finished while a newer one is in flight.
+- `calendar:render` fires once the rendered subtree exists, with `{ view, dates, resources }`. It replaces mutation observers and `:has()` tricks for applications that decorate rendered columns.
+- `calendar:moreclick` plus a `moreLinkContent` hook: month `+n more` is now a real button carrying `{ date, events, hidden, nativeEvent }`, activatable by pointer and keyboard, and no longer falls through to the day cell's `calendar:select` — which meant "create" and was the wrong intent.
+- `classNames` is applied by the month and list renderers too, not by `timeGrid` alone.
+- `slotLabelInterval` sets time-axis label density and the new `slotLabelContent` hook sets what a label reads; the axis is no longer hardcoded to hourly `HH:00`.
+- `firstDay` (ISO 1-7, default Monday, `0` accepted as an alias for Sunday) and `hiddenDays` join `configure()`. `firstDay` drives both week anchoring and month week derivation, replacing the hardcoded Monday in `getMonthWeeks`.
+- **Behaviour change**: `week` is now anchored on the civil week containing the anchor date rather than starting at it. The anchor property is never rewritten, so applications keep knowing which day the user picked. Every other view stays rolling. Documented in `docs/VIEWS.md`.
+- `hiddenDays` acts by family, deliberately: a week is a civil unit and loses columns, a rolling range is a count and spans further instead. `prev()`/`next()` step by visible days through the new `stepAnchor()` helper, so consecutive ranges never overlap or skip a working day and the anchor never lands on a hidden day. Hidden days shrink what is rendered, never what a source is asked for.
+- `src/calendar.css`: month grid column count comes from `--calendar-month-columns` so hidden days narrow the grid; `.cv-month-more` is styled and focusable as a button.
+- `demo/showcase.html`: reports `calendar:loading` in the live strip and dims the grid while a source is in flight, opens the day behind month `+n more`, and declares `firstDay: 1` / `hiddenDays: [7]` as application policy.
+- Tests: `test/core/derivation.test.js` (12 cases) and `test/browser/options.spec.js` (11 Chromium cases). `test/browser/basic.spec.js` now widens the slot range around the wall clock before asserting the time indicator, which used to make the suite fail outside 08:00-18:00 Brussels time.
+- `docs/API.md`, `docs/VIEWS.md`, `docs/DATA_AND_REALTIME.md`, `docs/ROADMAP.md` updated; `dist/` and `custom-elements.json` regenerated (11 events).
+
 ## Unreleased — showcase application shell
 
 - `demo/showcase.html` rebuilt as a full-viewport application shell instead of a document-flow page: Actual CSS `topbar`, a sidebar (mini month, search, room checklist, kind legend, event source), an agenda toolbar, a live strip and a collapsible activity dock, with the calendar filling the whole remaining height. The shell overrides the core's `max-height: 70vh` scroller cap from the outside — no core change needed.

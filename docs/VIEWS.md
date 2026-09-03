@@ -1,5 +1,22 @@
 # Views and density
 
+## Date derivation
+
+Two families, and the difference is deliberate.
+
+**Week-anchored views** derive the civil week containing the anchor date. `view="week"` with `date="2026-09-03"` (a Thursday) renders Monday 31 August to Sunday 6 September. The anchor property is not rewritten: it still reads `2026-09-03`, so an application can keep showing which day the user actually picked. `firstDay` moves the week start.
+
+**Rolling views** (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`) start at the anchor date and take their day count from there. `threeDays` means the anchor plus the two following days.
+
+`hiddenDays` acts differently on each, for the same reason:
+
+- a week is a fixed civil unit, so hidden days are removed from it: hiding Sunday leaves six columns;
+- a rolling range is a count, so it is filled with visible days: `threeDays` with the weekend hidden still shows three usable days, spanning five calendar days.
+
+`prev()` and `next()` follow. Month steps by calendar months and week-anchored views by whole weeks, both keeping the anchor weekday. Rolling views step by their own count of visible days rather than by a fixed number of calendar days, so two consecutive ranges never overlap or skip a working day, and the anchor never lands on a hidden day.
+
+Hidden days shrink what is rendered, never what a source is asked for. `getVisibleRange()` spans from the first to the last rendered day, and the month range still covers whole weeks: asking a source for a day that is not rendered is harmless, asking for too little is not.
+
 ## Solo views
 
 `timeGrid` is the primary renderer for one agenda/resource context.

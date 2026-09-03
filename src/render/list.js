@@ -58,7 +58,7 @@ export function renderList({ dates, events, options, eventContent, dayHeaderCont
     for (const event of dayEvents) {
       const item = document.createElement("button");
       item.type = "button";
-      item.className = "cv-list-event";
+      item.className = ["cv-list-event", ...(event.classNames ?? [])].join(" ");
       item.dataset.eventId = event.id;
       item.setAttribute("aria-label", describeEvent(event, timeZone));
       const content = eventContent?.({ event, date, resource: null, element: item });

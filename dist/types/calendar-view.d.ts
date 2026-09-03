@@ -19,12 +19,26 @@ export type CalendarConfig = {
      * event chips per month day cell before `+n more`
      */
     monthEventLimit?: number;
+    /**
+     * first weekday of a civil week, ISO 1-7 (default 1, Monday)
+     */
+    firstDay?: number;
+    /**
+     * weekdays never rendered, ISO 1-7
+     */
+    hiddenDays?: number[];
+    /**
+     * minutes between time axis labels (default 60)
+     */
+    slotLabelInterval?: number;
     editable?: boolean;
     eventSource?: (query: EventSourceQuery) => Promise<unknown[]>;
     backgroundSource?: (query: EventSourceQuery) => Promise<unknown[]>;
     eventContent?: (info: object) => unknown;
     dayHeaderContent?: (info: object) => unknown;
     resourceHeaderContent?: (info: object) => unknown;
+    slotLabelContent?: (info: object) => unknown;
+    moreLinkContent?: (info: object) => unknown;
 };
 export declare class CalendarViewElement extends HTMLElement {
     #private;

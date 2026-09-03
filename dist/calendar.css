@@ -119,10 +119,12 @@
   background: var(--calendar-surface);
 }
 
+/* Column count is set by the renderer: hidden days make the grid narrower
+   than a full week. */
 .cv-month-weekdays,
 .cv-month-week {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--calendar-month-columns, 7), minmax(0, 1fr));
 }
 
 .cv-month-weekdays {
@@ -182,9 +184,21 @@
 
 .cv-month-more {
   display: block;
+  width: 100%;
   margin-top: 0.2rem;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--calendar-muted);
+  font: inherit;
   font-size: 0.8rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.cv-month-more:focus-visible {
+  outline: 2px solid var(--calendar-accent);
+  outline-offset: 1px;
 }
 
 .cv-list {
@@ -268,6 +282,7 @@
 
   .cv-event:focus-visible,
   .cv-month-event:focus-visible,
+  .cv-month-more:focus-visible,
   .cv-list-event:focus-visible {
     outline-color: Highlight;
   }

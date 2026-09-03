@@ -447,6 +447,17 @@
       color: var(--text);
     }
 
+    /* Busy state: the strip reports what `calendar:loading` says, and the
+       grid dims rather than disappearing, so scroll position stays legible. */
+    .sc-shell[data-busy="true"] .sc-dot {
+      background: var(--warning);
+    }
+
+    .sc-shell[data-busy="true"] .actual-calendar .cv-scroller {
+      opacity: 0.55;
+      transition: opacity var(--duration) var(--ease-exit);
+    }
+
     .sc-dot {
       flex: none;
       inline-size: 0.5rem;
@@ -747,11 +758,14 @@
       display: flex;
     }
 
+    /* Rows share the leftover height when the month is short, but never
+       below what a cell actually holds: `1fr` alone made busy weeks overlap
+       the row underneath. */
     .actual-calendar .cv-month {
       flex: 1;
       display: grid;
       grid-template-rows: auto;
-      grid-auto-rows: minmax(5.5rem, 1fr);
+      grid-auto-rows: minmax(max-content, 1fr);
     }
 
     .actual-calendar .cv-month-day {
@@ -1131,6 +1145,7 @@
     const ZONE = "Europe/Brussels";
 
     let logged = 0;
+    let busy = false;
 
     /** @param {string} message */
     function record(message) {
@@ -1307,6 +1322,10 @@
 
     calendar.configure({
       pxPerMinute: 1.5,
+      // This shell does not take Sunday bookings, and its week starts on
+      // Monday: both are application policy handed to the core.
+      firstDay: 1,
+      hiddenDays: [7],
       eventContent({ event, element }) {
         const kind = event.extendedProps?.kind ?? "review";
         // The core hands the application its own node: the tone is set as
@@ -1430,15 +1449,18 @@
       const view = calendar.view;
       const { start, end } = calendar.getVisibleRange();
       const anchor = calendar.date.toString();
+      // The label describes what is rendered, which is not the anchor: `week`
+      // snaps to the civil week, and hidden days can move a range's first day.
+      // The anchor stays on the element for anything that needs the exact day.
+      const first = start.toString();
+      const last = end.subtract({ days: 1 }).toString();
       anchorLabel.dataset.date = anchor;
       if (view === "month") {
-        anchorLabel.innerHTML = "";
-        anchorLabel.append(monthFormat.format(asDate(anchor)));
-      } else if (start.equals(end.subtract({ days: 1 }))) {
-        anchorLabel.textContent = longFormat.format(asDate(anchor));
+        anchorLabel.textContent = monthFormat.format(asDate(anchor));
+      } else if (first === last) {
+        anchorLabel.textContent = longFormat.format(asDate(first));
       } else {
-        const last = end.subtract({ days: 1 }).toString();
-        anchorLabel.textContent = `${rangeFormat.format(asDate(anchor))} – ${rangeFormat.format(asDate(last))} ${anchor.slice(0, 4)}`;
+        anchorLabel.textContent = `${rangeFormat.format(asDate(first))} – ${rangeFormat.format(asDate(last))} ${last.slice(0, 4)}`;
       }
 
       for (const button of viewButtons) {
@@ -1467,7 +1489,11 @@
 
       cockpit.replaceChildren();
       cockpit.append(
-        chip([dot(), strong(String(inRange.length)), " bookings in view"]),
+        chip(
+          busy
+            ? [dot(), strong("Loading"), " from the event source"]
+            : [dot(), strong(String(inRange.length)), " bookings in view"],
+        ),
         chip(upcoming
           ? ["Next: ", strong(String(upcoming.item.title)), ` ${whenLabel(String(upcoming.item.start))} · ${roomTitle(String(upcoming.item.resourceId ?? ""))}`]
           : ["Nothing scheduled after ", strong(now.slice(11))]),
@@ -1641,6 +1667,11 @@
     // The core announces its own state changes; the shell just follows.
     calendar.addEventListener("calendar:viewchange", () => refreshChrome());
     calendar.addEventListener("calendar:datechange", () => refreshChrome());
+    calendar.addEventListener("calendar:loading", (event) => {
+      busy = event.detail.loading;
+      shell.dataset.busy = String(busy);
+      renderCockpit();
+    });
     calendar.addEventListener("calendar:loaderror", (event) => {
       record(`source error: ${event.detail?.error?.message ?? "unknown"}`);
     });
@@ -1854,6 +1885,15 @@
     });
     document.addEventListener("click", (event) => {
       if (!menu.hidden && !menu.contains(event.target)) menu.hidden = true;
+    });
+
+    // The core reports that a month day has more than it can show; this
+    // application answers by opening that day.
+    calendar.addEventListener("calendar:moreclick", (event) => {
+      const { date, hidden } = event.detail;
+      calendar.gotoDate(String(date));
+      calendar.setView("day");
+      record(`moreclick: ${date} (+${hidden} not shown) - opened the day`);
     });
 
     // --- Search: navigation primitives, application index ----------------------

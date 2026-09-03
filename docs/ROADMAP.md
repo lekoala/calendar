@@ -105,44 +105,60 @@ application currently cannot reach.
 
 Observability:
 
-- `calendar:loading`, symmetric with the existing `calendar:loaderror`, so an application can show a busy state while an async source is in flight;
-- a render-completed signal, so applications can decorate rendered columns without observing mutations or depending on `:has()`.
+- `calendar:loading` brackets every async source run with `detail.loading`, symmetric with `calendar:loaderror`. Only the newest request settles the state, so an aborted or superseded run never reports itself as finished;
+- `calendar:render` fires once the rendered subtree exists, with `{ view, dates, resources }`, so applications decorate rendered columns without observing mutations or depending on `:has()`.
 
 Consistency:
 
-- `classNames` is honoured by `timeGrid` only; the month and list renderers must apply it too;
-- `+n more` in month view is inert text with no hook, and clicking it currently falls through to the day's `select` (a create intent, which is the wrong meaning). Make it an activation target with its own content hook.
+- `classNames` is applied by all three renderers, not by `timeGrid` alone;
+- `+n more` is a real button carrying `calendar:moreclick` (`{ date, events, hidden, nativeEvent }`) plus a `moreLinkContent` hook, and no longer falls through to the day cell's `select`, which meant "create" and was the wrong intent.
 
 Density and format policies:
 
-- slot label interval/format: the time axis is hardcoded to hourly `HH:00`;
-- `hiddenDays`: drop non-worked days from any date-driven view.
+- `slotLabelInterval` sets axis label density, `slotLabelContent` sets what a label reads. The interval is a policy, the text is a hook;
+- `hiddenDays` drops non-worked weekdays from every date-driven view.
 
-Week anchoring is a product decision, not a defect: `week` currently
-starts at the anchor date rather than at the civil week containing it.
-Decide explicitly between "anchor + N days" and a `firstDay`-style
-policy, then document the choice. Both are defensible; only the silence
-is a problem.
+Week anchoring, decided: `week` is anchored on the civil week containing
+the anchor date, and `firstDay` (ISO 1-7, default Monday, `0` accepted as
+an alias for Sunday) sets where that week starts, for month derivation as
+well. The anchor property is never rewritten, so an application keeps
+knowing which day the user actually picked. Every other view stays
+rolling: it starts at the anchor and takes its day count from there. The
+consequence for `hiddenDays` is deliberate and documented in
+[VIEWS.md](VIEWS.md#date-derivation): a week is a civil unit and loses
+columns, a rolling range is a count and spans further instead.
 
-Tests: source lifecycle (loading/settled/error/abort), class application in month and list, axis label intervals, hidden-day column derivation.
+New options travel through `configure()` rather than through attributes:
+content hooks cannot be attributes at all, and keeping the options that
+drive date derivation in one place avoids an attribute-versus-property
+precedence rule.
 
-Exit condition: an application can render a busy state, style events uniformly across views, and react to a finished render, without reaching into internals.
+Tests: `test/core/derivation.test.js` (week anchoring, `firstDay`
+aliasing, hidden-day derivation for both families, navigation that
+neither overlaps nor skips, degenerate inputs) and
+`test/browser/options.spec.js` (source lifecycle including a superseded
+request, render signal, class application in month and list, `+n more`
+activation by pointer and keyboard without a stray `select`, axis label
+density, and the derivation seen through the DOM).
+
+Exit condition, met: an application can render a busy state, style events
+uniformly across views, react to a finished render, and choose which
+weekdays exist, without reaching into internals.
 
 ## Demo coverage debt
 
-Demos are part of the definition of done, and three already-implemented
-core contracts are currently invisible in them:
+Demos are part of the definition of done, and two already-implemented
+core contracts are still invisible in them:
 
 - move/resize rejection: `calendar:eventmove` and `calendar:eventresize` are cancelable and carry `revert()`, but no demo refuses a drop. Add application business rules to `demo/showcase.html` - a bookable window plus non-bookable ranges is enough;
-- hover intent: events carry `data-event-id`, so an application-owned tooltip needs no core hook at all. Show one, and use it to recover the detail that short cards drop;
-- month `+n more`: make it navigate to the day instead of silently opening a create selection.
+- hover intent: events carry `data-event-id`, so an application-owned tooltip needs no core hook at all. Show one, and use it to recover the detail that short cards drop.
 
-The showcase context menu is a fourth case, already written but written
+The showcase context menu is a third case, already written but written
 badly: it clamps itself with hardcoded `innerWidth - 200` /
 `innerHeight - 140` guesses that are wrong as soon as the menu's own size
 changes, and it hand-rolls outside-click and Escape dismissal.
 
-All four are overlay work, and the mechanism is settled in
+All three are overlay work, and the mechanism is settled in
 [INTEGRATION.md](INTEGRATION.md#overlays): native `popover` for the top
 layer and dismissal, `@lekoala/floating` for placement (`repositionAt()`
 for the coordinate-driven menu, `reposition()` + `autoUpdate()` for
@@ -152,9 +168,21 @@ the way Actual CSS already is - never a runtime dependency of the core.
 It must also stay out of the classic-script demos, which keep working
 over `file://`.
 
-Cheap and generic alongside them: week numbers in the demo mini-month
-(`Temporal.PlainDate.weekOfYear`), and a visible busy state once
-`calendar:loading` exists.
+Still cheap and generic: week numbers in the demo mini-month
+(`Temporal.PlainDate.weekOfYear`).
+
+Done with milestone 8: the showcase reports `calendar:loading` in its live
+strip and dims the grid while a source is in flight, and month `+n more`
+opens the day it belongs to.
+
+Others:
+- Use proper icons (eg: tabler from cdn), not font glyphs (fix alignment, improve consistency)
+- Add tools menu demo (eg: an actual css mega menu, with icons)
+- Aura on new event
+- The views buttons take too much visual space - keep it light. It must work on mobile (maybe adjust text)
+- In mobile, not enough screen state is granted for the calendar itself : this is what matters and should come first
+- The avatar (SO) menu should work, and display some dummy menu for full credibility
+- Debug/test tools should not clutter the ui (could be hidden in the tools or a dedicated menu)
 
 ## Post-0.x candidates (only with use cases)
 

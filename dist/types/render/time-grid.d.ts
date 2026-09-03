@@ -49,6 +49,10 @@ export type TimeGridOptions = {
     defaultTimedEventDuration?: Temporal.Duration | {
         minutes: number;
     };
+    /**
+     * minutes between axis labels (default 60)
+     */
+    slotLabelInterval?: number;
 };
 export type ActiveSelection = {
     anchor: number;
@@ -95,6 +99,7 @@ export type ActiveSelection = {
  * @property {boolean} [editable]
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
+ * @property {number} [slotLabelInterval] minutes between axis labels (default 60)
  */
 /**
  * @typedef {object} ActiveSelection
@@ -117,9 +122,10 @@ export type ActiveSelection = {
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
  * @param {(info: object) => unknown} [input.resourceHeaderContent]
+ * @param {(info: object) => unknown} [input.slotLabelContent]
  * @returns {DocumentFragment}
  */
-export declare function renderTimeGrid({ dates, resources, view, events, backgrounds, options, host, eventContent, dayHeaderContent, resourceHeaderContent, }: {
+export declare function renderTimeGrid({ dates, resources, view, events, backgrounds, options, host, eventContent, dayHeaderContent, resourceHeaderContent, slotLabelContent, }: {
     dates: Temporal.PlainDate[];
     resources: import("../core/model.js").CalendarResource[];
     view?: string;
@@ -130,5 +136,6 @@ export declare function renderTimeGrid({ dates, resources, view, events, backgro
     eventContent?: (info: object) => unknown;
     dayHeaderContent?: (info: object) => unknown;
     resourceHeaderContent?: (info: object) => unknown;
+    slotLabelContent?: (info: object) => unknown;
 }): DocumentFragment;
 //# sourceMappingURL=time-grid.d.ts.map

@@ -51,13 +51,22 @@ test("prev/next shift the anchor date by view length", async ({ page }) => {
 
 test("today returns to the current date and shows the time indicator", async ({ page }) => {
   await page.goto("/demo/basic.html");
-  const today = Temporal.Now.plainDateISO("Europe/Brussels").toString();
-  const date = await page.evaluate(() => {
-    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    calendar.today();
-    return calendar.getAttribute("date");
-  });
-  expect(date).toBe(today);
+  const now = Temporal.Now.plainDateTimeISO("Europe/Brussels");
+  // The indicator only exists inside the slot range, so widen it around the
+  // wall clock rather than letting the run depend on the time of day.
+  const slotMin = now.hour === 0 ? "00:00" : `${String(now.hour - 1).padStart(2, "0")}:00`;
+  const slotMax = now.hour >= 22 ? "23:59" : `${String(now.hour + 1).padStart(2, "0")}:00`;
+  const date = await page.evaluate(
+    ([min, max]) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      calendar.setAttribute("slot-min", min);
+      calendar.setAttribute("slot-max", max);
+      calendar.today();
+      return calendar.getAttribute("date");
+    },
+    [slotMin, slotMax],
+  );
+  expect(date).toBe(now.toPlainDate().toString());
   await expect(page.locator(".cv-now")).toHaveCount(1);
 });
 

@@ -13,6 +13,25 @@ function flushRender(page) {
   );
 }
 
+/**
+ * Under 64rem the side panel is off-canvas and the activity dock starts
+ * collapsed. Tests that drive either one open it first, the way a user would,
+ * instead of assuming the desktop layout.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function openPanel(page) {
+  const toggle = page.locator("#sidebar-toggle");
+  if (await toggle.isVisible()) await toggle.click();
+}
+
+/** @param {import("@playwright/test").Page} page */
+function openDock(page) {
+  return page.evaluate(() => {
+    /** @type {HTMLDetailsElement} */ (document.getElementById("dock")).open = true;
+  });
+}
+
 test("showcase renders seeded team events with kind cards", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator("calendar-view")).toBeVisible();
@@ -42,16 +61,18 @@ test("the shell fills the viewport and only the calendar scrolls", async ({ page
 test("view switching preserves the anchor date and marks the active view", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await expect(page.locator('.join [data-view="resourceThreeDays"]')).toHaveAttribute("aria-pressed", "true");
+  // Narrow viewports deliberately open on a single day, so the active view is
+  // whatever the shell chose: assert the marker follows it, not a fixed name.
+  const initial = await page.evaluate(
+    () => /** @type {any} */ (document.querySelector("calendar-view")).view,
+  );
+  await expect(page.locator(`.join [data-view="${initial}"]`)).toHaveAttribute("aria-pressed", "true");
   await page.click('.join [data-view="month"]');
   await flushRender(page);
   await expect(page.locator(".cv-month-day").first()).toBeVisible();
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-03");
   await expect(page.locator('.join [data-view="month"]')).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator('.join [data-view="resourceThreeDays"]')).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
+  await expect(page.locator(`.join [data-view="${initial}"]`)).toHaveAttribute("aria-pressed", "false");
   await page.click('.join [data-view="list"]');
   await flushRender(page);
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-03");
@@ -80,6 +101,7 @@ test("tools search reveals a loaded event on its date", async ({ page }) => {
 test("the mini month navigates the anchor date", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
   await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText("3");
   await page.click('.sc-mini-day[data-date="2026-09-10"]');
   await flushRender(page);
@@ -90,6 +112,13 @@ test("the mini month navigates the anchor date", async ({ page }) => {
 test("room and kind filters change what the core is given", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  // Resource headers only exist in resource views; the filter itself does not
+  // depend on the view the shell happened to open on.
+  await page.evaluate(() =>
+    /** @type {any} */ (document.querySelector("calendar-view")).setView("resourceThreeDays"),
+  );
+  await flushRender(page);
   await expect(page.locator(".cv-resource-header")).toHaveCount(3);
 
   await page.locator("#room-list input").nth(2).uncheck();
@@ -116,9 +145,34 @@ test("the live strip reports the visible range", async ({ page }) => {
   await expect(page.locator("#cockpit")).toContainText("3/3 rooms shown");
 });
 
+test("the shell reports the source lifecycle while a slow source runs", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  await page.selectOption("#source-mode", "slow");
+  await expect(page.locator("#shell")).toHaveAttribute("data-busy", "true");
+  await expect(page.locator("#cockpit")).toContainText("Loading");
+  await expect(page.locator("#shell")).toHaveAttribute("data-busy", "false");
+  await expect(page.locator("#cockpit")).toContainText("bookings in view");
+});
+
+test("month +n more opens the day it belongs to", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await page.click('.join [data-view="month"]');
+  await flushRender(page);
+  const more = page.locator(".cv-month-more").first();
+  const date = await more.getAttribute("data-date");
+  await more.click();
+  await flushRender(page);
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", /** @type {string} */ (date));
+  await expect(page.locator('.join [data-view="day"]')).toHaveAttribute("aria-pressed", "true");
+});
+
 test("realtime stand-in adds an event without navigation", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openDock(page);
   const before = await page.locator(".cv-event").count();
   await page.click("#rt-add");
   await flushRender(page);
