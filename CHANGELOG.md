@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — roadmap: M9 application-feeder seams
+
+- New Milestone 9 in `docs/ROADMAP.md` closes the reachability holes found
+  by mapping a real FullCalendar business consumer onto the core seams: a
+  public read surface (`getEventOverlaps`), `slotMin`/`slotMax` day
+  boundaries, background content/stacking, start-only events, external
+  drag & drop + dropzones, and the all-day lane / slot-row policy /
+  `datesAboveResources` density and header options promoted from post-0.x.
+  Planning change only: no source, tests or generated artifacts touched.
+
 ## Unreleased — locale and labels
 
 - `configure({ locale })` (or the `lang` attribute, falling back to the document language) localizes default day headers, axis labels and the month weekday row through `Intl`, and suggests `firstDay` when none is explicit (`en-US` weeks start Sunday, `fr` weeks Monday; explicit `firstDay` wins). Only the explicit option feeds date derivation, so `lang`/document language localize text, never temporal math. Content hooks stay authoritative.

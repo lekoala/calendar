@@ -145,6 +145,68 @@ Exit condition, met: an application can render a busy state, style events
 uniformly across views, react to a finished render, and choose which
 weekdays exist, without reaching into internals.
 
+## Milestone 9 — application-feeder seams (0.x)
+
+Gaps found by reading a real FullCalendar business consumer (agenda +
+scheduler with external drag, cut/paste, per-resource schedules, background
+labels, websocket updates) and mapping every behavior onto a core seam. The
+consumer exercised each planned contract and still fell back to DOM scraping
+(`data-num`/`data-time` attributes, `findCoveredElements`, per-row slat
+stretching, bounding-box hit scans), which a Light-DOM webcomponent should
+make unnecessary. The milestone closes the reachability holes; it does not
+change the architecture.
+
+Public read surface — an application must answer "does my new range conflict
+with an existing event?" before proposing creation, and "which events sit in
+this column?" for click-to-end snapping and reveal. One primitive over the
+same canonical state, never over render internals:
+
+```js
+calendar.getEventOverlaps(range, { resourceIds = [], includeBackgrounds = false })
+// -> events (and backgrounds) overlapping `range`, in paint order, or []
+```
+
+plus a `filter` option so an application asks "is there an unavailability
+here" without reading class arrays itself.
+
+Day boundaries — `configure({ slotMin, slotMax })` (`Temporal.PlainTime`,
+with `24:00` accepted as end-of-day) bounds the grid the way the consumer's
+`minTime`/`maxTime` schedules did. Day slicing/clipping already exists; this
+makes the boundary a configuration seam instead of app-side CSS/DOM surgery.
+
+Backgrounds with content and stacking — a background may carry a `title`
+rendered as text, participates in a `backgroundContent` hook, and overlapping
+backgrounds paint in source order (later on top), so the consumer's
+"clear the DOM of covered background labels" hack disappears.
+
+Start-only events — `{ start }` without `end` creates with
+`duration`/`defaultTimedEventDuration`; the external-drop and paste input
+shapes the consumer computed by hand.
+
+External drag & drop and dropzones — two sides of one seam:
+
+- application-owned draggables (external listings) that create an event on
+  drop, carrying `{ title, start?, duration, resourceId, extendedProps }`,
+  and honored by the same `movable`/`droppable` checks as internal drags;
+- application-owned drop targets that receive events dragged out of the grid
+  (parked/cut events), covering the consumer's cut/paste workflow. The core
+  reports both through `calendar:drop` / `calendar:dropzone` intents; the
+  application owns the target UX and persistence.
+
+Density:
+
+- all-day lane — `configure({ allDaySlot })` — moved up from post-0.x;
+- slot row policy as a real option (`pxPerMinute` or `fit` to the available
+  height) instead of stretching rendered rows from outside.
+
+Resource headers: `datesAboveResources` arrangement — moved up from
+post-0.x.
+
+Exit condition: the documented consumer workflows (external drag, cut/paste,
+conflict-aware creation, all-day tasks, per-resource schedules, labelled
+backgrounds) rebuild on exported seams without relying on internal DOM
+shape, coordinated `getBoundingClientRect` scans, or private members.
+
 ## Demo coverage debt, cleared
 
 Demos are part of the definition of done, and `demo/showcase.html` now
@@ -216,12 +278,9 @@ Follow-ups this uncovered, both in the core rather than the demo:
 ## Post-0.x candidates (only with use cases)
 
 - generic mini-calendar/date navigator package;
-- resource grouping metadata;
-- resource header grouping/order modes, including a dates-above-resources arrangement;
+- resource grouping metadata (hierarchy/tree data), beyond the header `datesAboveResources` arrangement now tracked in Milestone 9;
 - optional recurrence adapter;
 - framework adapters;
-- advanced all-day lane - the largest single gap the comparison confirmed;
-- drag from external sources;
 - print/export helpers.
 
 Still not automatically planned: virtualization, Gantt, enterprise resource timeline/tree-grid.
