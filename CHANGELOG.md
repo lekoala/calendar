@@ -6,6 +6,15 @@
 - `configure({ labels })` overrides the fixed English strings (`noEvents`, `noResources`, `more` with `{hidden}`, `calendarRegion`, `untitledEvent`); `DEFAULT_LABELS`, `resolveLabels` and `formatLabel` are exported from the main entry for applications building their own catalogs. No locale bundle to load and no async loader in the core.
 - Demo `basic.html` gains a locale switcher (system/English/Français/Nederlands).
 
+## Unreleased — showcase: locale and labels
+
+- `demo/showcase.html` exercises the new `locale`/`labels` contract. A row of locale chips lives in the account menu next to the theme swatches (`lang`, `en-US`, `en-GB`, `fr`, `nl`), and one `configure({ locale, labels })` call carries both halves: `locale` for everything `Intl` and `Temporal` format, `labels` for the five strings the core writes itself. The French and Dutch tables are the whole translation - no bundle to fetch, which is the point of the contract.
+- The shell resolves its own locale the way the core documents it - `configure({ locale })`, then the `lang` attribute, then the document language - and rebuilds its five `Intl.DateTimeFormat` instances from it. That fixed a latent inconsistency: the shell was formatting with the runtime default while the core was reading `<html lang="en">`, so the chrome and the grid could disagree about what month it was. The first chip is labelled `lang` rather than "System" for the same reason.
+- Tools → Grid gains "Week starts Monday", which makes the documented precedence visible in both directions: the shell pins `firstDay: 1`, and dropping the pin hands the choice back to the locale (`en-US` moves the week to Sunday, `fr`/`nl`/`en-GB` keep Monday). Sundays have to be shown for the difference to be visible at all, and that toggle sits right next to it.
+- The toolbar subtitle names the locale in force alongside the ISO week and the time zone.
+- The application chrome itself is deliberately not translated: fetching UI copy is transport, and stays an application concern. What the switch drives is the core's own output plus every date the shell prints.
+- `test/browser/showcase.spec.js`: 23 tests. Adds the locale switch (core `calendarRegion`, month `+n more`, the localized weekday row, and the shell's own mini-month title) and the `firstDay` precedence in both directions.
+
 ## Unreleased — showcase: demo coverage debt, views and mobile
 
 Closes the demo coverage debt recorded in `docs/ROADMAP.md`, and gives the grid back the room the chrome was taking. All of it is application code in `demo/showcase.html`; the core is unchanged.

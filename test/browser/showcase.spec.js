@@ -382,6 +382,58 @@ test("grid options travel through configure(), not through the toolbar", async (
   expect(await page.locator(".cv-axis-label").count()).toBeGreaterThan(hourly);
 });
 
+test("the locale switch drives the core labels and the shell's own dates", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await closePanel(page);
+  // The page declares `lang="en"`, and the shell resolves its locale the way
+  // the core documents, so the chrome and the grid start out agreeing.
+  await expect(page.locator("#anchor-sub")).toContainText("en");
+  await expect(page.locator(".cv-scroller")).toHaveAttribute("aria-label", "Calendar");
+
+  await page.click("#account-toggle");
+  await page.click('#locale-chips [data-locale="fr"]');
+  await flushRender(page);
+  // One `configure()` call carries both halves: `labels` for the strings the
+  // core writes itself, `locale` for everything `Intl` formats.
+  await expect(page.locator(".cv-scroller")).toHaveAttribute("aria-label", "Calendrier");
+  await expect(page.locator("#mini-title")).toHaveText(/septembre/);
+  await expect(page.locator("#anchor-sub")).toContainText("fr");
+  await page.keyboard.press("Escape");
+
+  await setView(page, "month");
+  await expect(page.locator(".cv-month-more").first()).toContainText("en plus");
+  await expect(page.locator(".cv-month-weekday").first()).toHaveText(/lun/);
+
+  await page.click("#account-toggle");
+  await page.click('#locale-chips [data-locale="nl"]');
+  await flushRender(page);
+  await expect(page.locator(".cv-month-more").first()).toContainText("meer");
+  await expect(page.locator(".cv-scroller")).toHaveAttribute("aria-label", "Agenda");
+});
+
+test("an explicit firstDay wins over the locale, and dropping it hands the choice back", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await closePanel(page);
+  await setView(page, "month");
+  await page.click("#account-toggle");
+  await page.click('#locale-chips [data-locale="en-US"]');
+  await flushRender(page);
+  await page.keyboard.press("Escape");
+  // `en-US` suggests Sunday, but this shell pins Monday.
+  await expect(page.locator(".cv-month-weekday").first()).toHaveText(/Mon/);
+
+  await page.click("#tools-toggle");
+  // Sundays have to exist before the week start can be seen at all.
+  await page.click('#grid-menu [data-grid="sunday"]');
+  await flushRender(page);
+  await page.click('#grid-menu [data-grid="monday"]');
+  await flushRender(page);
+  await expect(page.locator(".cv-month-weekday").first()).toHaveText(/Sun/);
+  await expect(page.locator(".cv-month-weekday")).toHaveCount(7);
+});
+
 test("the side panel is a popover below 64rem and a column above it", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();

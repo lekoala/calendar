@@ -1149,6 +1149,33 @@
       outline-offset: 2px;
     }
 
+    /* Five locales as one row of chips rather than five menu rows: the
+       account menu has to stay short enough not to scroll. */
+    .sc-locales {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-10);
+      padding: var(--space-10) var(--space-20) var(--space-20);
+    }
+
+    .sc-locale {
+      padding: 2px 0.5em;
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-full);
+      background: var(--surface);
+      color: var(--text-muted);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .sc-locale[aria-pressed="true"] {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-weight: var(--font-weight-bold);
+    }
+
     /* Hover intent. Events carry `data-event-id`, so an application
        tooltip needs no core hook at all: it is `popover="manual"` for the
        top layer without light dismiss, and `autoUpdate()` follows the
@@ -1599,6 +1626,13 @@
           </button>
         </li>
         <li>
+          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="true" data-grid="monday">
+            <span class="menu-item-icon"><i class="ti ti-calendar-repeat" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Week starts Monday</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
           <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="true" data-grid="sunday">
             <span class="menu-item-icon"><i class="ti ti-beach" aria-hidden="true"></i></span>
             <span class="menu-item-text">Hide Sundays</span>
@@ -1686,6 +1720,9 @@
     <h3 class="menu-label"><i class="ti ti-palette" aria-hidden="true"></i> Theme</h3>
     <ul class="menu" role="group" id="theme-menu"></ul>
     <div class="sc-themes" id="theme-swatches" role="group" aria-label="Accent theme"></div>
+    <hr class="menu-separator">
+    <h3 class="menu-label"><i class="ti ti-world" aria-hidden="true"></i> Language</h3>
+    <div class="sc-locales" id="locale-chips" role="group" aria-label="Locale"></div>
     <hr class="menu-separator">
     <ul class="menu" role="menu">
       <li>
@@ -2103,19 +2140,81 @@
     calendar.backgrounds = ranges;
   }
 
+  // --- Locale ------------------------------------------------------------
+  /**
+   * The core resolves its locale as `configure({ locale })`, then the `lang`
+   * attribute, then the document language. The shell formats plenty of its
+   * own dates, so it follows the very same order - otherwise the chrome and
+   * the grid disagree about what month it is. `""` means "whatever the page
+   * declares", which is why the first choice is labelled after `lang`.
+   */
+  const LOCALES = [
+    { value: "", chip: "lang", label: "From the page" },
+    { value: "en-US", chip: "en-US", label: "English (US)" },
+    { value: "en-GB", chip: "en-GB", label: "English (UK)" },
+    { value: "fr", chip: "fr", label: "Français" },
+    { value: "nl", chip: "nl", label: "Nederlands" },
+  ];
+
+  /**
+   * The five fixed strings the core renders itself. `Intl` and `Temporal`
+   * already carry CLDR, so translating the core is this table and nothing
+   * else - no bundle to fetch, which is the point of the contract. An empty
+   * override falls back to the shipped English.
+   */
+  const CORE_LABELS = {
+    fr: {
+      noEvents: "Aucun évènement",
+      noResources: "Aucune ressource sélectionnée.",
+      more: "+{hidden} en plus",
+      calendarRegion: "Calendrier",
+      untitledEvent: "Évènement",
+    },
+    nl: {
+      noEvents: "Geen gebeurtenissen",
+      noResources: "Geen bronnen geselecteerd.",
+      more: "+{hidden} meer",
+      calendarRegion: "Agenda",
+      untitledEvent: "Gebeurtenis",
+    },
+  };
+
+  let chosenLocale = "";
+
+  /** @returns {string | undefined} */
+  function effectiveLocale() {
+    return (
+      chosenLocale ||
+      calendar.getAttribute("lang") ||
+      document.documentElement.lang ||
+      undefined
+    );
+  }
+
+  /**
+   * The shell's own formatters, rebuilt whenever the locale changes. The
+   * application chrome is not translated - that is transport, and stays an
+   * application concern - but every date it prints follows the calendar.
+   * @param {string | undefined} locale
+   */
+  function buildFormatters(locale) {
+    return {
+      day: new Intl.DateTimeFormat(locale, { weekday: "short" }),
+      month: new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }),
+      range: new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }),
+      short: new Intl.DateTimeFormat(locale, { day: "numeric", month: "numeric" }),
+      long: new Intl.DateTimeFormat(locale, {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }),
+    };
+  }
+
+  let fmt = buildFormatters(effectiveLocale());
+
   // --- Rendering hooks: geometry stays in the core, content is the app ---
-  // Undefined locale: the core month renderer formats with the browser
-  // locale too, so the whole page stays consistent wherever it is opened.
-  const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-  const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
-  const rangeFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
-  const shortFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "numeric" });
-  const longFormat = new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
 
   /** @param {string} id */
   function roomTitle(id) {
@@ -2132,8 +2231,10 @@
 
   calendar.configure({
     pxPerMinute: 1.5,
-    // This shell does not take Sunday bookings, and its week starts on
-    // Monday: both are application policy handed to the core.
+    // This shell does not take Sunday bookings, and it pins the week to
+    // Monday rather than letting the locale suggest one: both are
+    // application policy handed to the core, and both are undoable from
+    // Tools, which is where the precedence rule becomes visible.
     firstDay: 1,
     hiddenDays: [7],
     eventContent({ event, element }) {
@@ -2199,7 +2300,7 @@
       const node = document.createDocumentFragment();
       const dow = document.createElement("span");
       dow.className = "sc-dow";
-      dow.textContent = dayFormat.format(asDate(iso));
+      dow.textContent = fmt.day.format(asDate(iso));
       const dom = document.createElement("span");
       dom.className = "sc-dom";
       dom.textContent = String(date.day);
@@ -2332,14 +2433,14 @@
     const last = end.subtract({ days: 1 }).toString();
     anchorLabel.dataset.date = anchor;
     if (view === "month") {
-      anchorLong.textContent = monthFormat.format(asDate(anchor));
-      anchorShort.textContent = monthFormat.format(asDate(anchor));
+      anchorLong.textContent = fmt.month.format(asDate(anchor));
+      anchorShort.textContent = fmt.month.format(asDate(anchor));
     } else if (first === last) {
-      anchorLong.textContent = longFormat.format(asDate(first));
-      anchorShort.textContent = rangeFormat.format(asDate(first));
+      anchorLong.textContent = fmt.long.format(asDate(first));
+      anchorShort.textContent = fmt.range.format(asDate(first));
     } else {
-      anchorLong.textContent = `${rangeFormat.format(asDate(first))} – ${rangeFormat.format(asDate(last))} ${last.slice(0, 4)}`;
-      anchorShort.textContent = `${shortFormat.format(asDate(first))} – ${shortFormat.format(asDate(last))}`;
+      anchorLong.textContent = `${fmt.range.format(asDate(first))} – ${fmt.range.format(asDate(last))} ${last.slice(0, 4)}`;
+      anchorShort.textContent = `${fmt.short.format(asDate(first))} – ${fmt.short.format(asDate(last))}`;
     }
     // `weekOfYear` is the ISO week, which is what a room schedule is
     // referred by; it needs no date library either.
@@ -2349,7 +2450,10 @@
       const zone = document.createElement("span");
       zone.className = "sc-wide";
       zone.textContent = ` · ${calendar.timeZone ?? ZONE}`;
-      anchorSub.replaceChildren(document.createTextNode(`week ${start.weekOfYear}`), zone);
+      anchorSub.replaceChildren(
+        document.createTextNode(`week ${start.weekOfYear} · ${effectiveLocale() ?? "auto"}`),
+        zone,
+      );
     }
 
     renderViewMenu();
@@ -2408,7 +2512,7 @@
     const day = iso.slice(0, 10);
     const time = wallClock(iso);
     if (day === todayIso()) return `at ${time}`;
-    return `${dayFormat.format(asDate(day))} ${rangeFormat.format(asDate(day))}, ${time}`;
+    return `${fmt.day.format(asDate(day))} ${fmt.range.format(asDate(day))}, ${time}`;
   }
 
   /** @param {Array<string | Node>} parts */
@@ -2443,7 +2547,7 @@
     }
     const month = miniAnchor;
     const weeks = miniGrid.dataset.weeks === "true";
-    miniTitle.textContent = monthFormat.format(asDate(month.toString()));
+    miniTitle.textContent = fmt.month.format(asDate(month.toString()));
 
     const busyDays = new Set(calendar.events.map((item) => String(item.start).slice(0, 10)));
     const firstOfMonth = month.with({ day: 1 });
@@ -2462,7 +2566,7 @@
     for (let index = 0; index < 7; index += 1) {
       const head = document.createElement("span");
       head.className = "sc-mini-dow";
-      head.textContent = dayFormat.format(asDate(gridStart.add({ days: index }).toString())).slice(0, 2);
+      head.textContent = fmt.day.format(asDate(gridStart.add({ days: index }).toString())).slice(0, 2);
       miniGrid.append(head);
     }
     for (let index = 0; index < 42; index += 1) {
@@ -2739,7 +2843,7 @@
    */
   function openCreate(startIso, endIso, resourceId) {
     pendingSlot = { start: startIso, end: endIso, resourceId };
-    document.getElementById("create-date").textContent = longFormat.format(asDate(startIso));
+    document.getElementById("create-date").textContent = fmt.long.format(asDate(startIso));
     document.getElementById("create-range").textContent = `${wallClock(startIso)} – ${wallClock(endIso)}`;
     const minutes = wallMinutes(startIso, endIso);
     document.getElementById("create-duration").textContent =
@@ -2838,7 +2942,7 @@
     const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
     document.getElementById("detail-title").textContent = item.title ?? "Booking";
     document.getElementById("detail-meta").textContent =
-      `${longFormat.format(asDate(String(item.start)))} · ${wallClock(String(item.start))}–${wallClock(String(item.end))}` +
+      `${fmt.long.format(asDate(String(item.start)))} · ${wallClock(String(item.start))}–${wallClock(String(item.end))}` +
       `${item.resourceId ? ` · ${roomTitle(String(item.resourceId))}` : ""} · ${item.extendedProps?.seats ?? "?"} seats` +
       `${locked ? " · locked by facilities" : ""}`;
     document.getElementById("detail-shift").disabled = locked;
@@ -3095,7 +3199,7 @@
       dd.textContent = value;
       rows.append(dt, dd);
     };
-    row("When", `${longFormat.format(asDate(start))}, ${wallClock(start)}–${wallClock(end)}`);
+    row("When", `${fmt.long.format(asDate(start))}, ${wallClock(start)}–${wallClock(end)}`);
     row("Room", roomTitle(String(item.resourceId ?? "")));
     row("Kind", kind);
     row("Seats", String(item.extendedProps?.seats ?? "?"));
@@ -3193,7 +3297,13 @@
     const on = button.getAttribute("aria-checked") !== "true";
     button.setAttribute("aria-checked", String(on));
     const option = button.dataset.grid;
-    if (option === "weeks") {
+    if (option === "monday") {
+      // Documented precedence, both directions: an explicit `firstDay`
+      // always wins, and removing it hands the choice back to the locale.
+      calendar.configure({ firstDay: on ? 1 : undefined });
+      backgroundKey = "";
+      refreshChrome();
+    } else if (option === "weeks") {
       miniGrid.dataset.weeks = String(on);
       renderMiniMonth();
     } else if (option === "sunday") {
@@ -3243,6 +3353,42 @@
 
   const themeMenu = document.getElementById("theme-menu");
   const themeSwatches = document.getElementById("theme-swatches");
+  const localeChips = document.getElementById("locale-chips");
+
+  /**
+   * One call carries both halves of the contract: `locale` for everything
+   * `Intl` and `Temporal` format, `labels` for the five strings the core
+   * writes itself. An empty override resets to the shipped English.
+   * @param {string} value
+   */
+  function setLocale(value) {
+    chosenLocale = value;
+    const locale = value || undefined;
+    const base = (locale ?? effectiveLocale() ?? "").slice(0, 2);
+    calendar.configure({ locale, labels: CORE_LABELS[base] ?? {} });
+    fmt = buildFormatters(effectiveLocale());
+    // The mini month caches nothing locale-shaped, but every label it
+    // prints comes from `fmt`, so the whole chrome is redrawn.
+    renderLocales();
+    refreshChrome();
+    record(`locale → ${effectiveLocale() ?? "runtime default"}`);
+  }
+
+  function renderLocales() {
+    localeChips.replaceChildren();
+    for (const entry of LOCALES) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "sc-locale";
+      chip.dataset.locale = entry.value;
+      chip.textContent = entry.chip;
+      chip.title = entry.label;
+      chip.setAttribute("aria-label", entry.label);
+      chip.setAttribute("aria-pressed", String(entry.value === chosenLocale));
+      chip.addEventListener("click", () => setLocale(entry.value));
+      localeChips.append(chip);
+    }
+  }
 
   /** @param {string} value */
   function applyTheme(value) {
@@ -3342,7 +3488,7 @@
       const title = document.createElement("strong");
       title.textContent = hit.title;
       const meta = document.createElement("small");
-      meta.textContent = `${rangeFormat.format(asDate(String(hit.start)))} · ${wallClock(String(hit.start))} · ${roomTitle(String(hit.resourceId ?? ""))}`;
+      meta.textContent = `${fmt.range.format(asDate(String(hit.start)))} · ${wallClock(String(hit.start))} · ${roomTitle(String(hit.resourceId ?? ""))}`;
       button.append(title, meta);
       button.addEventListener("click", () => {
         calendar.gotoDate(String(hit.start).slice(0, 10));
@@ -3518,6 +3664,7 @@
 
   renderRules();
   renderThemes();
+  renderLocales();
   renderShortcuts();
   refreshChrome();
   calendar.scrollToTime("08:00");
