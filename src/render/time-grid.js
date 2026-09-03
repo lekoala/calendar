@@ -4,6 +4,36 @@ import { eventGeometry, snapMinutes } from "../core/geometry.js";
 import { hitTest } from "../core/hit.js";
 import { layoutEvents } from "../core/layout.js";
 
+/**
+ * @typedef {object} TimeGridColumn
+ * @property {Temporal.PlainDate} date
+ * @property {import("../core/model.js").CalendarResource | null} resource
+ */
+
+/**
+ * @typedef {object} TimeGridOptions
+ * @property {string} slotMin
+ * @property {string} slotMax
+ * @property {number} pxPerMinute
+ * @property {string} [timeZone]
+ * @property {Temporal.Duration | { minutes: number }} [snapDuration]
+ * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
+ */
+
+/**
+ * @typedef {object} ActiveSelection
+ * @property {number} anchor
+ * @property {number} downX
+ * @property {number} downY
+ * @property {boolean} moved
+ * @property {number} start
+ * @property {number} end
+ */
+
+/**
+ * @param {unknown} isoLike
+ * @returns {number}
+ */
 function eventMinutes(isoLike) {
   // Prototype shortcut: the public model is Temporal/ZonedDateTime, but this
   // renderer only needs wall-clock geometry for the first spike.
@@ -12,6 +42,18 @@ function eventMinutes(isoLike) {
   return match ? Number(match[1]) * 60 + Number(match[2]) : 0;
 }
 
+/**
+ * @param {object} input
+ * @param {Temporal.PlainDate[]} input.dates
+ * @param {import("../core/model.js").CalendarResource[]} input.resources
+ * @param {import("../core/model.js").NormalizedEvent[]} input.events
+ * @param {import("../core/model.js").NormalizedBackground[]} input.backgrounds
+ * @param {TimeGridOptions} input.options
+ * @param {(info: object) => unknown} [input.eventContent]
+ * @param {(info: object) => unknown} [input.dayHeaderContent]
+ * @param {(info: object) => unknown} [input.resourceHeaderContent]
+ * @returns {DocumentFragment}
+ */
 export function renderTimeGrid({
   dates,
   resources,
@@ -42,9 +84,16 @@ export function renderTimeGrid({
   // Single-pointer selection state shared by all columns of this render.
   // Range edges snap with floor (start) / ceil (end) so the dragged area is
   // always covered; a plain click proposes defaultTimedEventDuration.
+  /** @type {ActiveSelection | null} */
   let selecting = null;
   let suppressClick = false;
 
+  /**
+   * @param {TimeGridColumn} column
+   * @param {HTMLDivElement} body
+   * @param {number} clientX
+   * @param {number} clientY
+   */
   function columnHit(column, body, clientX, clientY) {
     return hitTest({
       x: clientX,
@@ -56,6 +105,14 @@ export function renderTimeGrid({
     });
   }
 
+  /**
+   * @param {HTMLDivElement} body
+   * @param {TimeGridColumn} column
+   * @param {number} start
+   * @param {number} end
+   * @param {Event} nativeEvent
+   * @returns {void}
+   */
   function dispatchSelect(body, column, start, end, nativeEvent) {
     body.dispatchEvent(
       new CustomEvent("calendar:select", {
@@ -191,11 +248,16 @@ export function renderTimeGrid({
       hover.append(hoverChip);
       body.append(hover);
 
+      /** @type {HTMLDivElement | null} */
       let ghost = null;
+      /** @type {HTMLSpanElement | null} */
       let ghostChip = null;
 
+      /** @param {PointerEvent} nativeEvent @returns {void} */
       const showHover = (nativeEvent) => {
-        if (selecting || nativeEvent.buttons !== 0 || nativeEvent.target.closest(".cv-event")) {
+        const target = nativeEvent.target;
+        const overEvent = target instanceof Element && target.closest(".cv-event") !== null;
+        if (selecting || nativeEvent.buttons !== 0 || overEvent) {
           hover.hidden = true;
           return;
         }
@@ -217,7 +279,8 @@ export function renderTimeGrid({
       });
 
       body.addEventListener("pointerdown", (nativeEvent) => {
-        if (nativeEvent.button !== 0 || nativeEvent.target.closest(".cv-event")) return;
+        if (nativeEvent.button !== 0) return;
+        if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-event")) return;
         const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
         if (!hit) return;
         hover.hidden = true;
@@ -229,16 +292,19 @@ export function renderTimeGrid({
         ghostChip.className = "cv-select-chip";
         ghost.append(ghostChip);
         body.append(ghost);
+        const anchor = snapMinutes(hit.minutes, snapStep, "floor");
         selecting = {
-          anchor: snapMinutes(hit.minutes, snapStep, "floor"),
+          anchor,
           downX: nativeEvent.clientX,
           downY: nativeEvent.clientY,
           moved: false,
+          start: anchor,
+          end: anchor,
         };
       });
 
       body.addEventListener("pointermove", (nativeEvent) => {
-        if (!selecting) return;
+        if (!selecting || !ghost || !ghostChip) return;
         if (Math.hypot(nativeEvent.clientX - selecting.downX, nativeEvent.clientY - selecting.downY) >= 4) {
           selecting.moved = true;
         }
@@ -257,6 +323,11 @@ export function renderTimeGrid({
         ghostChip.textContent = `${formatClock(start)} - ${formatClock(end)}`;
       });
 
+      /**
+       * @param {PointerEvent} nativeEvent
+       * @param {boolean} cancelled
+       * @returns {void}
+       */
       const finishSelection = (nativeEvent, cancelled) => {
         if (!selecting) return;
         const { anchor, moved, start, end } = selecting;

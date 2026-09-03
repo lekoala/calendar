@@ -35,6 +35,7 @@ try {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    /** @type {string[]} */
     const errors = [];
     page.on("console", (message) => {
       if (message.type() === "error") errors.push(`[console] ${message.text()}`);

@@ -109,3 +109,7 @@ The library should calculate geometry, not dictate product styling.
 ## 10. Browser interaction is core quality
 
 Hover slot, range selection, drag, resize, autoscroll, focus, touch and realtime reconciliation are part of the quality bar. They require real-browser tests.
+
+## 11. Compatibility baseline
+
+Source JavaScript targets ES2022 and is shipped without transpilation. The supported browser floor is Chromium 99+, Firefox 98+, and Safari 15.4+. Language target and browser compatibility are separate contracts; new Web APIs must be checked against the browser floor.

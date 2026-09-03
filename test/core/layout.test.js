@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { layoutEvents } from "../../src/core/layout.js";
 
+/**
+ * @param {Array<[number, number]>} ranges
+ */
 function lay(ranges) {
   return layoutEvents(ranges.map(([start, end]) => ({ event: { id: `${start}-${end}` }, start, end })));
 }
@@ -85,8 +88,20 @@ test("placement is deterministic after input reorder", () => {
     [550, 570],
     [540, 600],
   ]);
+  /**
+   * @param {Array<{ event: { id: string }, column: number }>} items
+   */
   const byId = (items) =>
-    [...new Map(items.map((item) => [item.event.id, item.column]))].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    [
+      ...new Map(
+        items.map(
+          /** @param {{ event: { id: string }, column: number }} item */ (item) => [
+            item.event.id,
+            item.column,
+          ],
+        ),
+      ),
+    ].sort((a, b) => (a[0] < b[0] ? -1 : 1));
   assert.deepEqual(byId(forward), byId(reversed));
 });
 

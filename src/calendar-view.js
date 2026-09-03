@@ -10,6 +10,29 @@ import {
 import { normalizeBackground, normalizeEvent, normalizeResource } from "./core/model.js";
 import { renderTimeGrid } from "./render/time-grid.js";
 
+/**
+ * @typedef {object} EventSourceQuery
+ * @property {Temporal.PlainDate} start
+ * @property {Temporal.PlainDate} end
+ * @property {string[]} resourceIds
+ * @property {AbortSignal} signal
+ * @property {CalendarViewElement} calendar
+ */
+
+/**
+ * @typedef {object} CalendarConfig
+ * @property {string} [timeZone]
+ * @property {number} [pxPerMinute]
+ * @property {Temporal.Duration | { minutes: number }} [snapDuration]
+ * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
+ * @property {boolean} [editable]
+ * @property {(query: EventSourceQuery) => Promise<unknown[]>} [eventSource]
+ * @property {(query: EventSourceQuery) => Promise<unknown[]>} [backgroundSource]
+ * @property {(info: object) => unknown} [eventContent]
+ * @property {(info: object) => unknown} [dayHeaderContent]
+ * @property {(info: object) => unknown} [resourceHeaderContent]
+ */
+
 const DEFAULTS = {
   view: "week",
   timeZone: "Europe/Brussels",
@@ -24,10 +47,15 @@ const DEFAULTS = {
 export class CalendarViewElement extends HTMLElement {
   static observedAttributes = ["view", "date", "slot-min", "slot-max", "slot-duration"];
 
+  /** @type {Array<import("./core/model.js").NormalizedEvent>} */
   _events = [];
+  /** @type {Array<import("./core/model.js").NormalizedResource>} */
   _resources = [];
+  /** @type {Array<import("./core/model.js").NormalizedBackground>} */
   _backgrounds = [];
+  /** @type {CalendarConfig} */
   _config = {};
+  /** @type {AbortController | null} */
   _abortController = null;
   _requestVersion = 0;
   _batchDepth = 0;
@@ -50,6 +78,10 @@ export class CalendarViewElement extends HTMLElement {
     if (this.isConnected) this._queueRender();
   }
 
+  /**
+   * @param {Partial<CalendarConfig>} [options]
+   * @returns {this}
+   */
   configure(options = {}) {
     this._config = { ...this._config, ...options };
     this._queueRender();
@@ -60,14 +92,19 @@ export class CalendarViewElement extends HTMLElement {
     return this.getAttribute("view") || DEFAULTS.view;
   }
 
+  /** @param {string} value */
   set view(value) {
     this.setView(value);
   }
 
+  /**
+   * @returns {Temporal.PlainDate}
+   */
   get date() {
-    return toPlainDate(this.getAttribute("date"));
+    return toPlainDate(/** @type {string} */ (this.getAttribute("date")));
   }
 
+  /** @param {Temporal.PlainDate | string} value */
   set date(value) {
     this.gotoDate(value);
   }
@@ -76,6 +113,7 @@ export class CalendarViewElement extends HTMLElement {
     return [...this._events];
   }
 
+  /** @param {import("./core/model.js").EventInput[] | null | undefined} value */
   set events(value) {
     this._events = Array.from(value ?? [], normalizeEvent);
     this._queueRender();
@@ -85,6 +123,7 @@ export class CalendarViewElement extends HTMLElement {
     return [...this._resources];
   }
 
+  /** @param {import("./core/model.js").ResourceInput[] | null | undefined} value */
   set resources(value) {
     this._resources = Array.from(value ?? [], normalizeResource);
     this._queueRender();
@@ -94,11 +133,16 @@ export class CalendarViewElement extends HTMLElement {
     return [...this._backgrounds];
   }
 
+  /** @param {import("./core/model.js").BackgroundInput[] | null | undefined} value */
   set backgrounds(value) {
     this._backgrounds = Array.from(value ?? [], normalizeBackground);
     this._queueRender();
   }
 
+  /**
+   * @param {string} view
+   * @returns {void}
+   */
   setView(view) {
     const oldView = this.view;
     if (oldView === view) return;
@@ -107,6 +151,10 @@ export class CalendarViewElement extends HTMLElement {
     void this.refetchEvents();
   }
 
+  /**
+   * @param {Temporal.PlainDate | string} value
+   * @returns {void}
+   */
   gotoDate(value) {
     const next = toPlainDate(value).toString();
     const previous = this.getAttribute("date");
@@ -133,6 +181,10 @@ export class CalendarViewElement extends HTMLElement {
     this.gotoDate(Temporal.Now.plainDateISO(timeZone));
   }
 
+  /**
+   * @param {Temporal.PlainTime | string} value
+   * @returns {number}
+   */
   scrollToTime(value) {
     const scroller = this.querySelector(".cv-scroller");
     if (!scroller) return 0;
@@ -143,10 +195,18 @@ export class CalendarViewElement extends HTMLElement {
     return top;
   }
 
+  /**
+   * @param {string | number} id
+   * @returns {import("./core/model.js").NormalizedEvent | null}
+   */
   getEventById(id) {
     return this._events.find((event) => event.id === String(id)) ?? null;
   }
 
+  /**
+   * @param {import("./core/model.js").EventInput} event
+   * @returns {import("./core/model.js").NormalizedEvent}
+   */
   addEvent(event) {
     const normalized = normalizeEvent(event);
     this._events = [...this._events, normalized];
@@ -154,15 +214,25 @@ export class CalendarViewElement extends HTMLElement {
     return normalized;
   }
 
+  /**
+   * @param {import("./core/model.js").EventInput} event
+   * @returns {import("./core/model.js").NormalizedEvent}
+   */
   updateEvent(event) {
     const normalized = normalizeEvent(event);
     const index = this._events.findIndex((item) => item.id === normalized.id);
     if (index < 0) return this.addEvent(normalized);
-    this._events = this._events.with(index, { ...this._events[index], ...normalized });
+    this._events = this._events.map((item, i) =>
+      i === index ? { ...this._events[index], ...normalized } : item,
+    );
     this._queueRender();
     return this._events[index];
   }
 
+  /**
+   * @param {string | number} id
+   * @returns {boolean}
+   */
   removeEvent(id) {
     const key = String(id);
     const next = this._events.filter((event) => event.id !== key);
@@ -172,6 +242,11 @@ export class CalendarViewElement extends HTMLElement {
     return true;
   }
 
+  /**
+   * @template T
+   * @param {() => T} callback
+   * @returns {T}
+   */
   batch(callback) {
     this._batchDepth += 1;
     try {
@@ -204,8 +279,14 @@ export class CalendarViewElement extends HTMLElement {
         backgroundSource ? backgroundSource(context) : this._backgrounds,
       ]);
       if (controller.signal.aborted || version !== this._requestVersion) return;
-      this._events = Array.from(events ?? [], normalizeEvent);
-      this._backgrounds = Array.from(backgrounds ?? [], normalizeBackground);
+      this._events = Array.from(
+        /** @type {import("./core/model.js").EventInput[]} */ (events ?? []),
+        normalizeEvent,
+      );
+      this._backgrounds = Array.from(
+        /** @type {import("./core/model.js").BackgroundInput[]} */ (backgrounds ?? []),
+        normalizeBackground,
+      );
       this._queueRender();
     } catch (error) {
       if (controller.signal.aborted) return;

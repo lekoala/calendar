@@ -48,6 +48,12 @@ Underscore-prefixed members are internal implementation details. They are not pu
 
 Do not introduce subclassing contracts around underscore-prefixed members. If extension becomes a supported use case, expose an explicit public hook/API.
 
+## Compatibility baseline
+
+Source JavaScript targets ES2022 and is shipped without transpilation. `jsconfig.json` must not be used to silently raise that floor: `tsc` enforces the ES2022 standard-library contract as part of `check`.
+
+Language target and browser compatibility are separate contracts. The supported browser floor is Chromium 99+, Firefox 98+, and Safari 15.4+. New Web APIs must be checked against the browser floor; the DOM lib known to the installed TypeScript is not that check. Automated per-browser API auditing remains a later packaging/CI concern.
+
 ## Date/time contract
 
 - Use `Temporal.PlainDate` for civil navigation dates.

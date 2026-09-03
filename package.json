@@ -22,14 +22,17 @@
     "test:browser": "playwright test",
     "test:browser:headed": "playwright test --headed",
     "lint": "biome check src test scripts",
-    "check": "bun run lint && bun run test"
+    "typecheck": "tsc -p jsconfig.json",
+    "check": "bun run lint && bun run typecheck && bun run test"
   },
   "peerDependencies": {
     "temporal-polyfill": "^1.0.4"
   },
   "devDependencies": {
-    "temporal-polyfill": "^1.0.4",
     "@biomejs/biome": "^2.5.8",
-    "@playwright/test": "^1.55.0"
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^26.4.1",
+    "temporal-polyfill": "^1.0.4",
+    "typescript": "^7"
   }
 }
