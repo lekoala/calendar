@@ -33,6 +33,8 @@ The selection payload needs:
 
 `calendar:select` is an intention: it is cancelable but carries no `revert()` because no event was mutated. The application decides what to create. An explicit drag selection carries its own `start/end`; snapping uses `snapDuration` (default 15 minutes).
 
+Snap rule: the drag anchor snaps with floor and the moving edge snaps with ceil, so the dragged area is always covered; the resulting range is at least one snap step. A plain click without drag selects `defaultTimedEventDuration` from the snapped point.
+
 Residual click after a true drag-selection must be suppressed.
 
 ## 3. Event click

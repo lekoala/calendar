@@ -1,11 +1,8 @@
 import { Temporal } from "temporal-polyfill";
-import { eventGeometry } from "../core/geometry.js";
+import { durationMinutes, formatClock, minutesFromMidnight, zonedDateTimeAt } from "../core/dates.js";
+import { eventGeometry, snapMinutes } from "../core/geometry.js";
+import { hitTest } from "../core/hit.js";
 import { layoutEvents } from "../core/layout.js";
-
-function clockToMinutes(value) {
-  const [hour, minute = "0"] = String(value).split(":");
-  return Number(hour) * 60 + Number(minute);
-}
 
 function eventMinutes(isoLike) {
   // Prototype shortcut: the public model is Temporal/ZonedDateTime, but this
@@ -33,11 +30,47 @@ export function renderTimeGrid({
   axis.className = "cv-axis";
   root.append(axis);
 
-  const startMinutes = clockToMinutes(options.slotMin);
-  const endMinutes = clockToMinutes(options.slotMax);
+  const startMinutes = minutesFromMidnight(options.slotMin);
+  const endMinutes = minutesFromMidnight(options.slotMax);
   const pxPerMinute = options.pxPerMinute;
+  const timeZone = options.timeZone ?? "UTC";
+  const snapStep = durationMinutes(options.snapDuration ?? { minutes: 15 });
+  const defaultDuration = durationMinutes(options.defaultTimedEventDuration ?? { minutes: 30 });
   const totalHeight = (endMinutes - startMinutes) * pxPerMinute;
   axis.style.height = `${totalHeight}px`;
+
+  // Single-pointer selection state shared by all columns of this render.
+  // Range edges snap with floor (start) / ceil (end) so the dragged area is
+  // always covered; a plain click proposes defaultTimedEventDuration.
+  let selecting = null;
+  let suppressClick = false;
+
+  function columnHit(column, body, clientX, clientY) {
+    return hitTest({
+      x: clientX,
+      y: clientY,
+      columns: [{ date: column.date, resource: column.resource, rect: body.getBoundingClientRect() }],
+      slotMin: startMinutes,
+      slotMax: endMinutes,
+      pxPerMinute,
+    });
+  }
+
+  function dispatchSelect(body, column, start, end, nativeEvent) {
+    body.dispatchEvent(
+      new CustomEvent("calendar:select", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        detail: {
+          start: zonedDateTimeAt(column.date, start, timeZone),
+          end: zonedDateTimeAt(column.date, end, timeZone),
+          resourceId: column.resource?.id ?? null,
+          nativeEvent,
+        },
+      }),
+    );
+  }
 
   for (let minute = startMinutes; minute <= endMinutes; minute += 60) {
     const label = document.createElement("div");
@@ -102,17 +135,19 @@ export function renderTimeGrid({
       body.append(node);
     }
 
-    const dayEvents = events.filter((event) => {
-      const sameDay = String(event.start).startsWith(column.date.toString());
-      const sameResource = !column.resource || event.resourceId === column.resource.id;
-      return sameDay && sameResource;
-    });
+    const dayEvents = events
+      .filter((event) => {
+        const sameDay = String(event.start).startsWith(column.date.toString());
+        const sameResource = !column.resource || event.resourceId === column.resource.id;
+        return sameDay && sameResource;
+      })
+      .map((event) => ({ event, start: eventMinutes(event.start), end: eventMinutes(event.end) }));
 
     for (const item of layoutEvents(dayEvents)) {
       const { event } = item;
       const geometry = eventGeometry({
-        startMinutes: eventMinutes(event.start),
-        endMinutes: eventMinutes(event.end),
+        startMinutes: item.start,
+        endMinutes: item.end,
         dayStartMinutes: startMinutes,
         pxPerMinute,
       });
@@ -145,8 +180,111 @@ export function renderTimeGrid({
       body.append(node);
     }
 
-    // TODO: hover-slot overlay, selection ghost and resize handles.
-    const now = Temporal.Now.zonedDateTimeISO(options.timeZone ?? "UTC");
+    const canSelect = column.resource?.selectable !== false;
+    if (canSelect) {
+      const hover = document.createElement("div");
+      hover.className = "cv-hover";
+      hover.setAttribute("aria-hidden", "true");
+      hover.hidden = true;
+      const hoverChip = document.createElement("span");
+      hoverChip.className = "cv-hover-chip";
+      hover.append(hoverChip);
+      body.append(hover);
+
+      let ghost = null;
+      let ghostChip = null;
+
+      const showHover = (nativeEvent) => {
+        if (selecting || nativeEvent.buttons !== 0 || nativeEvent.target.closest(".cv-event")) {
+          hover.hidden = true;
+          return;
+        }
+        const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
+        if (!hit) {
+          hover.hidden = true;
+          return;
+        }
+        const snapped = snapMinutes(hit.minutes, snapStep, "floor");
+        hover.style.top = `${(snapped - startMinutes) * pxPerMinute}px`;
+        hover.style.height = `${defaultDuration * pxPerMinute}px`;
+        hoverChip.textContent = `+ ${formatClock(snapped)}`;
+        hover.hidden = false;
+      };
+
+      body.addEventListener("pointermove", showHover);
+      body.addEventListener("pointerleave", () => {
+        hover.hidden = true;
+      });
+
+      body.addEventListener("pointerdown", (nativeEvent) => {
+        if (nativeEvent.button !== 0 || nativeEvent.target.closest(".cv-event")) return;
+        const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
+        if (!hit) return;
+        hover.hidden = true;
+        body.setPointerCapture(nativeEvent.pointerId);
+        ghost = document.createElement("div");
+        ghost.className = "cv-select-ghost";
+        ghost.setAttribute("aria-hidden", "true");
+        ghostChip = document.createElement("span");
+        ghostChip.className = "cv-select-chip";
+        ghost.append(ghostChip);
+        body.append(ghost);
+        selecting = {
+          anchor: snapMinutes(hit.minutes, snapStep, "floor"),
+          downX: nativeEvent.clientX,
+          downY: nativeEvent.clientY,
+          moved: false,
+        };
+      });
+
+      body.addEventListener("pointermove", (nativeEvent) => {
+        if (!selecting) return;
+        if (Math.hypot(nativeEvent.clientX - selecting.downX, nativeEvent.clientY - selecting.downY) >= 4) {
+          selecting.moved = true;
+        }
+        if (!selecting.moved) return;
+        const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
+        if (!hit) return;
+        const start = snapMinutes(Math.min(selecting.anchor, hit.minutes), snapStep, "floor");
+        const end = Math.max(
+          snapMinutes(Math.max(selecting.anchor, hit.minutes), snapStep, "ceil"),
+          start + snapStep,
+        );
+        selecting.start = start;
+        selecting.end = end;
+        ghost.style.top = `${(start - startMinutes) * pxPerMinute}px`;
+        ghost.style.height = `${(end - start) * pxPerMinute}px`;
+        ghostChip.textContent = `${formatClock(start)} - ${formatClock(end)}`;
+      });
+
+      const finishSelection = (nativeEvent, cancelled) => {
+        if (!selecting) return;
+        const { anchor, moved, start, end } = selecting;
+        selecting = null;
+        ghost?.remove();
+        ghost = null;
+        if (cancelled) return;
+        if (moved) {
+          suppressClick = true;
+          dispatchSelect(body, column, start, end, nativeEvent);
+        } else {
+          dispatchSelect(body, column, anchor, Math.min(anchor + defaultDuration, endMinutes), nativeEvent);
+        }
+      };
+
+      body.addEventListener("pointerup", (nativeEvent) => finishSelection(nativeEvent, false));
+      body.addEventListener("pointercancel", (nativeEvent) => finishSelection(nativeEvent, true));
+
+      // A true drag-selection must not leak a second select from its residual click.
+      body.addEventListener("click", (nativeEvent) => {
+        if (!suppressClick) return;
+        suppressClick = false;
+        nativeEvent.stopPropagation();
+        nativeEvent.preventDefault();
+      });
+    }
+
+    const now = Temporal.Now.zonedDateTimeISO(timeZone);
     if (column.date.toString() === now.toPlainDate().toString()) {
       const nowMinutes = now.hour * 60 + now.minute + now.second / 60;
       if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {

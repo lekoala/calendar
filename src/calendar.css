@@ -117,4 +117,29 @@
   pointer-events: none;
 }
 
+.cv-hover,
+.cv-select-ghost {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 3;
+  border: 1px dashed var(--calendar-accent);
+  background: color-mix(in srgb, var(--calendar-accent) 12%, transparent);
+  pointer-events: none;
+}
+
+.cv-select-ghost {
+  border-style: solid;
+}
+
+.cv-hover-chip,
+.cv-select-chip {
+  position: absolute;
+  top: 0.15rem;
+  inset-inline-start: 0.35rem;
+  color: var(--calendar-accent);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* TODO: selection/hover/drop overlays and density policies by data-view. */

@@ -40,3 +40,19 @@ export function minutesFromMidnight(value) {
   const time = value instanceof Temporal.PlainTime ? value : parseClock(value);
   return time.hour * 60 + time.minute + time.second / 60;
 }
+
+export function durationMinutes(duration) {
+  const value = duration instanceof Temporal.Duration ? duration : Temporal.Duration.from(duration);
+  return value.total({ unit: "minute" });
+}
+
+export function zonedDateTimeAt(date, minutes, timeZone) {
+  const day = toPlainDate(date);
+  const time = Temporal.PlainTime.from({ hour: Math.floor(minutes / 60), minute: Math.floor(minutes % 60) });
+  return day.toPlainDateTime(time).toZonedDateTime(timeZone);
+}
+
+export function formatClock(minutes) {
+  const clamped = Math.max(0, minutes);
+  return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(Math.floor(clamped % 60)).padStart(2, "0")}`;
+}
