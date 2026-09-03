@@ -1,7 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  testDir: "./test/browser",
+  testDir: "./test",
+  testMatch: "**/*.spec.js",
   timeout: 10_000,
   use: {
     baseURL: "http://127.0.0.1:4173",

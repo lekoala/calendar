@@ -1,0 +1,431 @@
+.calendar-view {
+  --calendar-accent: #2563eb;
+  --calendar-bg: #f6f7f9;
+  --calendar-surface: #ffffff;
+  --calendar-line: #e2e8f0;
+  --calendar-text: #1e293b;
+  --calendar-muted: #64748b;
+  --calendar-event-bg: #dbeafe;
+  --calendar-event-border: #2563eb;
+  --calendar-background-bg: color-mix(in srgb, var(--calendar-accent) 10%, transparent);
+  --calendar-column-min: 10rem;
+  display: block;
+  min-width: 0;
+  color: var(--calendar-text);
+  background: var(--calendar-bg);
+  font:
+    14px / 1.35 system-ui,
+    sans-serif;
+}
+
+.calendar-view *,
+.calendar-view *::before,
+.calendar-view *::after {
+  box-sizing: border-box;
+}
+
+.cv-scroller {
+  max-height: 70vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.cv-grid {
+  display: grid;
+  grid-template-columns: 3.5rem repeat(auto-fit, minmax(var(--calendar-column-min), 1fr));
+  align-items: start;
+  min-width: max-content;
+}
+
+.cv-axis {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 3.5rem;
+  min-height: 70rem;
+  background: var(--calendar-bg);
+}
+
+.cv-axis-label {
+  position: absolute;
+  right: 0.5rem;
+  color: var(--calendar-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-0.5em);
+}
+
+.cv-day {
+  min-width: var(--calendar-column-min);
+  border-inline-start: 1px solid var(--calendar-line);
+  background: var(--calendar-surface);
+}
+
+.cv-day-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  min-height: 3rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--calendar-line);
+  background: var(--calendar-surface);
+  font-weight: 700;
+}
+
+.cv-resource-row {
+  display: grid;
+  align-items: stretch;
+  min-width: max-content;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--calendar-surface);
+  border-bottom: 1px solid var(--calendar-line);
+}
+
+.cv-resource-corner {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 3.5rem;
+  background: var(--calendar-bg);
+}
+
+.cv-resource-header {
+  display: flex;
+  align-items: center;
+  min-height: 3rem;
+  padding: 0.75rem;
+  overflow: hidden;
+  border-inline-start: 1px solid var(--calendar-line);
+  background: var(--calendar-surface);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Grouped resource headers stick above the day headers. */
+.calendar-view[data-view^="resource"] .cv-day-header {
+  top: 3rem;
+}
+
+.cv-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 2rem;
+  color: var(--calendar-muted);
+}
+
+.cv-month {
+  background: var(--calendar-surface);
+}
+
+.cv-month-weekdays,
+.cv-month-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.cv-month-weekdays {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--calendar-surface);
+  border-bottom: 1px solid var(--calendar-line);
+}
+
+.cv-month-weekday {
+  padding: 0.5rem 0.75rem;
+  color: var(--calendar-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.cv-month-day {
+  min-height: 6rem;
+  padding: 0.35rem 0.45rem;
+  border-bottom: 1px solid var(--calendar-line);
+  border-inline-start: 1px solid var(--calendar-line);
+}
+
+.cv-month-day:first-child {
+  border-inline-start: none;
+}
+
+.cv-month-day[data-outside="true"] {
+  color: var(--calendar-muted);
+  background: var(--calendar-bg);
+}
+
+.cv-month-day-number {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.cv-month-event {
+  display: block;
+  width: 100%;
+  margin-top: 0.2rem;
+  padding: 0.15rem 0.35rem;
+  overflow: hidden;
+  border: 1px solid var(--calendar-event-border);
+  border-radius: 0.35rem;
+  background: var(--calendar-event-bg);
+  color: var(--calendar-text);
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cv-month-more {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--calendar-muted);
+  font-size: 0.8rem;
+}
+
+.cv-list {
+  background: var(--calendar-surface);
+}
+
+.cv-list-day {
+  border-bottom: 1px solid var(--calendar-line);
+}
+
+.cv-list-day-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding: 0.6rem 0.75rem;
+  background: var(--calendar-surface);
+  font-weight: 700;
+}
+
+.cv-list-event {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-top: 1px solid var(--calendar-line);
+  background: transparent;
+  color: var(--calendar-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.cv-list-empty {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--calendar-muted);
+}
+
+.cv-event:focus-visible,
+.cv-month-event:focus-visible,
+.cv-list-event:focus-visible {
+  outline: 2px solid var(--calendar-accent);
+  outline-offset: 1px;
+}
+
+.cv-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+/* Narrow viewports change density, never semantics: smaller column minimum,
+   still author-overridable, horizontal scroll preserved. */
+@media (max-width: 640px) {
+  .calendar-view {
+    --calendar-column-min: 7.5rem;
+  }
+}
+
+/* Motion inside the component is decorative; autoscroll stays functional
+   because it is viewport movement, not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .calendar-view *,
+  .calendar-view *::before,
+  .calendar-view *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .cv-event {
+    border-color: ButtonText;
+  }
+
+  .cv-event:focus-visible,
+  .cv-month-event:focus-visible,
+  .cv-list-event:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .cv-month-event {
+    border-color: ButtonText;
+  }
+
+  .cv-month-day,
+  .cv-list-day,
+  .cv-list-event {
+    border-color: CanvasText;
+  }
+
+  .cv-month-day[data-outside="true"],
+  .cv-month-more,
+  .cv-list-empty,
+  .cv-month-weekday {
+    color: GrayText;
+  }
+
+  .cv-resource-header,
+  .cv-day-header,
+  .cv-day {
+    border-color: CanvasText;
+  }
+
+  .cv-background {
+    border: 1px dashed CanvasText;
+    background: transparent;
+  }
+
+  .cv-now {
+    border-top-color: Highlight;
+  }
+
+  .cv-hover,
+  .cv-select-ghost {
+    border-color: Highlight;
+    background: transparent;
+  }
+
+  .cv-hover-chip,
+  .cv-select-chip {
+    color: Highlight;
+  }
+
+  .cv-drag-mirror.cv-invalid {
+    outline-color: Mark;
+  }
+
+  .cv-axis-label {
+    color: CanvasText;
+  }
+}
+
+.cv-day-body {
+  position: relative;
+}
+
+.cv-hour-line {
+  position: absolute;
+  inset-inline: 0;
+  border-top: 1px solid var(--calendar-line);
+  pointer-events: none;
+}
+
+.cv-background {
+  position: absolute;
+  inset-inline: 0;
+  background: var(--calendar-background-bg);
+  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 55%, transparent);
+  pointer-events: none;
+}
+
+.cv-event {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--calendar-event-border);
+  border-radius: 0.45rem;
+  background: var(--calendar-event-bg);
+  color: var(--calendar-text);
+  text-align: start;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cv-event:active {
+  cursor: grabbing;
+}
+
+.cv-drag-source {
+  opacity: 0.35;
+}
+
+.cv-drag-mirror {
+  z-index: 6;
+  margin: 0;
+  opacity: 0.92;
+  pointer-events: none;
+  box-shadow: 0 0.5rem 1.5rem rgb(15 23 42 / 0.25);
+}
+
+.cv-drag-mirror.cv-invalid {
+  outline: 2px dashed #dc2626;
+  outline-offset: -2px;
+}
+
+.cv-resize-handle {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 3;
+  height: 0.65rem;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.cv-resize-n {
+  top: 0;
+}
+
+.cv-resize-s {
+  bottom: 0;
+}
+
+.cv-now {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 2;
+  border-top: 2px solid var(--calendar-accent);
+  pointer-events: none;
+}
+
+.cv-hover,
+.cv-select-ghost {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 3;
+  border: 1px dashed var(--calendar-accent);
+  background: color-mix(in srgb, var(--calendar-accent) 12%, transparent);
+  pointer-events: none;
+}
+
+.cv-select-ghost {
+  border-style: solid;
+}
+
+.cv-hover-chip,
+.cv-select-chip {
+  position: absolute;
+  top: 0.15rem;
+  inset-inline-start: 0.35rem;
+  color: var(--calendar-accent);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* TODO: selection/hover/drop overlays and density policies by data-view. */

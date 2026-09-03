@@ -1,0 +1,219 @@
+{
+  "schemaVersion": "2.1.0",
+  "readme": "README.md",
+  "modules": [
+    {
+      "kind": "javascript-module",
+      "path": "src/calendar-view.js",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "CalendarViewElement",
+          "description": "Light-DOM calendar and resource scheduling element: dates x time x events, optionally resources x dates x time x events.",
+          "tagName": "calendar-view",
+          "attributes": [
+            {
+              "name": "view"
+            },
+            {
+              "name": "date"
+            },
+            {
+              "name": "slot-min"
+            },
+            {
+              "name": "slot-max"
+            },
+            {
+              "name": "slot-duration"
+            }
+          ],
+          "members": [
+            {
+              "kind": "method",
+              "name": "configure"
+            },
+            {
+              "kind": "getter",
+              "name": "view"
+            },
+            {
+              "kind": "setter",
+              "name": "view"
+            },
+            {
+              "kind": "getter",
+              "name": "date"
+            },
+            {
+              "kind": "setter",
+              "name": "date"
+            },
+            {
+              "kind": "getter",
+              "name": "events"
+            },
+            {
+              "kind": "setter",
+              "name": "events"
+            },
+            {
+              "kind": "getter",
+              "name": "resources"
+            },
+            {
+              "kind": "setter",
+              "name": "resources"
+            },
+            {
+              "kind": "getter",
+              "name": "backgrounds"
+            },
+            {
+              "kind": "setter",
+              "name": "backgrounds"
+            },
+            {
+              "kind": "method",
+              "name": "setView"
+            },
+            {
+              "kind": "method",
+              "name": "gotoDate"
+            },
+            {
+              "kind": "method",
+              "name": "getVisibleRange"
+            },
+            {
+              "kind": "method",
+              "name": "prev"
+            },
+            {
+              "kind": "method",
+              "name": "next"
+            },
+            {
+              "kind": "method",
+              "name": "today"
+            },
+            {
+              "kind": "method",
+              "name": "scrollToTime"
+            },
+            {
+              "kind": "method",
+              "name": "getEventById"
+            },
+            {
+              "kind": "method",
+              "name": "moveEvent",
+              "description": "Non-pointer equivalent of dragging an event."
+            },
+            {
+              "kind": "method",
+              "name": "resizeEvent",
+              "description": "Non-pointer equivalent of resizing an event."
+            },
+            {
+              "kind": "method",
+              "name": "addEvent"
+            },
+            {
+              "kind": "method",
+              "name": "updateEvent"
+            },
+            {
+              "kind": "method",
+              "name": "removeEvent"
+            },
+            {
+              "kind": "method",
+              "name": "batch"
+            },
+            {
+              "kind": "method",
+              "name": "refetchEvents"
+            }
+          ],
+          "events": [
+            {
+              "name": "calendar:datechange"
+            },
+            {
+              "name": "calendar:eventclick"
+            },
+            {
+              "name": "calendar:eventcontextmenu"
+            },
+            {
+              "name": "calendar:eventmove"
+            },
+            {
+              "name": "calendar:eventresize"
+            },
+            {
+              "name": "calendar:loaderror"
+            },
+            {
+              "name": "calendar:select"
+            },
+            {
+              "name": "calendar:viewchange"
+            }
+          ],
+          "cssProperties": [
+            {
+              "name": "--calendar-accent"
+            },
+            {
+              "name": "--calendar-background-bg"
+            },
+            {
+              "name": "--calendar-bg"
+            },
+            {
+              "name": "--calendar-column-min"
+            },
+            {
+              "name": "--calendar-event-bg"
+            },
+            {
+              "name": "--calendar-event-border"
+            },
+            {
+              "name": "--calendar-line"
+            },
+            {
+              "name": "--calendar-muted"
+            },
+            {
+              "name": "--calendar-surface"
+            },
+            {
+              "name": "--calendar-text"
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "CalendarViewElement",
+          "declaration": {
+            "name": "CalendarViewElement",
+            "module": "src/calendar-view.js"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "defineCalendarView",
+          "declaration": {
+            "name": "defineCalendarView",
+            "module": "src/index.js"
+          }
+        }
+      ]
+    }
+  ]
+}

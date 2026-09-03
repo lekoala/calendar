@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — M7 package/release engineering
+
+- Combobox-style release model: `sync` regenerates `dist/` (classic IIFE `calendar.js` + min twin, `calendar.css` + min twin with the Temporal ponyfill bundled) plus `dist/types/` declarations and `custom-elements.json`.
+- Package contract: ESM `src/` entry points without registration side effects, opt-in `define` entry, classic builds and CSS in `exports`, committed `custom-elements.json` (observed attributes, public members, `calendar:*` events, `--calendar-*` tokens).
+- `verify` gate: `check` + `sync` + type-consumer test + generated-drift gate + tarball contract (`check:package`); `demo/dist.html` and `test/dist` validate the distributed product, including `file://`-friendly self-registration.
+- CI browser matrix: Chromium + Firefox + WebKit behavior suites with a Chromium-only dist smoke job.
+
 ## Unreleased — M6 month + list
 
 - `month` view: Monday-start week grid over the anchor month, per-day chips with `+n more` past `monthEventLimit`, no resource matrices.

@@ -5,14 +5,33 @@ on:
   pull_request:
 
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - run: bun install
-      - run: bun run check
-      - run: bunx playwright install --with-deps chromium
-      - run: bun run test:browser
+      - run: bun install --frozen-lockfile
+      - run: bun run verify
+
+  browser:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - name: Install Playwright browser
+        run: bunx playwright install --with-deps ${{ matrix.browser }}
+      - run: bun run sync
+      - name: Browser behavior suite
+        run: bunx playwright test test/browser --project ${{ matrix.browser }}
+      - name: Dist smoke (Chromium only)
+        if: matrix.browser == 'chromium'
+        run: bun run test:dist

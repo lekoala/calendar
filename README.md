@@ -122,6 +122,7 @@ The prototype includes deliberately small demos:
 - `demo/resources.html` — resource grid with acceptance fixtures (1×7, 2×3, 6×1, 6×3, 12×1)
 - `demo/resources-stress.html` — manual stress configurations (12×3, 6×7)
 - `demo/realtime.html` — incremental event mutations
+- `demo/dist.html` — dist smoke: always loads the generated classic build (`../dist/calendar.js`), validates the distributed product over `http(s)` and `file://`
 
 Serve the repository over HTTP:
 
@@ -134,15 +135,50 @@ Then open `http://127.0.0.1:4173/demo/`.
 
 ## Development
 
-The project follows the same broad working model as `@lekoala/combobox`: explicit custom-element registration, source ESM, Light DOM, generated artifacts only later, browser tests for real interaction, and an `AGENTS.md` that protects the architectural invariants.
+The project follows the same working model as `@lekoala/combobox`: explicit custom-element registration, source ESM, Light DOM, committed generated artifacts, browser tests for real interaction, and an `AGENTS.md` that protects the architectural invariants.
 
 ```bash
 npm install
 npm run check
 npm run test:browser
+npm run sync
+npm run verify
 ```
 
-The starter does **not** include a production bundling pipeline yet. That is intentional: first stabilize the public model and interaction engine, then add dist/types/custom-elements generation in the same style as the combobox project.
+A few useful commands:
+
+```text
+npm run check
+    syntax + lint + typecheck + unit tests
+
+npm run test:browser
+    browser behavior tests against the ESM source
+
+npm run sync
+    regenerate dist JS/CSS, declarations and custom-elements.json
+
+npm run verify
+    run the full consistency/package checks
+
+npm run check:all
+npm run test:browser:all
+    include Firefox and WebKit
+```
+
+Generated distribution files are committed so the demo, package contents and published artifacts can be checked directly.
+
+The package ships:
+
+- pure ESM entry points (`src/`, no registration side effect);
+- an opt-in `<calendar-view>` registration entry (`src/define.js`);
+- a classic self-registering build (`dist/calendar.js`, minified twin);
+- CSS (`src/calendar.css`, `dist/calendar.css`, minified twins);
+- generated TypeScript declarations (`dist/types/`);
+- `custom-elements.json`.
+
+There are no runtime source maps in 0.x. Declaration maps are kept for TypeScript editor navigation.
+
+The source ESM is exercised directly by the unit and browser suites; `demo/dist.html` and `test/dist` exercise the generated classic build.
 
 ## What is intentionally incomplete
 
@@ -157,8 +193,7 @@ The current JavaScript proves only the shell and basic rendering geometry. TODOs
 - keyboard navigation;
 - rich render hooks;
 - source caching and request reconciliation;
-- accessibility hardening;
-- dist/types/custom-elements generation.
+- accessibility hardening.
 
 The intended behavior and test matrix are documented before implementation in [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/TESTING.md](docs/TESTING.md).
 

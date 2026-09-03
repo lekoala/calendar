@@ -4,26 +4,59 @@
   "description": "Framework-agnostic Temporal calendar and resource scheduler Web Component",
   "type": "module",
   "license": "MIT",
-  "private": true,
   "packageManager": "bun@1.4.0",
+  "customElements": "custom-elements.json",
+  "keywords": ["calendar", "scheduler", "resource", "time-grid", "temporal", "web-component"],
+  "files": ["dist", "src", "custom-elements.json", "LICENSE", "README.md"],
   "sideEffects": [
+    "./dist/calendar.js",
+    "./dist/calendar.min.js",
+    "./dist/calendar.css",
+    "./dist/calendar.min.css",
     "./src/calendar.css",
     "./src/define.js"
   ],
   "exports": {
-    ".": "./src/index.js",
-    "./define": "./src/define.js",
-    "./calendar.css": "./src/calendar.css"
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./define": {
+      "types": "./dist/types/define.d.ts",
+      "import": "./src/define.js"
+    },
+    "./calendar.css": "./src/calendar.css",
+    "./dist/calendar.js": "./dist/calendar.js",
+    "./dist/calendar.min.js": "./dist/calendar.min.js",
+    "./dist/calendar.css": "./dist/calendar.css",
+    "./dist/calendar.min.css": "./dist/calendar.min.css"
   },
   "scripts": {
     "dev": "bun scripts/dev.js",
     "audit:page": "bun scripts/audit-page.js",
-    "test": "bun test test/core",
-    "test:browser": "playwright test",
-    "test:browser:headed": "playwright test --headed",
+    "build:bundle": "bun scripts/build.js",
+    "build:types": "bun run types",
+    "build:manifest": "bun scripts/custom-elements.js",
+    "build": "bun run build:bundle && bun run build:types && bun run build:manifest",
+    "sync": "bun run build",
     "lint": "biome check src test scripts",
+    "format": "biome format --write src test scripts",
     "typecheck": "tsc -p jsconfig.json",
-    "check": "bun run lint && bun run typecheck && bun run test"
+    "types": "tsc -p tsconfig.types.json",
+    "test": "bun test test/core",
+    "test:syntax": "node --check src/calendar-view.js && node --check src/index.js && node --check src/define.js",
+    "test:types": "tsc -p test/types/tsconfig.json",
+    "test:browser": "playwright test test/browser --project chromium",
+    "test:browser:headed": "playwright test test/browser --project chromium --headed",
+    "test:browser:all": "playwright test test/browser",
+    "test:dist": "playwright test test/dist --project chromium",
+    "check": "bun run test:syntax && bun run lint && bun run typecheck && bun run test",
+    "check:package": "bun scripts/check-package.js",
+    "check:generated": "bun scripts/check-generated.js",
+    "check:all": "bun run verify && bun run test:browser:all && bun run test:dist",
+    "verify": "bun run check && bun run sync && bun run test:types && bun run check:generated && bun run check:package",
+    "prepack": "bun run sync",
+    "prepublishOnly": "bun run verify"
   },
   "peerDependencies": {
     "temporal-polyfill": "^1.0.4"
