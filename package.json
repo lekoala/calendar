@@ -1,0 +1,33 @@
+{
+  "name": "@lekoala/calendar",
+  "version": "0.0.0-prototype",
+  "description": "Framework-agnostic Temporal calendar and resource scheduler Web Component",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "packageManager": "npm@10",
+  "sideEffects": [
+    "./src/calendar.css",
+    "./src/define.js"
+  ],
+  "exports": {
+    ".": "./src/index.js",
+    "./define": "./src/define.js",
+    "./calendar.css": "./src/calendar.css"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "test": "node --test test/core/*.test.js",
+    "test:browser": "playwright test",
+    "lint": "biome check src test scripts",
+    "check": "npm run lint && npm run test"
+  },
+  "peerDependencies": {
+    "temporal-polyfill": "^1.0.4"
+  },
+  "devDependencies": {
+    "temporal-polyfill": "^1.0.4",
+    "@biomejs/biome": "^2.5.8",
+    "@playwright/test": "^1.55.0"
+  }
+}

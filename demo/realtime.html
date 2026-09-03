@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendar prototype — realtime mutations</title>
+  <link rel="stylesheet" href="../src/calendar.css">
+  <script type="importmap">
+    {"imports":{"temporal-polyfill":"../node_modules/temporal-polyfill/index.js"}}
+  </script>
+  <style>body{margin:0;padding:2rem;background:#eef1f6;font-family:system-ui,sans-serif}button{margin:.25rem}</style>
+</head>
+<body>
+<h1>Incremental updates</h1>
+<p>These buttons stand in for WebSocket/SSE/polling messages. The transport is intentionally outside the component.</p>
+<div>
+  <button id="add">Add event</button>
+  <button id="move">Update event</button>
+  <button id="remove">Remove event</button>
+</div>
+<calendar-view view="day" date="2026-09-03"></calendar-view>
+<script type="module">
+  import "../src/define.js";
+  const calendar = document.querySelector("calendar-view");
+  calendar.events = [{ id:"live", title:"Live event", start:"2026-09-03T09:00:00+02:00[Europe/Brussels]", end:"2026-09-03T09:40:00+02:00[Europe/Brussels]" }];
+  add.onclick = () => calendar.addEvent({ id: crypto.randomUUID(), title:"Pushed event", start:"2026-09-03T13:00:00+02:00[Europe/Brussels]", end:"2026-09-03T13:30:00+02:00[Europe/Brussels]" });
+  move.onclick = () => calendar.updateEvent({ ...calendar.getEventById("live"), id:"live", title:"Updated live event", start:"2026-09-03T10:00:00+02:00[Europe/Brussels]", end:"2026-09-03T10:40:00+02:00[Europe/Brussels]" });
+  remove.onclick = () => calendar.removeEvent("live");
+</script>
+</body>
+</html>

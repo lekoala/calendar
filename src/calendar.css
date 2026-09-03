@@ -1,0 +1,110 @@
+.calendar-view {
+  --calendar-accent: #2563eb;
+  --calendar-bg: #f6f7f9;
+  --calendar-surface: #ffffff;
+  --calendar-line: #e2e8f0;
+  --calendar-text: #1e293b;
+  --calendar-muted: #64748b;
+  --calendar-event-bg: #dbeafe;
+  --calendar-event-border: #2563eb;
+  --calendar-background-bg: color-mix(in srgb, var(--calendar-accent) 10%, transparent);
+  --calendar-column-min: 10rem;
+  display: block;
+  min-width: 0;
+  color: var(--calendar-text);
+  background: var(--calendar-bg);
+  font: 14px/1.35 system-ui, sans-serif;
+}
+
+.calendar-view *,
+.calendar-view *::before,
+.calendar-view *::after {
+  box-sizing: border-box;
+}
+
+.cv-scroller {
+  max-height: 70vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.cv-grid {
+  display: grid;
+  grid-template-columns: 3.5rem repeat(auto-fit, minmax(var(--calendar-column-min), 1fr));
+  align-items: start;
+  min-width: max-content;
+}
+
+.cv-axis {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 3.5rem;
+  min-height: 70rem;
+  background: var(--calendar-bg);
+}
+
+.cv-axis-label {
+  position: absolute;
+  right: 0.5rem;
+  color: var(--calendar-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-0.5em);
+}
+
+.cv-day {
+  min-width: var(--calendar-column-min);
+  border-inline-start: 1px solid var(--calendar-line);
+  background: var(--calendar-surface);
+}
+
+.cv-day-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  min-height: 3rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--calendar-line);
+  background: var(--calendar-surface);
+  font-weight: 700;
+}
+
+.cv-day-body {
+  position: relative;
+}
+
+.cv-hour-line {
+  position: absolute;
+  inset-inline: 0;
+  border-top: 1px solid var(--calendar-line);
+  pointer-events: none;
+}
+
+.cv-background {
+  position: absolute;
+  inset-inline: 0;
+  background: var(--calendar-background-bg);
+  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 55%, transparent);
+  pointer-events: none;
+}
+
+.cv-event {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--calendar-event-border);
+  border-radius: 0.45rem;
+  background: var(--calendar-event-bg);
+  color: var(--calendar-text);
+  text-align: start;
+  cursor: pointer;
+}
+
+.cv-event:focus-visible {
+  outline: 2px solid var(--calendar-accent);
+  outline-offset: 1px;
+}
+
+/* TODO: selection/hover/drop overlays and density policies by data-view. */

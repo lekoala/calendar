@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendar prototype — solo</title>
+  <link rel="stylesheet" href="../src/calendar.css">
+  <script type="importmap">
+    {"imports":{"temporal-polyfill":"../node_modules/temporal-polyfill/index.js"}}
+  </script>
+  <style>
+    body { margin: 0; padding: 2rem; background: #eef1f6; font-family: system-ui, sans-serif; }
+    main { max-width: 1200px; margin: auto; }
+    nav { display: flex; gap: .5rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Solo time grid</h1>
+  <p>The demo is intentionally small. Geometry/API are the prototype; interactions are TODO.</p>
+  <nav>
+    <button data-view="day">Day</button>
+    <button data-view="threeDays">3 days</button>
+    <button data-view="week">Week</button>
+  </nav>
+  <calendar-view view="threeDays" date="2026-09-03"></calendar-view>
+</main>
+<script type="module">
+  import "../src/define.js";
+  const calendar = document.querySelector("calendar-view");
+  calendar.events = [
+    { id: "a", title: "Design review", start: "2026-09-03T09:00:00+02:00[Europe/Brussels]", end: "2026-09-03T10:00:00+02:00[Europe/Brussels]" },
+    { id: "b", title: "Planning", start: "2026-09-04T13:20:00+02:00[Europe/Brussels]", end: "2026-09-04T14:00:00+02:00[Europe/Brussels]" }
+  ];
+  calendar.backgrounds = [
+    { id: "bg", start: "2026-09-03T08:00:00+02:00[Europe/Brussels]", end: "2026-09-03T12:00:00+02:00[Europe/Brussels]" }
+  ];
+  document.querySelector("nav").addEventListener("click", (event) => {
+    const view = event.target.dataset.view;
+    if (view) calendar.setView(view);
+  });
+</script>
+</body>
+</html>
