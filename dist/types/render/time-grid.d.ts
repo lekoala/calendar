@@ -42,6 +42,14 @@ export type TimeGridOptions = {
     slotMax: string;
     pxPerMinute: number;
     timeZone?: string;
+    /**
+     * BCP 47 tag for default header/axis formatting; hooks stay authoritative
+     */
+    locale?: string;
+    /**
+     * fixed UI strings, defaulting to English
+     */
+    labels?: import("../core/labels.js").CalendarLabels;
     editable?: boolean;
     snapDuration?: Temporal.Duration | {
         minutes: number;
@@ -96,6 +104,8 @@ export type ActiveSelection = {
  * @property {string} slotMax
  * @property {number} pxPerMinute
  * @property {string} [timeZone]
+ * @property {string} [locale] BCP 47 tag for default header/axis formatting; hooks stay authoritative
+ * @property {import("../core/labels.js").CalendarLabels} [labels] fixed UI strings, defaulting to English
  * @property {boolean} [editable]
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]

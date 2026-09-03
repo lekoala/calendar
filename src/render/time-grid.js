@@ -2,12 +2,15 @@ import { Temporal } from "temporal-polyfill";
 import {
   durationMinutes,
   formatClock,
+  formatDayHeader,
+  formatSlotLabel,
   isResourceView,
   minutesFromMidnight,
   zonedDateTimeAt,
 } from "../core/dates.js";
 import { eventGeometry, snapMinutes } from "../core/geometry.js";
 import { hitTest } from "../core/hit.js";
+import { DEFAULT_LABELS } from "../core/labels.js";
 import { layoutEvents } from "../core/layout.js";
 import { isMovable, isResizable } from "../core/model.js";
 import {
@@ -55,6 +58,8 @@ import { createAutoscroller } from "./autoscroll.js";
  * @property {string} slotMax
  * @property {number} pxPerMinute
  * @property {string} [timeZone]
+ * @property {string} [locale] BCP 47 tag for default header/axis formatting; hooks stay authoritative
+ * @property {import("../core/labels.js").CalendarLabels} [labels] fixed UI strings, defaulting to English
  * @property {boolean} [editable]
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
@@ -100,6 +105,11 @@ export function renderTimeGrid({
   slotLabelContent,
 }) {
   const fragment = document.createDocumentFragment();
+
+  // Presentation defaults: explicit content hooks win, `locale`/`labels`
+  // only feed the fallbacks.
+  const locale = options.locale;
+  const labels = options.labels ?? DEFAULT_LABELS;
 
   // Column derivation is view-driven, never inferred from resource count:
   // solo renders one column per date, resource views render resource x dates
@@ -321,7 +331,7 @@ export function renderTimeGrid({
       element: label,
     });
     if (content instanceof Node) label.append(content);
-    else label.textContent = content == null ? formatClock(minute) : String(content);
+    else label.textContent = content == null ? formatSlotLabel(minute, locale) : String(content);
     axis.append(label);
   }
 
@@ -330,7 +340,7 @@ export function renderTimeGrid({
   if (columns.length === 0) {
     const empty = document.createElement("p");
     empty.className = "cv-empty";
-    empty.textContent = "No resources selected.";
+    empty.textContent = labels.noResources;
     root.append(empty);
     fragment.append(root);
     return fragment;
@@ -379,7 +389,7 @@ export function renderTimeGrid({
     });
     if (headerContent instanceof Node) header.append(headerContent);
     else if (headerContent != null) header.textContent = String(headerContent);
-    else header.textContent = column.date.toString();
+    else header.textContent = formatDayHeader(column.date, locale);
     day.append(header);
 
     const body = document.createElement("div");
@@ -437,11 +447,11 @@ export function renderTimeGrid({
       node.style.height = `${geometry.height}px`;
       node.style.left = `${item.left * 100}%`;
       node.style.width = `${item.width * 100}%`;
-      node.setAttribute("aria-label", describeEvent(event, timeZone));
+      node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
 
       const content = eventContent?.({ event, date: column.date, resource: column.resource, element: node });
       if (content instanceof Node) node.append(content);
-      else node.textContent = content == null ? (event.title ?? "Event") : String(content);
+      else node.textContent = content == null ? (event.title ?? labels.untitledEvent) : String(content);
 
       // Native <button> activation covers pointer click and Enter/Space equally.
       node.addEventListener("click", (nativeEvent) => {
@@ -606,7 +616,7 @@ export function renderTimeGrid({
         }
         const result = host.commitEventMove({ event, previous, current, nativeEvent });
         if (!result) return;
-        host.announce(describeEvent(result, timeZone));
+        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
         refocusEvent(event.id);
       }
 
@@ -635,7 +645,7 @@ export function renderTimeGrid({
           nativeEvent,
         });
         if (!result) return;
-        host.announce(describeEvent(result, timeZone));
+        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
         refocusEvent(event.id);
       }
 

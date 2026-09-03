@@ -1023,7 +1023,10 @@
       inset: auto;
       z-index: var(--z-menu);
       max-block-size: min(34rem, var(--available-height, 34rem));
-      overflow: auto;
+      /* The UA `[popover]` rule turns on `overflow: auto` on both axes. A
+         menu only ever grows downwards - a long label ellipsises - so the
+         inline axis is closed to stop a stray horizontal scrollbar. */
+      overflow: hidden auto;
       margin: 0;
       padding: var(--space-10);
       border: var(--border-width) solid var(--border);
@@ -1044,6 +1047,15 @@
     .sc-pop .menu-item[role="menuitemcheckbox"]::before,
     .sc-pop .menu-item[role="menuitemradio"]::before {
       display: none;
+    }
+
+    /* Actual resets heading margins under `.prose` and `.flyout > section`
+       only. These menus are popovers rather than flyouts, so a `<h3>` group
+       heading kept the browser's 13px block margins on top of
+       `.menu-label`'s padding and the list gap - 58px per heading. */
+    .sc-pop .menu-label {
+      margin: 0;
+      padding-block: var(--space-10);
     }
 
     .sc-pop .sc-tick {
@@ -1111,12 +1123,43 @@
       font-size: 11px;
     }
 
+    .sc-themes {
+      display: flex;
+      gap: var(--space-20);
+      padding: var(--space-10) var(--space-20) var(--space-20);
+    }
+
+    /* Each swatch carries the theme it selects as `data-theme`, so the
+       theme stylesheet paints the button with that theme's own tokens.
+       There is no colour list to keep in sync here - and this is the one
+       place where re-theming a control is the point rather than a bug. */
+    .sc-theme {
+      flex: none;
+      inline-size: 1.4rem;
+      block-size: 1.4rem;
+      padding: 0;
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-full);
+      background: linear-gradient(135deg, var(--primary) 55%, var(--surface) 55%);
+      cursor: pointer;
+    }
+
+    .sc-theme[aria-pressed="true"] {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
     /* Hover intent. Events carry `data-event-id`, so an application
        tooltip needs no core hook at all: it is `popover="manual"` for the
        top layer without light dismiss, and `autoUpdate()` follows the
        calendar scroller, which moves independently of the page. */
     .sc-tip {
       inset: auto;
+      /* Actual draws the tooltip arrow as a pseudo-element hanging off the
+         side the tooltip points from, which the UA `[popover]` default of
+         `overflow: auto` turned into a scrollbar. A tooltip wraps, it
+         never scrolls. */
+      overflow: visible;
       margin: 0;
       max-inline-size: 17rem;
       padding: var(--space-20);
@@ -1176,6 +1219,13 @@
     .sc-dialog-body {
       min-inline-size: min(26rem, 92vw);
       padding: var(--space-50);
+    }
+
+    /* `.dialog-close` is absolutely positioned against the dialog and
+       brings its own masked icon, so the title has to make room for it -
+       the same allowance Actual makes for `dialog.drawer > header`. */
+    .sc-dialog-body > h2 {
+      padding-inline-end: calc(var(--control-size) + var(--space-20));
     }
 
     .sc-shortcuts {
@@ -1635,6 +1685,7 @@
     <hr class="menu-separator">
     <h3 class="menu-label"><i class="ti ti-palette" aria-hidden="true"></i> Theme</h3>
     <ul class="menu" role="group" id="theme-menu"></ul>
+    <div class="sc-themes" id="theme-swatches" role="group" aria-label="Accent theme"></div>
     <hr class="menu-separator">
     <ul class="menu" role="menu">
       <li>
@@ -1658,6 +1709,7 @@
 
   <!-- Creation sheet: calendar:select is an intention, the app decides. -->
   <dialog class="sc-dialog" id="create-dialog" aria-labelledby="create-title">
+    <button type="button" class="dialog-close" aria-label="Close"></button>
     <div class="sc-dialog-body stack">
       <h2 id="create-title" style="margin: 0;">What do you want to create?</h2>
       <p class="cluster" style="gap: var(--space-20); padding: 0;">
@@ -1676,12 +1728,12 @@
           <i class="ti ti-ban" aria-hidden="true"></i> Blocked<span class="muted"> — non-bookable marker event</span>
         </button>
       </div>
-      <form method="dialog"><button type="submit" class="btn neutral ghost sm">Cancel</button></form>
     </div>
   </dialog>
 
   <!-- Detail sheet: opened from calendar:eventclick. -->
   <dialog class="sc-dialog" id="detail-dialog" aria-labelledby="detail-title">
+    <button type="button" class="dialog-close" aria-label="Close"></button>
     <div class="sc-dialog-body stack">
       <h2 id="detail-title" style="margin: 0;">—</h2>
       <p class="muted" id="detail-meta" style="margin: 0;">—</p>
@@ -1693,11 +1745,11 @@
           <i class="ti ti-trash" aria-hidden="true"></i> Delete
         </button>
       </div>
-      <form method="dialog"><button type="submit" class="btn neutral ghost sm">Close</button></form>
     </div>
   </dialog>
 
   <dialog class="sc-dialog" id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+    <button type="button" class="dialog-close" aria-label="Close"></button>
     <div class="sc-dialog-body stack">
       <h2 id="shortcuts-title" style="margin: 0;">
         <i class="ti ti-keyboard" aria-hidden="true"></i> Keyboard
@@ -1708,7 +1760,6 @@
         <kbd class="key">Alt</kbd> + arrows to resize — those are core behaviour, and
         they go through the same application rules as a drag.
       </p>
-      <form method="dialog"><button type="submit" class="btn neutral ghost sm">Close</button></form>
     </div>
   </dialog>
 
@@ -3179,23 +3230,44 @@
   });
 
   // --- Account menu, including the theme switcher --------------------------
-  const THEMES = [
+  // Light/dark is a mode and belongs in a list; the named themes are a
+  // palette and belong in a row of swatches. Eight list rows were what made
+  // this menu scroll.
+  const THEME_MODES = [
     { value: "", label: "System", icon: "device-desktop" },
     { value: "light", label: "Light", icon: "sun" },
     { value: "dark", label: "Dark", icon: "moon" },
-    { value: "indigo", label: "Indigo", icon: "palette" },
-    { value: "ocean", label: "Ocean", icon: "palette" },
-    { value: "forest", label: "Forest", icon: "palette" },
-    { value: "sunset", label: "Sunset", icon: "palette" },
-    { value: "brutalist", label: "Brutalist", icon: "palette" },
   ];
 
+  const THEME_ACCENTS = ["indigo", "ocean", "forest", "sunset", "brutalist"];
+
   const themeMenu = document.getElementById("theme-menu");
+  const themeSwatches = document.getElementById("theme-swatches");
+
+  /** @param {string} value */
+  function applyTheme(value) {
+    if (value) document.documentElement.dataset.theme = value;
+    else document.documentElement.removeAttribute("data-theme");
+    renderThemes();
+    record(`theme → ${value || "system"}`);
+  }
 
   function renderThemes() {
     const current = document.documentElement.dataset.theme ?? "";
+    themeSwatches.replaceChildren();
+    for (const value of THEME_ACCENTS) {
+      const swatch = document.createElement("button");
+      swatch.type = "button";
+      swatch.className = "sc-theme";
+      swatch.dataset.theme = value;
+      swatch.title = value;
+      swatch.setAttribute("aria-label", value);
+      swatch.setAttribute("aria-pressed", String(value === current));
+      swatch.addEventListener("click", () => applyTheme(value));
+      themeSwatches.append(swatch);
+    }
     themeMenu.replaceChildren();
-    for (const theme of THEMES) {
+    for (const theme of THEME_MODES) {
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
@@ -3217,12 +3289,7 @@
       tick.classList.add("sc-tick");
       end.append(tick);
       button.append(iconSlot, text, end);
-      button.addEventListener("click", () => {
-        if (theme.value) document.documentElement.dataset.theme = theme.value;
-        else document.documentElement.removeAttribute("data-theme");
-        renderThemes();
-        record(`theme → ${theme.label.toLowerCase()}`);
-      });
+      button.addEventListener("click", () => applyTheme(theme.value));
       item.append(button);
       themeMenu.append(item);
     }
@@ -3442,6 +3509,12 @@
       focusToggle.click();
     }
   });
+
+  // `.dialog-close` is a plain button, so one listener replaces the three
+  // `<form method="dialog">` wrappers the sheets used to carry.
+  for (const dialog of document.querySelectorAll("dialog.sc-dialog")) {
+    dialog.querySelector(".dialog-close")?.addEventListener("click", () => dialog.close());
+  }
 
   renderRules();
   renderThemes();

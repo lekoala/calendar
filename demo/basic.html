@@ -24,6 +24,14 @@
     <button type="button" data-view="week">Week</button>
     <button type="button" data-view="month">Month</button>
     <button type="button" data-view="list">List</button>
+    <label>Locale
+      <select id="locale">
+        <option value="">System</option>
+        <option value="en">English</option>
+        <option value="fr">Français</option>
+        <option value="nl">Nederlands</option>
+      </select>
+    </label>
   </nav>
   <calendar-view view="threeDays" date="2026-09-03"></calendar-view>
 </main>
@@ -42,6 +50,14 @@
   document.querySelector("nav").addEventListener("click", (event) => {
     const view = event.target.dataset.view;
     if (view) calendar.setView(view);
+  });
+  const strings = {
+    fr: { more: "+{hidden} en plus", noEvents: "Aucun évènement", noResources: "Aucune ressource sélectionnée." },
+    nl: { more: "+{hidden} meer", noEvents: "Geen gebeurtenissen", noResources: "Geen bronnen geselecteerd." },
+  };
+  document.querySelector("#locale").addEventListener("change", (event) => {
+    const locale = event.target.value || undefined;
+    calendar.configure({ locale, labels: locale && strings[locale] ? strings[locale] : {} });
   });
 </script>
 </body>

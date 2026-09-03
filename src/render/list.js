@@ -1,5 +1,6 @@
 import { Temporal } from "temporal-polyfill";
-import { formatClock } from "../core/dates.js";
+import { formatClock, formatDayHeader } from "../core/dates.js";
+import { DEFAULT_LABELS } from "../core/labels.js";
 import { describeEvent, eventOverlapsDate, toZonedDateTime, wallMinutes } from "../core/slicing.js";
 
 /**
@@ -15,12 +16,16 @@ import { describeEvent, eventOverlapsDate, toZonedDateTime, wallMinutes } from "
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {object} input.options
  * @param {string} [input.options.timeZone]
+ * @param {string} [input.options.locale] BCP 47 tag for default day headers; hooks stay authoritative
+ * @param {import("../core/labels.js").CalendarLabels} [input.options.labels] fixed UI strings, defaulting to English
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
  * @returns {DocumentFragment}
  */
 export function renderList({ dates, events, options, eventContent, dayHeaderContent }) {
   const timeZone = options.timeZone ?? "UTC";
+  const locale = options.locale;
+  const labels = options.labels ?? DEFAULT_LABELS;
   const fragment = document.createDocumentFragment();
   const root = document.createElement("div");
   root.className = "cv-list";
@@ -41,7 +46,7 @@ export function renderList({ dates, events, options, eventContent, dayHeaderCont
     const headerContent = dayHeaderContent?.({ date, resource: null, element: header });
     if (headerContent instanceof Node) header.append(headerContent);
     else if (headerContent != null) header.textContent = String(headerContent);
-    else header.textContent = date.toString();
+    else header.textContent = formatDayHeader(date, locale);
     group.append(header);
 
     const dayEvents = events
@@ -51,7 +56,7 @@ export function renderList({ dates, events, options, eventContent, dayHeaderCont
     if (dayEvents.length === 0) {
       const empty = document.createElement("p");
       empty.className = "cv-list-empty";
-      empty.textContent = "No events";
+      empty.textContent = labels.noEvents;
       group.append(empty);
     }
 
@@ -60,14 +65,14 @@ export function renderList({ dates, events, options, eventContent, dayHeaderCont
       item.type = "button";
       item.className = ["cv-list-event", ...(event.classNames ?? [])].join(" ");
       item.dataset.eventId = event.id;
-      item.setAttribute("aria-label", describeEvent(event, timeZone));
+      item.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
       const content = eventContent?.({ event, date, resource: null, element: item });
       if (content instanceof Node) {
         item.append(content);
       } else if (content != null) {
         item.textContent = String(content);
       } else {
-        item.textContent = `${formatClock(wallMinutes(toZonedDateTime(event.start, timeZone)))} ${event.title ?? "Event"}`;
+        item.textContent = `${formatClock(wallMinutes(toZonedDateTime(event.start, timeZone)))} ${event.title ?? labels.untitledEvent}`;
       }
       // Native <button> activation covers pointer click and Enter/Space equally.
       item.addEventListener("click", (nativeEvent) => {

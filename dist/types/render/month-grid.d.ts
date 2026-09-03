@@ -15,6 +15,8 @@ import { Temporal } from "temporal-polyfill";
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {object} input.options
  * @param {string} [input.options.timeZone]
+ * @param {string} [input.options.locale] BCP 47 tag for the weekday row; hooks stay authoritative
+ * @param {import("../core/labels.js").CalendarLabels} [input.options.labels] fixed UI strings, defaulting to English
  * @param {number} [input.options.monthEventLimit]
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.moreLinkContent]
@@ -26,6 +28,8 @@ export declare function renderMonthGrid({ weeks, month, events, options, eventCo
     events: import("../core/model.js").NormalizedEvent[];
     options: {
         timeZone?: string;
+        locale?: string;
+        labels?: import("../core/labels.js").CalendarLabels;
         monthEventLimit?: number;
     };
     eventContent?: (info: object) => unknown;

@@ -8,6 +8,14 @@ export type EventSourceQuery = {
 };
 export type CalendarConfig = {
     timeZone?: string;
+    /**
+     * BCP 47 tag for default header/axis formatting and `firstDay` suggestion; content hooks stay authoritative
+     */
+    locale?: string;
+    /**
+     * fixed UI strings merged over the English defaults
+     */
+    labels?: Partial<import("./core/labels.js").CalendarLabels>;
     pxPerMinute?: number;
     snapDuration?: Temporal.Duration | {
         minutes: number;

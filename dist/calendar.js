@@ -3739,7 +3739,9 @@
     return day === 0 ? 7 : day;
   }
   function resolveDateOptions(options = {}) {
-    const firstDay = isoWeekday(options.firstDay) ?? 1;
+    const explicit = isoWeekday(options.firstDay);
+    const locale = resolveLocale(options.locale);
+    const firstDay = explicit ?? (locale ? firstDayFromLocale(locale) ?? 1 : 1);
     const hiddenDays = new Set;
     for (const value of options.hiddenDays ?? []) {
       const day = isoWeekday(value);
@@ -3871,6 +3873,68 @@
     const clamped = Math.max(0, minutes);
     return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(Math.floor(clamped % 60)).padStart(2, "0")}`;
   }
+  function resolveLocale(value) {
+    if (typeof value !== "string")
+      return;
+    const trimmed = value.trim();
+    return trimmed === "" ? undefined : trimmed;
+  }
+  function firstDayFromLocale(locale) {
+    const day = Number(readWeekInfoFirstDay(locale));
+    if (!Number.isInteger(day) || day < 1 || day > 7)
+      return null;
+    return day;
+  }
+  function readWeekInfoFirstDay(locale) {
+    try {
+      const factory = localeWeekInfoReader();
+      if (!factory)
+        return null;
+      const info = factory(locale);
+      if (typeof info !== "object" || info === null)
+        return null;
+      return info.firstDay ?? null;
+    } catch {
+      return null;
+    }
+  }
+  function localeWeekInfoReader() {
+    const holder = Intl;
+    if (typeof holder.Locale !== "function")
+      return null;
+    const Ctor = holder.Locale;
+    return (tag) => {
+      const instance = new Ctor(tag);
+      return typeof instance.getWeekInfo === "function" ? instance.getWeekInfo() : null;
+    };
+  }
+  function formatDayHeader(date, locale) {
+    return toPlainDate(date).toLocaleString(locale, { weekday: "short", month: "numeric", day: "numeric" });
+  }
+  function formatSlotLabel(minutes, locale) {
+    const total = Math.max(0, Math.floor(minutes));
+    const hour = Math.floor(total / 60);
+    if (hour > 23)
+      return formatClock(minutes);
+    const time = Temporal2.PlainTime.from({ hour, minute: total % 60 });
+    return time.toLocaleString(locale, { hour: "numeric", minute: "2-digit" });
+  }
+
+  // src/core/labels.js
+  var DEFAULT_LABELS = {
+    noEvents: "No events",
+    noResources: "No resources selected.",
+    more: "+{hidden} more",
+    calendarRegion: "Calendar",
+    untitledEvent: "Event"
+  };
+  var LABEL_PLACEHOLDER_PATTERN = /\{(\w+)\}/g;
+  function formatLabel(template, values) {
+    return String(template ?? "").replace(LABEL_PLACEHOLDER_PATTERN, (_, key) => String(values[key] ?? ""));
+  }
+  function resolveLabels(input) {
+    return { ...DEFAULT_LABELS, ...input };
+  }
 
   // src/core/model.js
   function normalizeEvent(event) {
@@ -3963,10 +4027,10 @@
       slotMax: options.slotMax
     });
   }
-  function describeEvent(event, timeZone) {
+  function describeEvent(event, timeZone, untitled = "Event") {
     const start = toZonedDateTime(event.start, timeZone);
     const end = toZonedDateTime(event.end, timeZone);
-    const title = event.title ?? "Event";
+    const title = event.title ?? untitled;
     const startDay = start.toPlainDate().toString();
     const endDay = end.toPlainDate().toString();
     const startText = `${startDay}, ${formatClock(wallMinutes(start))}`;
@@ -3993,6 +4057,8 @@
   // src/render/list.js
   function renderList({ dates, events, options, eventContent, dayHeaderContent }) {
     const timeZone = options.timeZone ?? "UTC";
+    const locale = options.locale;
+    const labels = options.labels ?? DEFAULT_LABELS;
     const fragment = document.createDocumentFragment();
     const root = document.createElement("div");
     root.className = "cv-list";
@@ -4009,13 +4075,13 @@
       else if (headerContent != null)
         header.textContent = String(headerContent);
       else
-        header.textContent = date.toString();
+        header.textContent = formatDayHeader(date, locale);
       group.append(header);
       const dayEvents = events.filter((event) => eventOverlapsDate(event, date, timeZone)).sort((a, b) => startEpoch(a) - startEpoch(b));
       if (dayEvents.length === 0) {
         const empty = document.createElement("p");
         empty.className = "cv-list-empty";
-        empty.textContent = "No events";
+        empty.textContent = labels.noEvents;
         group.append(empty);
       }
       for (const event of dayEvents) {
@@ -4023,14 +4089,14 @@
         item.type = "button";
         item.className = ["cv-list-event", ...event.classNames ?? []].join(" ");
         item.dataset.eventId = event.id;
-        item.setAttribute("aria-label", describeEvent(event, timeZone));
+        item.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
         const content = eventContent?.({ event, date, resource: null, element: item });
         if (content instanceof Node) {
           item.append(content);
         } else if (content != null) {
           item.textContent = String(content);
         } else {
-          item.textContent = `${formatClock(wallMinutes(toZonedDateTime(event.start, timeZone)))} ${event.title ?? "Event"}`;
+          item.textContent = `${formatClock(wallMinutes(toZonedDateTime(event.start, timeZone)))} ${event.title ?? labels.untitledEvent}`;
         }
         item.addEventListener("click", (nativeEvent) => {
           item.dispatchEvent(new CustomEvent("calendar:eventclick", {
@@ -4051,6 +4117,8 @@
   // src/render/month-grid.js
   function renderMonthGrid({ weeks, month, events, options, eventContent, moreLinkContent }) {
     const timeZone = options.timeZone ?? "UTC";
+    const locale = options.locale;
+    const labels = options.labels ?? DEFAULT_LABELS;
     const limit = Math.max(1, options.monthEventLimit ?? 3);
     const fragment = document.createDocumentFragment();
     const root = document.createElement("div");
@@ -4062,7 +4130,7 @@
     for (const day of weeks[0]) {
       const cell = document.createElement("span");
       cell.className = "cv-month-weekday";
-      cell.textContent = day.toLocaleString(undefined, { weekday: "short" });
+      cell.textContent = day.toLocaleString(locale, { weekday: "short" });
       head.append(cell);
     }
     root.append(head);
@@ -4086,12 +4154,12 @@
           chip.type = "button";
           chip.className = ["cv-month-event", ...event.classNames ?? []].join(" ");
           chip.dataset.eventId = event.id;
-          chip.setAttribute("aria-label", describeEvent(event, timeZone));
+          chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
           const content = eventContent?.({ event, date, resource: null, element: chip });
           if (content instanceof Node)
             chip.append(content);
           else
-            chip.textContent = content == null ? event.title ?? "Event" : String(content);
+            chip.textContent = content == null ? event.title ?? labels.untitledEvent : String(content);
           chip.addEventListener("click", (nativeEvent) => {
             chip.dispatchEvent(new CustomEvent("calendar:eventclick", {
               bubbles: true,
@@ -4112,7 +4180,7 @@
           if (content instanceof Node)
             more.append(content);
           else
-            more.textContent = content == null ? `+${hidden} more` : String(content);
+            more.textContent = content == null ? formatLabel(labels.more, { hidden }) : String(content);
           more.addEventListener("click", (nativeEvent) => {
             more.dispatchEvent(new CustomEvent("calendar:moreclick", {
               bubbles: true,
@@ -4297,6 +4365,8 @@
     slotLabelContent
   }) {
     const fragment = document.createDocumentFragment();
+    const locale = options.locale;
+    const labels = options.labels ?? DEFAULT_LABELS;
     const resourceView = isResourceView(view);
     const columns = resourceView ? getResourceColumns(resources, dates) : getTimeGridColumns(dates);
     const gridTemplate = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
@@ -4440,14 +4510,14 @@
       if (content instanceof Node)
         label.append(content);
       else
-        label.textContent = content == null ? formatClock(minute) : String(content);
+        label.textContent = content == null ? formatSlotLabel(minute, locale) : String(content);
       axis.append(label);
     }
     root.style.gridTemplateColumns = gridTemplate;
     if (columns.length === 0) {
       const empty = document.createElement("p");
       empty.className = "cv-empty";
-      empty.textContent = "No resources selected.";
+      empty.textContent = labels.noResources;
       root.append(empty);
       fragment.append(root);
       return fragment;
@@ -4485,7 +4555,7 @@
       else if (headerContent != null)
         header.textContent = String(headerContent);
       else
-        header.textContent = column.date.toString();
+        header.textContent = formatDayHeader(column.date, locale);
       day.append(header);
       const body = document.createElement("div");
       body.className = "cv-day-body";
@@ -4604,7 +4674,7 @@
           const result = host.commitEventMove({ event, previous, current, nativeEvent });
           if (!result)
             return;
-          host.announce(describeEvent(result, timeZone));
+          host.announce(describeEvent(result, timeZone, labels.untitledEvent));
           refocusEvent(event.id);
         }, keyboardResizeEvent = function(key, nativeEvent) {
           const startZoned = toZonedDateTime(event.start, timeZone);
@@ -4629,7 +4699,7 @@
           });
           if (!result)
             return;
-          host.announce(describeEvent(result, timeZone));
+          host.announce(describeEvent(result, timeZone, labels.untitledEvent));
           refocusEvent(event.id);
         }, beginResize = function(nativeEvent, edge) {
           if (nativeEvent.button !== 0)
@@ -4803,12 +4873,12 @@
         node.style.height = `${geometry.height}px`;
         node.style.left = `${item.left * 100}%`;
         node.style.width = `${item.width * 100}%`;
-        node.setAttribute("aria-label", describeEvent(event, timeZone));
+        node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
         const content = eventContent?.({ event, date: column.date, resource: column.resource, element: node });
         if (content instanceof Node)
           node.append(content);
         else
-          node.textContent = content == null ? event.title ?? "Event" : String(content);
+          node.textContent = content == null ? event.title ?? labels.untitledEvent : String(content);
         node.addEventListener("click", (nativeEvent) => {
           node.dispatchEvent(new CustomEvent("calendar:eventclick", {
             bubbles: true,
@@ -5038,7 +5108,7 @@
   };
 
   class CalendarViewElement extends HTMLElement {
-    static observedAttributes = ["view", "date", "slot-min", "slot-max", "slot-duration"];
+    static observedAttributes = ["view", "date", "lang", "slot-min", "slot-max", "slot-duration"];
     #events = [];
     #resources = [];
     #backgrounds = [];
@@ -5308,11 +5378,21 @@
       }));
     }
     #dateOptions() {
-      return { firstDay: this.#config.firstDay, hiddenDays: this.#config.hiddenDays };
+      return {
+        firstDay: this.#config.firstDay,
+        hiddenDays: this.#config.hiddenDays,
+        locale: resolveLocale(this.#config.locale)
+      };
+    }
+    #resolveLocale() {
+      const docLang = typeof document === "undefined" ? undefined : document.documentElement?.lang;
+      return resolveLocale(this.#config.locale ?? this.getAttribute("lang") ?? docLang);
     }
     #options() {
       return {
         timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
+        locale: this.#resolveLocale(),
+        labels: resolveLabels(this.#config.labels),
         editable: this.#config.editable,
         slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
         slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
@@ -5337,7 +5417,7 @@
       const scroller = document.createElement("div");
       scroller.className = "cv-scroller";
       scroller.setAttribute("role", "region");
-      scroller.setAttribute("aria-label", "Calendar");
+      scroller.setAttribute("aria-label", options.labels.calendarRegion);
       if (this.view === "month") {
         scroller.append(renderMonthGrid({
           weeks: getMonthWeeks(this.date, dateOptions),

@@ -19,6 +19,9 @@
               "name": "date"
             },
             {
+              "name": "lang"
+            },
+            {
               "name": "slot-min"
             },
             {

@@ -107,6 +107,8 @@ No built-in semantic type. A background without `resourceId` is global and appli
 ```js
 calendar.configure({
   timeZone: "Europe/Brussels",
+  locale: "fr",
+  labels: { more: "+{hidden} en plus", noEvents: "Aucun évènement" },
   snapDuration: Temporal.Duration.from({ minutes: 15 }),
   defaultTimedEventDuration: Temporal.Duration.from({ minutes: 30 }),
   monthEventLimit: 3,
@@ -122,6 +124,25 @@ calendar.configure({
   moreLinkContent,
 });
 ```
+
+`locale` is a BCP 47 tag for default presentation: day headers, axis labels
+and the month weekday row render through `Intl`, and an explicit
+`configure({ locale })` suggests `firstDay` when none is set (FullCalendar
+parity: `en-US` weeks start Sunday, `fr` weeks Monday; an explicit `firstDay`
+always wins). Resolution is `configure({ locale })`, then the `lang`
+attribute, then the document language; blank means the runtime default.
+Only the explicit option feeds date derivation: `lang`/document language
+localize text, never temporal math, so which dates exist cannot shift with
+the document. Content hooks stay authoritative:
+`dayHeaderContent`, `slotLabelContent`, `eventContent` and `moreLinkContent`
+replace the localized defaults wherever they return content.
+
+`labels` overrides the fixed English strings merged over the defaults
+(`noEvents`, `noResources`, `more` with a `{hidden}` placeholder,
+`calendarRegion`, `untitledEvent`). There is no locale data bundle to load:
+`Intl`/`Temporal` already carry CLDR, so translating the core is one
+`configure({ labels })` call; fetching a translation file stays an
+application concern.
 
 `snapDuration` controls pointer snapping. `defaultTimedEventDuration` controls the hover preview and single-click creation proposal. An explicit drag selection carries its own `start/end` and does not depend on it. `monthEventLimit` caps the event chips per month day cell before the `+n more` button.
 

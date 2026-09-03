@@ -8,6 +8,10 @@ export type DateDerivationOptions = {
      * weekdays never rendered, ISO 1-7
      */
     hiddenDays?: Iterable<number>;
+    /**
+     * BCP 47 tag suggesting `firstDay` when none is explicit; never parsed for math
+     */
+    locale?: string;
 };
 /**
  * @param {Temporal.PlainDate | string} value
@@ -137,4 +141,40 @@ export declare function zonedDateTimeAt(date: Temporal.PlainDate | string, minut
  * @returns {string}
  */
 export declare function formatClock(minutes: number): string;
+/**
+ * Normalize a locale option. Blank strings behave as "no locale" so empty
+ * attributes and sloppy configuration fall back to the runtime default.
+ *
+ * @param {unknown} value
+ * @returns {string | undefined}
+ */
+export declare function resolveLocale(value: unknown): string | undefined;
+/**
+ * First weekday suggested by a BCP 47 locale tag, ISO 1-7, or null when the
+ * runtime cannot tell (no week-info support, unknown tag). Never throws and
+ * never does date math: presentation hint only.
+ *
+ * @param {string} locale
+ * @returns {number | null}
+ */
+export declare function firstDayFromLocale(locale: string): number | null;
+/**
+ * Locale-aware day-column header default, e.g. `Thu, 9/3` in English.
+ * Hooks (`dayHeaderContent`) stay authoritative; this only feeds the fallback.
+ *
+ * @param {Temporal.PlainDate | string} date
+ * @param {string | undefined} locale BCP 47 tag, or undefined for the runtime default
+ * @returns {string}
+ */
+export declare function formatDayHeader(date: Temporal.PlainDate | string, locale: string | undefined): string;
+/**
+ * Locale-aware time-axis label default, e.g. `8:00 AM` in English.
+ * `slotLabelContent` stays authoritative; this only feeds the fallback.
+ * Out-of-`PlainTime` edges such as `24:00` keep the legacy 24h rendering.
+ *
+ * @param {number} minutes minutes after midnight
+ * @param {string | undefined} locale BCP 47 tag, or undefined for the runtime default
+ * @returns {string}
+ */
+export declare function formatSlotLabel(minutes: number, locale: string | undefined): string;
 //# sourceMappingURL=dates.d.ts.map

@@ -12,6 +12,8 @@ import { Temporal } from "temporal-polyfill";
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {object} input.options
  * @param {string} [input.options.timeZone]
+ * @param {string} [input.options.locale] BCP 47 tag for default day headers; hooks stay authoritative
+ * @param {import("../core/labels.js").CalendarLabels} [input.options.labels] fixed UI strings, defaulting to English
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
  * @returns {DocumentFragment}
@@ -21,6 +23,8 @@ export declare function renderList({ dates, events, options, eventContent, dayHe
     events: import("../core/model.js").NormalizedEvent[];
     options: {
         timeZone?: string;
+        locale?: string;
+        labels?: import("../core/labels.js").CalendarLabels;
     };
     eventContent?: (info: object) => unknown;
     dayHeaderContent?: (info: object) => unknown;

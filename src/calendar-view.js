@@ -5,9 +5,11 @@ import {
   getVisibleDates,
   isResourceView,
   minutesFromMidnight,
+  resolveLocale,
   stepAnchor,
   toPlainDate,
 } from "./core/dates.js";
+import { resolveLabels } from "./core/labels.js";
 import {
   isMovable,
   isResizable,
@@ -31,6 +33,8 @@ import { renderTimeGrid } from "./render/time-grid.js";
 /**
  * @typedef {object} CalendarConfig
  * @property {string} [timeZone]
+ * @property {string} [locale] BCP 47 tag for default header/axis formatting and `firstDay` suggestion; content hooks stay authoritative
+ * @property {Partial<import("./core/labels.js").CalendarLabels>} [labels] fixed UI strings merged over the English defaults
  * @property {number} [pxPerMinute]
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
@@ -61,7 +65,7 @@ const DEFAULTS = {
 };
 
 export class CalendarViewElement extends HTMLElement {
-  static observedAttributes = ["view", "date", "slot-min", "slot-max", "slot-duration"];
+  static observedAttributes = ["view", "date", "lang", "slot-min", "slot-max", "slot-duration"];
 
   /** @type {Array<import("./core/model.js").NormalizedEvent>} */
   #events = [];
@@ -499,17 +503,37 @@ export class CalendarViewElement extends HTMLElement {
   /**
    * Options that drive date derivation. They live together because
    * `getVisibleRange()`, navigation and rendering must all agree on which
-   * dates exist.
+   * dates exist. Only an explicit `configure({ locale })` suggests
+   * `firstDay`: the `lang` attribute and document language feed formatting
+   * alone, so date math never shifts implicitly with the document.
    *
-   * @returns {{ firstDay: number | undefined, hiddenDays: number[] | undefined }}
+   * @returns {{ firstDay: number | undefined, hiddenDays: number[] | undefined, locale: string | undefined }}
    */
   #dateOptions() {
-    return { firstDay: this.#config.firstDay, hiddenDays: this.#config.hiddenDays };
+    return {
+      firstDay: this.#config.firstDay,
+      hiddenDays: this.#config.hiddenDays,
+      locale: resolveLocale(this.#config.locale),
+    };
+  }
+
+  /**
+   * BCP 47 locale for default formatting and `firstDay` suggestion.
+   * Explicit `configure({ locale })` wins, then the `lang` attribute, then
+   * the document language; blank means the runtime default.
+   *
+   * @returns {string | undefined}
+   */
+  #resolveLocale() {
+    const docLang = typeof document === "undefined" ? undefined : document.documentElement?.lang;
+    return resolveLocale(this.#config.locale ?? this.getAttribute("lang") ?? docLang);
   }
 
   #options() {
     return {
       timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
+      locale: this.#resolveLocale(),
+      labels: resolveLabels(this.#config.labels),
       editable: this.#config.editable,
       slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
       slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
@@ -539,7 +563,7 @@ export class CalendarViewElement extends HTMLElement {
     const scroller = document.createElement("div");
     scroller.className = "cv-scroller";
     scroller.setAttribute("role", "region");
-    scroller.setAttribute("aria-label", "Calendar");
+    scroller.setAttribute("aria-label", options.labels.calendarRegion);
     if (this.view === "month") {
       scroller.append(
         renderMonthGrid({

@@ -22,6 +22,7 @@ const WEEK_ANCHORED_VIEWS = new Set(["week"]);
  * @typedef {object} DateDerivationOptions
  * @property {number} [firstDay] first weekday of a civil week, ISO 1-7 (default 1, Monday)
  * @property {Iterable<number>} [hiddenDays] weekdays never rendered, ISO 1-7
+ * @property {string} [locale] BCP 47 tag suggesting `firstDay` when none is explicit; never parsed for math
  */
 
 /**
@@ -44,7 +45,12 @@ function isoWeekday(value) {
  * @returns {{ firstDay: number, hiddenDays: Set<number> }}
  */
 function resolveDateOptions(options = {}) {
-  const firstDay = isoWeekday(options.firstDay) ?? 1;
+  // Explicit `firstDay` wins; otherwise the locale suggests one (FullCalendar
+  // parity: `locale` sets the default, an explicit option overrides it);
+  // runtimes without week-info support or unknown tags fall back to Monday.
+  const explicit = isoWeekday(options.firstDay);
+  const locale = resolveLocale(options.locale);
+  const firstDay = explicit ?? (locale ? (firstDayFromLocale(locale) ?? 1) : 1);
   /** @type {Set<number>} */
   const hiddenDays = new Set();
   for (const value of options.hiddenDays ?? []) {
@@ -308,4 +314,92 @@ export function zonedDateTimeAt(date, minutes, timeZone) {
 export function formatClock(minutes) {
   const clamped = Math.max(0, minutes);
   return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(Math.floor(clamped % 60)).padStart(2, "0")}`;
+}
+
+/**
+ * Normalize a locale option. Blank strings behave as "no locale" so empty
+ * attributes and sloppy configuration fall back to the runtime default.
+ *
+ * @param {unknown} value
+ * @returns {string | undefined}
+ */
+export function resolveLocale(value) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * First weekday suggested by a BCP 47 locale tag, ISO 1-7, or null when the
+ * runtime cannot tell (no week-info support, unknown tag). Never throws and
+ * never does date math: presentation hint only.
+ *
+ * @param {string} locale
+ * @returns {number | null}
+ */
+export function firstDayFromLocale(locale) {
+  const day = Number(readWeekInfoFirstDay(locale));
+  if (!Number.isInteger(day) || day < 1 || day > 7) return null;
+  return day;
+}
+
+/**
+ * @param {string} locale
+ * @returns {unknown}
+ */
+function readWeekInfoFirstDay(locale) {
+  try {
+    const factory = localeWeekInfoReader();
+    if (!factory) return null;
+    const info = factory(locale);
+    if (typeof info !== "object" || info === null) return null;
+    return /** @type {{ firstDay?: unknown }} */ (info).firstDay ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Structural access to `Intl.Locale#getWeekInfo`, kept structural because
+ * the ES2022 library contract predates week-info support.
+ *
+ * @returns {((tag: string) => unknown) | null}
+ */
+function localeWeekInfoReader() {
+  const holder = /** @type {{ Locale?: unknown }} */ (/** @type {unknown} */ (Intl));
+  if (typeof holder.Locale !== "function") return null;
+  const Ctor = /** @type {new (tag: string) => { getWeekInfo?: () => unknown }} */ (holder.Locale);
+  return (tag) => {
+    const instance = new Ctor(tag);
+    return typeof instance.getWeekInfo === "function" ? instance.getWeekInfo() : null;
+  };
+}
+
+/**
+ * Locale-aware day-column header default, e.g. `Thu, 9/3` in English.
+ * Hooks (`dayHeaderContent`) stay authoritative; this only feeds the fallback.
+ *
+ * @param {Temporal.PlainDate | string} date
+ * @param {string | undefined} locale BCP 47 tag, or undefined for the runtime default
+ * @returns {string}
+ */
+export function formatDayHeader(date, locale) {
+  return toPlainDate(date).toLocaleString(locale, { weekday: "short", month: "numeric", day: "numeric" });
+}
+
+/**
+ * Locale-aware time-axis label default, e.g. `8:00 AM` in English.
+ * `slotLabelContent` stays authoritative; this only feeds the fallback.
+ * Out-of-`PlainTime` edges such as `24:00` keep the legacy 24h rendering.
+ *
+ * @param {number} minutes minutes after midnight
+ * @param {string | undefined} locale BCP 47 tag, or undefined for the runtime default
+ * @returns {string}
+ */
+export function formatSlotLabel(minutes, locale) {
+  const total = Math.max(0, Math.floor(minutes));
+  const hour = Math.floor(total / 60);
+  if (hour > 23) return formatClock(minutes);
+  const time = Temporal.PlainTime.from({ hour, minute: total % 60 });
+  return time.toLocaleString(locale, { hour: "numeric", minute: "2-digit" });
 }

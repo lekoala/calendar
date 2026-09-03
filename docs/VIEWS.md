@@ -111,7 +111,7 @@ Month is a summary-oriented day grid over the anchor date's calendar month, not 
 - Weeks run Monday → Sunday (ISO); the grid shows full weeks, so leading/trailing days of adjacent months are visible but dimmed (`cv-outside`).
 - Each day cell shows the day number, up to `monthEventLimit` event chips (default 3), then a `+n more` indicator. No spanning bars: a multi-day event repeats one chip per overlapped civil day and is omitted from days it does not overlap (an event ending exactly at midnight does not appear on the next day).
 - Chips carry the event title (or `eventContent` output) with a full `describeEvent` accessible name. Background ranges are not rendered in month cells.
-- Month is solo: events from all resources appear; resource columns are never built. `dayHeaderContent` is not used; the weekday row uses the runtime locale (`weekday: short`).
+- Month is solo: events from all resources appear; resource columns are never built. `dayHeaderContent` is not used; the weekday row uses the `locale` option (`weekday: short`, runtime default when unset).
 - An empty day-cell click dispatches `calendar:select` for that civil day (`00:00 → next 00:00` in `calendar.timeZone`, `resourceId: null`). Event chips are buttons: Tab reaches them, Enter/Space fires `calendar:eventclick`. There is no arrow-key model, drag, resize or range-select in month cells.
 - `prev`/`next` step whole calendar months, preserving the anchor day-of-month where possible (`Temporal` constrains overflows, e.g. Jan 31 → Feb 28).
 
@@ -119,7 +119,7 @@ Month is a summary-oriented day grid over the anchor date's calendar month, not 
 
 List is a minimal generic renderer over the same visible event state: 7 consecutive civil days from the anchor date, each a day group with its events in chronological order. Rich operational lists belong to the consumer.
 
-- Day groups use `dayHeaderContent` (falling back to the ISO date, as in time grids); days without events show a muted `No events` row.
+- Day groups use `dayHeaderContent` (falling back to the localized day header, as in time grids); days without events show a muted `No events` row (`labels.noEvents`).
 - A multi-day event repeats under every civil day it overlaps, same rule as month.
 - Events are buttons sharing the `eventContent` hook and the `describeEvent` accessible name; Enter/Space fires `calendar:eventclick`. No drag/resize/select.
 - Like month, list is solo: it never builds resource columns. The hook receives `resource: null`; applications resolve `event.resourceId` against their own data.

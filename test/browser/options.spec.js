@@ -176,16 +176,16 @@ test("moreLinkContent owns the label", async ({ page }) => {
 test("slotLabelInterval sets axis density and slotLabelContent its text", async ({ page }) => {
   await page.goto("/demo/basic.html");
   await flushRender(page);
-  // 08:00 to 18:00 inclusive.
+  // 08:00 to 18:00 inclusive, formatted for the document locale.
   await expect(page.locator(".cv-axis-label")).toHaveCount(11);
-  await expect(page.locator(".cv-axis-label").first()).toHaveText("08:00");
+  await expect(page.locator(".cv-axis-label").first()).toHaveText("8:00 AM");
 
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).configure({ slotLabelInterval: 30 });
   });
   await flushRender(page);
   await expect(page.locator(".cv-axis-label")).toHaveCount(21);
-  await expect(page.locator(".cv-axis-label").nth(1)).toHaveText("08:30");
+  await expect(page.locator(".cv-axis-label").nth(1)).toHaveText("8:30 AM");
 
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).configure({

@@ -1,5 +1,6 @@
 import { Temporal } from "temporal-polyfill";
 import { zonedDateTimeAt } from "../core/dates.js";
+import { DEFAULT_LABELS, formatLabel } from "../core/labels.js";
 import { describeEvent, eventOverlapsDate, toZonedDateTime } from "../core/slicing.js";
 
 /**
@@ -18,6 +19,8 @@ import { describeEvent, eventOverlapsDate, toZonedDateTime } from "../core/slici
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {object} input.options
  * @param {string} [input.options.timeZone]
+ * @param {string} [input.options.locale] BCP 47 tag for the weekday row; hooks stay authoritative
+ * @param {import("../core/labels.js").CalendarLabels} [input.options.labels] fixed UI strings, defaulting to English
  * @param {number} [input.options.monthEventLimit]
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.moreLinkContent]
@@ -25,6 +28,8 @@ import { describeEvent, eventOverlapsDate, toZonedDateTime } from "../core/slici
  */
 export function renderMonthGrid({ weeks, month, events, options, eventContent, moreLinkContent }) {
   const timeZone = options.timeZone ?? "UTC";
+  const locale = options.locale;
+  const labels = options.labels ?? DEFAULT_LABELS;
   const limit = Math.max(1, options.monthEventLimit ?? 3);
   const fragment = document.createDocumentFragment();
   const root = document.createElement("div");
@@ -39,7 +44,7 @@ export function renderMonthGrid({ weeks, month, events, options, eventContent, m
   for (const day of weeks[0]) {
     const cell = document.createElement("span");
     cell.className = "cv-month-weekday";
-    cell.textContent = day.toLocaleString(undefined, { weekday: "short" });
+    cell.textContent = day.toLocaleString(locale, { weekday: "short" });
     head.append(cell);
   }
   root.append(head);
@@ -73,10 +78,10 @@ export function renderMonthGrid({ weeks, month, events, options, eventContent, m
         chip.type = "button";
         chip.className = ["cv-month-event", ...(event.classNames ?? [])].join(" ");
         chip.dataset.eventId = event.id;
-        chip.setAttribute("aria-label", describeEvent(event, timeZone));
+        chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
         const content = eventContent?.({ event, date, resource: null, element: chip });
         if (content instanceof Node) chip.append(content);
-        else chip.textContent = content == null ? (event.title ?? "Event") : String(content);
+        else chip.textContent = content == null ? (event.title ?? labels.untitledEvent) : String(content);
         // Native <button> activation covers pointer click and Enter/Space equally.
         chip.addEventListener("click", (nativeEvent) => {
           chip.dispatchEvent(
@@ -99,7 +104,7 @@ export function renderMonthGrid({ weeks, month, events, options, eventContent, m
         more.dataset.date = date.toString();
         const content = moreLinkContent?.({ date, events: dayEvents, hidden, element: more });
         if (content instanceof Node) more.append(content);
-        else more.textContent = content == null ? `+${hidden} more` : String(content);
+        else more.textContent = content == null ? formatLabel(labels.more, { hidden }) : String(content);
         // The application decides what "show the rest" means: a popover, a
         // day view, a raised chip limit. The core only reports the intent.
         more.addEventListener("click", (nativeEvent) => {

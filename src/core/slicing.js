@@ -114,12 +114,13 @@ export function sliceTimedEventForDay(event, date, options) {
  *
  * @param {{ title?: unknown, start: unknown, end: unknown }} event
  * @param {string} timeZone
+ * @param {string} [untitled] fallback title, defaults to the English label
  * @returns {string}
  */
-export function describeEvent(event, timeZone) {
+export function describeEvent(event, timeZone, untitled = "Event") {
   const start = toZonedDateTime(event.start, timeZone);
   const end = toZonedDateTime(event.end, timeZone);
-  const title = event.title ?? "Event";
+  const title = event.title ?? untitled;
   const startDay = start.toPlainDate().toString();
   const endDay = end.toPlainDate().toString();
   const startText = `${startDay}, ${formatClock(wallMinutes(start))}`;

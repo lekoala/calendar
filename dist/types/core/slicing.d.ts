@@ -99,13 +99,14 @@ export declare function sliceTimedEventForDay(event: {
  *
  * @param {{ title?: unknown, start: unknown, end: unknown }} event
  * @param {string} timeZone
+ * @param {string} [untitled] fallback title, defaults to the English label
  * @returns {string}
  */
 export declare function describeEvent(event: {
     title?: unknown;
     start: unknown;
     end: unknown;
-}, timeZone: string): string;
+}, timeZone: string, untitled?: string): string;
 /**
  * Civil-day overlap for summary representations (month cells, list groups).
  * True when any part of [start, end) falls on `date` in `timeZone`. An event

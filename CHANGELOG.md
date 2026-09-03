@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — locale and labels
+
+- `configure({ locale })` (or the `lang` attribute, falling back to the document language) localizes default day headers, axis labels and the month weekday row through `Intl`, and suggests `firstDay` when none is explicit (`en-US` weeks start Sunday, `fr` weeks Monday; explicit `firstDay` wins). Only the explicit option feeds date derivation, so `lang`/document language localize text, never temporal math. Content hooks stay authoritative.
+- `configure({ labels })` overrides the fixed English strings (`noEvents`, `noResources`, `more` with `{hidden}`, `calendarRegion`, `untitledEvent`); `DEFAULT_LABELS`, `resolveLabels` and `formatLabel` are exported from the main entry for applications building their own catalogs. No locale bundle to load and no async loader in the core.
+- Demo `basic.html` gains a locale switcher (system/English/Français/Nederlands).
+
 ## Unreleased — showcase: demo coverage debt, views and mobile
 
 Closes the demo coverage debt recorded in `docs/ROADMAP.md`, and gives the grid back the room the chrome was taking. All of it is application code in `demo/showcase.html`; the core is unchanged.
@@ -22,6 +28,8 @@ Views, mobile and layout:
 - Toolbar collapsed to a single row at every width; the live strip is one scrollable line instead of a wrapping block; day and resource headers are compact, with the core's fixed 3rem sticky offset replaced by one `--sc-resource-row` value used by both rules.
 - Below 64rem the side panel is the same element with a `popover` attribute, which supplies the backdrop, the outside click and Escape - the scrim element and the keydown bookkeeping are gone.
 - Icons are the Tabler webfont (pinned CDN) rather than text glyphs, which is what fixed the alignment: they are flex items with `line-height: 1` inside Actual's controls. `.icon-only` inside a `.join` is stretched, since a fixed square box left a pale sliver under the chevrons.
+- No overlay scrolls sideways: Chromium's UA `[popover]` rule turns on `overflow: auto` on both axes, which turned Actual's tooltip arrow - a pseudo-element that hangs off the side the tooltip points from - into a horizontal scrollbar. Menus close the inline axis (long labels already ellipsise) and the tooltip is `overflow: visible`, since it wraps rather than scrolls. The account menu's eight theme rows became three mode rows plus a row of swatches, each carrying its own `data-theme` so the theme stylesheet paints it - no colour list to keep in sync, and no vertical scrollbar either.
+- Two things the design system already had and the demo was not using. `.dialog-close` is Actual's absolutely-positioned close affordance, with its own masked icon: the three sheets now carry it instead of a `<form method="dialog">` text button, with the title padded out of its way the way `dialog.drawer > header` is. And Actual resets heading margins under `.prose` and `.flyout > section` only - these menus are popovers rather than flyouts, so each `<h3>` group heading kept the browser's 13px block margins on top of `.menu-label`'s padding and the list gap. Resetting it takes 102px off the view menu and stops the tools menu clipping.
 - `@lekoala/floating` is pinned in the demo the way Actual CSS already is - an application dependency, never a runtime dependency of the core. The showcase script is a module now; the classic-script demos stay untouched and keep working over `file://`.
 
 - `test/browser/showcase.spec.js`: 21 tests, green on Chromium, Firefox, WebKit and the mobile project. Adds refusal (synchronous and after the round-trip), the blocked-range drop, the hover tooltip, context-menu placement and clamping, the empty-slot menu, view-menu switching and digit shortcuts, grid options through `configure()`, the activity panel's cost in grid height, and the side panel's popover/column split.

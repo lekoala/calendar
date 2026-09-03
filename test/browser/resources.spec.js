@@ -20,10 +20,11 @@ test("resource view renders one grouped header per resource", async ({ page }) =
   await expect(headers.nth(0)).toHaveAttribute("data-resource-id", "room-a");
   await expect(headers.nth(1)).toHaveAttribute("data-resource-id", "room-b");
   await expect(headers.nth(0)).toContainText("Room A");
-  // Each header spans its 3 date columns; day headers keep only the date.
+  // Each header spans its 3 date columns; day headers keep only the date,
+  // formatted for the document locale.
   const span = await headers.nth(0).evaluate((node) => node.style.gridColumn);
   expect(span).toBe("span 3");
-  await expect(page.locator(".cv-day-header").first()).toHaveText("2026-09-03");
+  await expect(page.locator(".cv-day-header").first()).toHaveText("Thu, 9/3");
 });
 
 test("resourceHeaderContent is called once per resource", async ({ page }) => {
