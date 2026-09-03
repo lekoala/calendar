@@ -123,7 +123,7 @@ Month and list are alternate representations over the same state: solo, no resou
 - `demo/resources-stress.html` — manual stress configurations (12×3, 6×7)
 - `demo/realtime.html` — incremental event mutations
 - `demo/dist.html` — dist smoke: always loads the generated classic build (`../dist/calendar.js`), validates the distributed product over `http(s)` and `file://`
-- `demo/showcase.html` — generic room-booking application shell skinned with Actual CSS 0.6 (pinned CDN + token bridge): rich `eventContent` cards, creation/detail dialogs on `calendar:select`/`calendar:eventclick`, context menu on `calendar:eventcontextmenu`, local tools search, slow-source and realtime stand-ins
+- `demo/showcase.html` — generic room-booking application shell skinned with Actual CSS 0.6 (pinned CDN + token bridge). Full-viewport layout: topbar, sidebar (mini month, search, room and kind filters), agenda toolbar, live strip, activity dock, and a calendar that takes the whole remaining height. Solid `eventContent` cards tinted per `extendedProps.kind`, creation/detail dialogs on `calendar:select`/`calendar:eventclick`, context menu on `calendar:eventcontextmenu`, keyboard shortcuts, slow-source and realtime stand-ins
 
 Serve the repository over HTTP:
 

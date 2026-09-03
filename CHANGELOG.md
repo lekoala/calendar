@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — showcase application shell
+
+- `demo/showcase.html` rebuilt as a full-viewport application shell instead of a document-flow page: Actual CSS `topbar`, a sidebar (mini month, search, room checklist, kind legend, event source), an agenda toolbar, a live strip and a collapsible activity dock, with the calendar filling the whole remaining height. The shell overrides the core's `max-height: 70vh` scroller cap from the outside — no core change needed.
+- Event cards are now solid tone cards, one hue per application kind, derived from Actual's semantic tokens so every theme in the switcher reskins the grid; `@container` queries drop card detail instead of clipping it on short bookings.
+- `eventContent`/`dayHeaderContent` use the `element` the core passes them (`element.dataset.kind`, `data-today`, `data-weekend`), which removed the previous post-render `MutationObserver` pass. Month and list get their own card shapes from the same hook.
+- New application-owned chrome, all built on documented core seams: a mini month driven by `calendar.date` (Temporal, no date library in the demo), room and kind filters that rebuild `resources`/`events`, a live strip over `getVisibleRange()`, and `T` / `←` / `→` / `/` / `F` keyboard shortcuts.
+- Responsive: the sidebar becomes an off-canvas panel under 64rem, the toolbar wraps, the live strip drops secondary chips and narrow viewports open on `day` with the dock collapsed.
+- Seed fixture widened to six weeks of bookings across three rooms so month view is as populated as the time grids; the store now lives in the application and the core holds the filtered projection.
+- `test/browser/showcase.spec.js`: 9 Chromium tests (adds viewport-fill, mini-month navigation, room/kind filtering and live-strip assertions; `#anchor-label` is asserted through `data-date` now that the label is human-readable).
+
 ## Unreleased — showcase polish + demo hub
 
 - `demo/index.html` is now a demo hub linking every demo; the old solo page moved to `demo/basic.html` (git history preserved).

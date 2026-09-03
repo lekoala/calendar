@@ -4,25 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Calendar × Actual CSS — application shell showcase</title>
-  <meta name="description" content="@lekoala/calendar inside a generic application shell skinned with Actual CSS: rich event cards, creation dialog, tools search, resource views and themes.">
+  <meta name="description" content="@lekoala/calendar inside a full-viewport application shell skinned with Actual CSS: sidebar with mini-month and filters, agenda toolbar, solid event cards, dialogs and themes.">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/actual-css@0.6.0/dist/actual.full.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.6.0/site/assets/actual-themes.min.css">
   <link rel="stylesheet" href="../dist/calendar.css">
   <style>
-    /* Page layout — plain Actual CSS classes in markup; only page-explicit
-       sizing lives here. */
-    .page {
-      --center-size: 80rem;
-      padding-block: var(--space-50) var(--space-60);
+    /* ==================================================================
+       Actual CSS supplies every component used here: buttons, joins,
+       tabs, fields, checkboxes, badges, avatars, dialogs, tokens.
+       This stylesheet only adds what a design system cannot know:
+         1. the frame - a full-viewport application layout with a single
+            scrolling region, which is what the calendar needs to fill;
+         2. the bridge - Actual tokens mapped onto the public
+            --calendar-* custom properties;
+         3. the skin the application chooses for its own event cards.
+       ================================================================== */
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
     }
 
-    .page-toolbar {
-      align-items: end;
-      justify-content: space-between;
+    html {
+      block-size: 100%;
     }
 
-    /* Manual Light / Dark toggle (same recipe as the combobox bridge demo:
-       the default Actual theme is a light-dark() pair). */
+    body {
+      margin: 0;
+      overscroll-behavior: none;
+      background: var(--surface-subtle);
+    }
+
+    /* Manual Light / Dark toggle: the default Actual theme is a
+       light-dark() pair, so switching color-scheme is enough. */
     [data-theme="light"] {
       color-scheme: light;
     }
@@ -31,21 +46,643 @@
       color-scheme: dark;
     }
 
-    /* ================================================================ */
-    /* THEME BRIDGE — Actual CSS provides the visual language, the       */
-    /* calendar the behaviour. No adapter package: just shared CSS       */
-    /* contracts on top of the public --calendar-* tokens.               */
-    /* ================================================================ */
+    /* ---------------------------------------------------------------- */
+    /* 1. FRAME                                                          */
+    /* ---------------------------------------------------------------- */
+    .sc-shell {
+      --sc-aside-size: 17.5rem;
+      display: grid;
+      grid-template:
+        "topbar topbar" auto
+        "aside  main" minmax(0, 1fr)
+        / var(--sc-aside-size) minmax(0, 1fr);
+      block-size: var(--viewport-block);
+      overflow: hidden;
+    }
+
+    .sc-topbar {
+      grid-area: topbar;
+      gap: var(--space-30);
+      padding-block: var(--space-20);
+      padding-inline: var(--space-30);
+    }
+
+    .sc-brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-20);
+      min-inline-size: 0;
+      margin: 0;
+    }
+
+    .sc-brand-mark {
+      display: grid;
+      place-items: center;
+      inline-size: 2rem;
+      block-size: 2rem;
+      border-radius: var(--radius);
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+
+    .sc-brand-text {
+      display: grid;
+      min-inline-size: 0;
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-brand-text strong {
+      font-size: var(--font-size-sm);
+      white-space: nowrap;
+    }
+
+    .sc-brand-text small {
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .sc-modules {
+      border-block-end: 0;
+    }
+
+    .sc-modules .tab {
+      min-block-size: var(--control-size-sm);
+      font-size: var(--font-size-sm);
+    }
+
+    /* Actual underlines `[aria-selected]` tabs; these are real links, so
+       the current section is marked with aria-current instead. */
+    .sc-modules .tab[aria-current="page"] {
+      color: var(--state-selected);
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-modules .tab[aria-current="page"]::after {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      inset-block-end: 0;
+      border-block-end: 2px solid currentcolor;
+    }
+
+    .sc-topbar-end {
+      display: flex;
+      align-items: center;
+      gap: var(--space-20);
+      margin-inline-start: auto;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Sidebar: application chrome the core deliberately does not own.   */
+    /* ---------------------------------------------------------------- */
+    .sc-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-40);
+      grid-area: aside;
+      min-block-size: 0;
+      overflow-y: auto;
+      padding: var(--space-30);
+      border-inline-end: var(--border-width) solid var(--border);
+      background: var(--surface);
+    }
+
+    .sc-group {
+      display: grid;
+      gap: var(--space-20);
+      min-inline-size: 0;
+    }
+
+    .sc-group-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-20);
+      margin: 0;
+      color: var(--text-subtle);
+      font-size: 11px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .sc-sidebar-foot {
+      margin-block-start: auto;
+      padding-block-start: var(--space-20);
+      border-block-start: var(--border-width) solid var(--border);
+      color: var(--text-subtle);
+      font-size: 11px;
+    }
+
+    .sc-shortcuts {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: var(--space-10) var(--space-20);
+      margin: 0;
+    }
+
+    .sc-shortcuts dd {
+      margin: 0;
+    }
+
+    /* Mini month: a composition peer, written against the Temporal dates
+       the element already exposes through `calendar.date`. */
+    .sc-mini {
+      display: grid;
+      gap: var(--space-10);
+    }
+
+    .sc-mini-head {
+      display: flex;
+      align-items: center;
+      gap: var(--space-10);
+    }
+
+    .sc-mini-title {
+      flex: 1;
+      margin: 0;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 1px;
+    }
+
+    .sc-mini-dow {
+      padding-block: 2px;
+      color: var(--text-subtle);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .sc-mini-day {
+      position: relative;
+      display: grid;
+      place-items: center;
+      aspect-ratio: 1;
+      min-inline-size: 0;
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: var(--font-size-xs);
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+    }
+
+    .sc-mini-day:hover {
+      background: var(--hover-overlay);
+    }
+
+    .sc-mini-day:focus-visible {
+      outline: var(--focus-outline);
+      outline-color: var(--focus);
+    }
+
+    .sc-mini-day[data-outside="true"] {
+      color: var(--text-subtle);
+    }
+
+    .sc-mini-day[data-today="true"] {
+      box-shadow: inset 0 0 0 1px var(--primary);
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-mini-day[data-anchor="true"] {
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-mini-day[data-events="true"]::after {
+      content: "";
+      position: absolute;
+      inset-block-end: 2px;
+      inline-size: 4px;
+      block-size: 4px;
+      border-radius: var(--radius-full);
+      background: currentcolor;
+      opacity: 0.5;
+    }
+
+    /* Resource checklist, kind legend and search hits: all three are
+       plain application filters over application data. */
+    .sc-checks,
+    .sc-legend,
+    .sc-results {
+      display: grid;
+      gap: 2px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .sc-check {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-20);
+      padding: var(--space-10) var(--space-20);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-xs);
+      cursor: pointer;
+    }
+
+    .sc-check:hover,
+    .sc-legend button:hover,
+    .sc-results button:hover {
+      background: var(--hover-overlay);
+    }
+
+    .sc-legend button {
+      display: grid;
+      grid-template-columns: 0.65rem minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-20);
+      inline-size: 100%;
+      padding: var(--space-10) var(--space-20);
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: var(--font-size-xs);
+      text-align: start;
+      cursor: pointer;
+    }
+
+    .sc-legend button[aria-pressed="false"] {
+      opacity: 0.4;
+    }
+
+    .sc-swatch {
+      inline-size: 0.65rem;
+      block-size: 0.65rem;
+      border-radius: 3px;
+      background: var(--sc-tone, var(--primary));
+    }
+
+    .sc-count-mini {
+      color: var(--text-subtle);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sc-results button {
+      inline-size: 100%;
+      padding: var(--space-20);
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      color: var(--text);
+      font: inherit;
+      font-size: var(--font-size-xs);
+      line-height: var(--line-height-tight);
+      text-align: start;
+      cursor: pointer;
+    }
+
+    .sc-results strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-results small {
+      color: var(--text-muted);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Main column: toolbar, live strip, calendar, activity dock.        */
+    /* Only the calendar scrolls.                                        */
+    /* ---------------------------------------------------------------- */
+    .sc-main {
+      display: grid;
+      grid-area: main;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr);
+      min-inline-size: 0;
+      min-block-size: 0;
+      background: var(--surface);
+    }
+
+    .sc-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-20);
+      padding: var(--space-20) var(--space-30);
+      border-block-end: var(--border-width) solid var(--border);
+      background: var(--surface);
+    }
+
+    .sc-range {
+      margin: 0;
+      font-size: var(--font-size-md);
+      font-weight: var(--font-weight-bold);
+      white-space: nowrap;
+    }
+
+    .sc-range small {
+      display: block;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: var(--font-weight);
+    }
+
+    .sc-toolbar-end {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-20);
+      min-inline-size: 0;
+      margin-inline-start: auto;
+    }
+
+    .sc-views {
+      min-inline-size: 0;
+      max-inline-size: 100%;
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+      scrollbar-width: none;
+    }
+
+    .sc-views::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Live strip: the application's own status line over core state. */
+    .sc-cockpit {
+      display: flex;
+      overflow: hidden;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-10) var(--space-40);
+      margin: 0;
+      padding: var(--space-20) var(--space-30);
+      border-block-end: var(--border-width) solid var(--border);
+      background: color-mix(in oklab, var(--surface), var(--primary) 7%);
+      color: var(--text-muted);
+      font-size: var(--font-size-xs);
+    }
+
+    .sc-cockpit > span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4em;
+      white-space: nowrap;
+    }
+
+    .sc-cockpit strong {
+      color: var(--text);
+    }
+
+    .sc-dot {
+      flex: none;
+      inline-size: 0.5rem;
+      block-size: 0.5rem;
+      border-radius: var(--radius-full);
+      background: var(--sc-tone, var(--success));
+    }
+
+    /* Activity dock: realtime stand-ins plus the intent log. */
+    .sc-dock {
+      border-block-start: var(--border-width) solid var(--border);
+      background: var(--surface);
+      font-size: var(--font-size-xs);
+    }
+
+    .sc-dock > summary {
+      display: flex;
+      align-items: center;
+      gap: var(--space-20);
+      padding: var(--space-20) var(--space-30);
+      font-weight: var(--font-weight-bold);
+      cursor: pointer;
+    }
+
+    .sc-dock-body {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: var(--space-30);
+      align-items: start;
+      padding: 0 var(--space-30) var(--space-30);
+    }
+
+    .sc-dock-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-20);
+    }
+
+    .sc-dock-hint {
+      margin-inline-start: auto;
+      font-weight: var(--font-weight);
+    }
+
+    .sc-log {
+      display: grid;
+      gap: 1px;
+      max-block-size: 6.5rem;
+      overflow: auto;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .sc-log li {
+      padding: 2px var(--space-20);
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      color: var(--text-muted);
+      overflow-wrap: anywhere;
+    }
+
+    .sc-log li:first-child {
+      background: color-mix(in oklab, var(--primary), transparent 86%);
+      color: var(--text);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* 2. BRIDGE - Actual tokens onto the public --calendar-* contract.  */
+    /* ---------------------------------------------------------------- */
     .actual-calendar {
-      --calendar-bg: var(--surface);
-      --calendar-surface: var(--surface-raised);
+      display: flex;
+      flex-direction: column;
+      min-inline-size: 0;
+      min-block-size: 0;
+      overflow: hidden;
+      --calendar-bg: var(--surface-subtle);
+      --calendar-surface: var(--surface);
       --calendar-line: var(--border);
       --calendar-text: var(--text);
       --calendar-muted: var(--text-muted);
       --calendar-accent: var(--primary);
-      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--primary));
+      --calendar-event-bg: var(--primary);
       --calendar-event-border: var(--primary);
-      --calendar-background-bg: var(--hover-overlay);
+      --calendar-column-min: 9rem;
+      --calendar-background-bg:
+        repeating-linear-gradient(
+          135deg,
+          color-mix(in oklab, var(--neutral), transparent 86%) 0 5px,
+          transparent 5px 11px
+        );
+      font-family: var(--font-sans);
+      font-size: var(--font-size-xs);
+    }
+
+    /* Resource views multiply columns; keep them readable without
+       forcing a very wide horizontal scroll. */
+    .actual-calendar[data-view^="resource"] {
+      --calendar-column-min: 7.5rem;
+    }
+
+    /* The frame owns the height, so the core scroller stops guessing. */
+    .actual-calendar .cv-scroller {
+      flex: 1;
+      min-block-size: 0;
+      max-block-size: none;
+      scrollbar-width: thin;
+    }
+
+    .actual-calendar .cv-axis {
+      background: var(--surface-subtle);
+    }
+
+    .actual-calendar .cv-axis-label {
+      font-size: 10px;
+      font-weight: var(--font-weight-strong);
+    }
+
+    .actual-calendar .cv-hour-line {
+      border-color: color-mix(in oklab, var(--border), transparent 30%);
+    }
+
+    .actual-calendar .cv-now {
+      border-top-color: var(--danger);
+    }
+
+    /* Day and resource headers take application content; the core keeps
+       geometry and stickiness. */
+    .actual-calendar .cv-day-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      padding: var(--space-20) var(--space-30);
+      font-weight: var(--font-weight);
+    }
+
+    .actual-calendar .cv-day-header[data-weekend="true"] {
+      background: var(--surface-subtle);
+    }
+
+    .actual-calendar .cv-resource-header {
+      gap: 0.45rem;
+      font-size: var(--font-size-sm);
+    }
+
+    .sc-dow {
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .sc-dom {
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-bold);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cv-day-header[data-today="true"] .sc-dom {
+      display: grid;
+      place-items: center;
+      min-inline-size: 1.6rem;
+      aspect-ratio: 1;
+      border-radius: var(--radius-full);
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-size: var(--font-size-sm);
+    }
+
+    .sc-count {
+      margin-inline-start: auto;
+      padding: 0 0.45em;
+      border-radius: var(--radius-full);
+      background: var(--hover-overlay);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Progressive enhancement: tint the whole column from the marker the
+       application put on its header. */
+    .actual-calendar .cv-day:has(> .cv-day-header[data-weekend="true"]) .cv-day-body {
+      background: color-mix(in oklab, var(--surface), var(--text) 3%);
+    }
+
+    .actual-calendar .cv-day:has(> .cv-day-header[data-today="true"]) .cv-day-body {
+      background: color-mix(in oklab, var(--surface), var(--primary) 4%);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* 3. EVENT SKIN - solid tone cards, one hue per application kind.   */
+    /* Tones come from Actual's semantic tokens, so every theme in the   */
+    /* switcher reskins the grid.                                        */
+    /* ---------------------------------------------------------------- */
+    [data-kind="review"] {
+      --sc-tone: var(--primary);
+      --sc-tone-fg: var(--primary-fg);
+    }
+
+    [data-kind="planning"] {
+      --sc-tone: var(--success);
+      --sc-tone-fg: var(--success-fg);
+    }
+
+    [data-kind="deadline"] {
+      --sc-tone: var(--danger);
+      --sc-tone-fg: var(--danger-fg);
+    }
+
+    [data-kind="workshop"] {
+      --sc-tone: var(--secondary);
+      --sc-tone-fg: var(--secondary-fg);
+    }
+
+    /* Grey reads as "routine", amber as "do not book"; the seeded set
+       never uses amber, so blocked markers stand out when created. */
+    [data-kind="maintenance"] {
+      --sc-tone: var(--neutral);
+      --sc-tone-fg: var(--neutral-fg);
+    }
+
+    [data-kind="blocked"] {
+      --sc-tone: var(--warning);
+      --sc-tone-fg: var(--warning-fg);
+    }
+
+    .actual-calendar .cv-event {
+      container-type: size;
+      padding: 3px 6px;
+      border: 0;
+      border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 34%);
+      border-radius: var(--radius-sm);
+      background: var(--sc-tone, var(--primary));
+      color: var(--sc-tone-fg, var(--primary-fg));
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
     }
 
     .actual-calendar .cv-event:focus-visible {
@@ -53,104 +690,163 @@
       outline-offset: 1px;
     }
 
-    /* Rich event cards: the core renders geometry (top/height/left/width),
-       the application owns the card content via eventContent(). */
+    .actual-calendar .cv-event.cv-drag-mirror {
+      box-shadow: var(--shadow-popout);
+    }
+
     .sc-card {
-      display: block;
+      display: grid;
+      gap: 1px;
       overflow: hidden;
-      font-size: var(--font-size-xs);
-      line-height: var(--line-height);
+      line-height: 1.25;
     }
 
     .sc-card strong {
-      display: block;
       overflow: hidden;
-      font-size: var(--font-size-sm);
-      font-weight: var(--font-weight-strong);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-bold);
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .sc-card .sc-meta {
-      display: block;
       overflow: hidden;
-      color: inherit;
+      font-size: 10.5px;
       opacity: 0.85;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .sc-card .sc-tag {
-      display: inline-block;
+      justify-self: start;
       margin-block-start: 2px;
       padding: 0 0.45em;
       border-radius: var(--radius-full);
-      font-size: var(--font-size-xs);
-      font-weight: var(--font-weight-strong);
+      background: color-mix(in oklab, currentcolor, transparent 80%);
+      font-size: 9.5px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
     }
 
-    /* Kind tints reuse the shared soft recipe, like .badge soft. */
-    .cv-event[data-kind="review"] {
-      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--primary));
-      --calendar-event-border: var(--primary);
+    /* Short bookings drop detail instead of clipping it. */
+    @container (max-height: 44px) {
+      .sc-card .sc-tag {
+        display: none;
+      }
     }
 
-    .cv-event[data-kind="planning"] {
-      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--success));
-      --calendar-event-border: var(--success);
+    @container (max-height: 26px) {
+      .sc-card .sc-meta {
+        display: none;
+      }
     }
 
-    .cv-event[data-kind="deadline"] {
-      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--danger));
-      --calendar-event-border: var(--danger);
+    /* Month and list reuse the same tones in their own shapes. */
+    .actual-calendar[data-view="month"] .cv-scroller {
+      display: flex;
     }
 
-    .cv-event[data-kind="blocked"] {
-      --calendar-event-bg: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--warning));
-      --calendar-event-border: var(--warning);
+    .actual-calendar .cv-month {
+      flex: 1;
+      display: grid;
+      grid-template-rows: auto;
+      grid-auto-rows: minmax(5.5rem, 1fr);
     }
 
-    .sc-tag {
-      background: color-mix(in oklab, var(--surface) var(--soft-bg-mix), currentcolor);
+    .actual-calendar .cv-month-day {
+      min-block-size: 5.5rem;
     }
 
-    /* Day headers keep the date; the application adds a count badge. */
-    .sc-count {
-      margin-inline-start: 0.4em;
+    .actual-calendar .cv-month-event {
+      display: flex;
+      align-items: center;
+      gap: 0.35em;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 86%);
+      color: var(--text);
+      font-size: 11px;
+    }
+
+    .actual-calendar .cv-month-event::before {
+      content: "";
+      flex: none;
+      inline-size: 0.45rem;
+      block-size: 0.45rem;
+      border-radius: var(--radius-full);
+      background: var(--sc-tone, var(--primary));
+    }
+
+    .actual-calendar .cv-month-weekday {
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .actual-calendar .cv-list-day-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      padding: var(--space-20) var(--space-40);
+      background: var(--surface-subtle);
+      font-size: var(--font-size-sm);
+    }
+
+    .actual-calendar .cv-list-event {
+      padding: var(--space-20) var(--space-40);
+      border-inline-start: 3px solid var(--sc-tone, var(--primary));
+    }
+
+    .actual-calendar .cv-list-event:hover {
+      background: var(--hover-overlay);
+    }
+
+    .sc-row {
+      display: grid;
+      grid-template-columns: 6.5rem minmax(0, 22rem) minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: var(--space-30);
+    }
+
+    .sc-row .sc-time {
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sc-row .sc-tag {
       padding: 0 0.5em;
       border-radius: var(--radius-full);
-      background: var(--hover-overlay);
-      font-size: var(--font-size-xs);
-      font-weight: var(--font-weight-strong);
+      background: color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 82%);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      text-transform: uppercase;
     }
 
-    /* Native <dialog> styled with Actual tokens for the app-owned sheets. */
+    /* ---------------------------------------------------------------- */
+    /* App-owned overlays                                                */
+    /* ---------------------------------------------------------------- */
     .sc-dialog {
       padding: 0;
       border: var(--border-width) solid var(--border);
-      border-radius: var(--radius);
+      border-radius: var(--radius-lg);
       background: var(--surface-raised);
       color: var(--text);
       box-shadow: var(--shadow-popout);
     }
 
     .sc-dialog::backdrop {
-      background: rgb(0 0 0 / 0.4);
+      background: var(--backdrop-fill);
     }
 
     .sc-dialog-body {
-      min-inline-size: min(24rem, 90vw);
+      min-inline-size: min(26rem, 92vw);
       padding: var(--space-50);
     }
 
-    .sc-slot-chips {
-      gap: var(--space-20);
-    }
-
-    /* Context menu anchored by the core-provided clientX/clientY. */
     .sc-menu {
       position: fixed;
-      z-index: 50;
+      z-index: var(--z-menu);
       min-inline-size: 12rem;
       padding: var(--space-20);
       border: var(--border-width) solid var(--border);
@@ -162,128 +858,246 @@
     .sc-menu button {
       display: block;
       inline-size: 100%;
+      text-align: start;
     }
 
-    .sc-log {
-      max-block-size: 10rem;
-      overflow: auto;
-      font-size: var(--font-size-xs);
+    .sc-scrim {
+      position: fixed;
+      inset: 0;
+      z-index: calc(var(--z-menu) - 1);
+      padding: 0;
+      border: 0;
+      background: var(--backdrop-fill);
+      cursor: pointer;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Responsive: the sidebar becomes an off-canvas panel, the toolbar  */
+    /* wraps, and the calendar keeps the whole remaining viewport.       */
+    /* ---------------------------------------------------------------- */
+    @media (min-width: 64rem) {
+      .sc-burger,
+      .sc-scrim {
+        display: none;
+      }
+
+      .sc-shell[data-focus="true"] {
+        --sc-aside-size: 0px;
+      }
+
+      .sc-shell[data-focus="true"] .sc-sidebar {
+        display: none;
+      }
+    }
+
+    @media (max-width: 63.999rem) {
+      .sc-shell {
+        grid-template:
+          "topbar" auto
+          "main" minmax(0, 1fr)
+          / minmax(0, 1fr);
+      }
+
+      .sc-sidebar {
+        position: fixed;
+        inset-block: 0;
+        inset-inline-start: 0;
+        z-index: var(--z-menu);
+        inline-size: min(20rem, 88vw);
+        translate: -101% 0;
+        box-shadow: var(--shadow-popout);
+        transition: translate var(--duration) var(--ease-exit);
+      }
+
+      .sc-shell[data-drawer="open"] .sc-sidebar {
+        translate: 0 0;
+        transition-timing-function: var(--ease-enter);
+      }
+
+      .sc-modules,
+      .sc-dock-hint,
+      .sc-brand-text small {
+        display: none;
+      }
+
+      .sc-dock-body {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    @media (max-width: 40rem) {
+      .sc-range {
+        font-size: var(--font-size-sm);
+      }
+
+      .sc-toolbar-end {
+        inline-size: 100%;
+        margin-inline-start: 0;
+      }
+
+      .sc-cockpit > span {
+        white-space: normal;
+      }
+
+      .sc-cockpit > span:nth-child(n + 3) {
+        display: none;
+      }
+
+      .actual-calendar {
+        --calendar-column-min: 6rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .sc-sidebar {
+        transition: none;
+      }
     }
   </style>
   <script src="../dist/calendar.js"></script>
 </head>
 <body>
-  <main class="center stack page">
-    <header class="cluster page-toolbar">
-      <hgroup>
-        <p class="overline">Application shell showcase</p>
-        <h1>Calendar × Actual CSS</h1>
-        <p class="muted">
-          A generic <strong>room-booking shell</strong> around <code>@lekoala/calendar</code>:
-          the core owns geometry, rendering and interaction; every panel, dialog and
-          search box here is application code. No medical vocabulary, no backend.
-        </p>
-      </hgroup>
-      <div class="cluster" style="gap: var(--space-20);">
+  <div class="sc-shell" id="shell" data-drawer="closed" data-focus="false">
+
+    <header class="topbar sc-topbar">
+      <button type="button" class="btn sm neutral ghost sc-burger" id="sidebar-toggle"
+              aria-controls="sidebar" aria-expanded="false">☰<span class="sr-only">Toggle side panel</span></button>
+      <p class="sc-brand">
+        <span class="sc-brand-mark" aria-hidden="true">▦</span>
+        <span class="sc-brand-text">
+          <strong>Room bookings</strong>
+          <small class="muted">generic shell · @lekoala/calendar</small>
+        </span>
+      </p>
+      <nav class="tabs sc-modules" aria-label="Application sections">
+        <a class="tab" href="#sidebar" aria-current="page">Calendar</a>
+        <a class="tab" href="./resources.html">Resources</a>
+        <a class="tab" href="./basic.html">Basic grids</a>
+      </nav>
+      <div class="sc-topbar-end">
         <select class="select sm fit" id="theme-switcher" aria-label="Switch theme">
           <option value="">System</option>
           <option value="light">Light</option>
           <option value="dark">Dark</option>
           <option value="indigo">Indigo</option>
+          <option value="ocean">Ocean</option>
+          <option value="forest">Forest</option>
+          <option value="sunset">Sunset</option>
           <option value="brutalist">Brutalist</option>
         </select>
+        <span class="avatar sm" title="Signed in as the shell demo operator" aria-hidden="true">SO</span>
       </div>
     </header>
 
-    <section class="card stack" aria-label="Agenda toolbar">
-      <div class="join" role="group" aria-label="Views">
-        <button type="button" class="btn" data-view="day">Day</button>
-        <button type="button" class="btn" data-view="threeDays">3 days</button>
-        <button type="button" class="btn" data-view="week">Week</button>
-        <button type="button" class="btn" data-view="resourceDay">Team day</button>
-        <button type="button" class="btn" data-view="resourceThreeDays">Team 3 days</button>
-        <button type="button" class="btn" data-view="month">Month</button>
-        <button type="button" class="btn" data-view="list">List</button>
+    <aside class="sc-sidebar scroller" id="sidebar" aria-label="Agenda side panel">
+      <button type="button" class="btn primary" id="new-booking">+ New booking</button>
+
+      <section class="sc-group sc-mini" aria-label="Month navigation">
+        <div class="sc-mini-head">
+          <h2 class="sc-mini-title" id="mini-title">—</h2>
+          <button type="button" class="btn sm neutral ghost" id="mini-prev" aria-label="Previous month">‹</button>
+          <button type="button" class="btn sm neutral ghost" id="mini-next" aria-label="Next month">›</button>
+        </div>
+        <div class="sc-mini-grid" id="mini-grid"></div>
+      </section>
+
+      <section class="sc-group">
+        <h2 class="sc-group-title">Search</h2>
+        <input class="input sm" type="search" id="tools-search" placeholder="Title, room…" autocomplete="off"
+               aria-label="Search loaded bookings">
+        <ul class="sc-results" id="tools-results"></ul>
+      </section>
+
+      <section class="sc-group">
+        <h2 class="sc-group-title">Rooms <span class="sc-count-mini" id="room-summary"></span></h2>
+        <ul class="sc-checks" id="room-list"></ul>
+      </section>
+
+      <section class="sc-group">
+        <h2 class="sc-group-title">Kinds</h2>
+        <ul class="sc-legend" id="kind-legend"></ul>
+      </section>
+
+      <section class="sc-group">
+        <h2 class="sc-group-title">Event source</h2>
+        <select class="select sm" id="source-mode">
+          <option value="local" selected>Local snapshot</option>
+          <option value="slow">Simulated slow source (600 ms)</option>
+        </select>
+      </section>
+
+      <div class="sc-sidebar-foot">
+        <dl class="sc-shortcuts">
+          <dt><kbd class="key">T</kbd></dt>
+          <dd>today</dd>
+          <dt><kbd class="key">←</kbd> <kbd class="key">→</kbd></dt>
+          <dd>previous / next range</dd>
+          <dt><kbd class="key">/</kbd></dt>
+          <dd>search</dd>
+          <dt><kbd class="key">F</kbd></dt>
+          <dd>focus mode</dd>
+        </dl>
       </div>
-      <div class="cluster items-end" style="gap: var(--space-30);">
+    </aside>
+
+    <button type="button" class="sc-scrim" id="sidebar-scrim" tabindex="-1" aria-label="Close side panel" hidden></button>
+
+    <div class="sc-main">
+      <div class="sc-toolbar">
         <div class="join" role="group" aria-label="Date navigation">
-          <button type="button" class="btn touch-target" id="nav-prev">← Prev</button>
-          <button type="button" class="btn touch-target" id="nav-today">Today</button>
-          <button type="button" class="btn touch-target" id="nav-next">Next →</button>
+          <button type="button" class="btn sm" id="nav-prev" aria-label="Previous range">‹</button>
+          <button type="button" class="btn sm" id="nav-today">Today</button>
+          <button type="button" class="btn sm" id="nav-next" aria-label="Next range">›</button>
         </div>
-        <span class="muted" id="anchor-label" role="status" style="padding-block-end: var(--space-10);"></span>
-      </div>
-      <div class="cluster items-end" style="gap: var(--space-30);">
-        <label class="field" style="min-inline-size: 12rem;">
-          <span class="field-label">Resources</span>
-          <select class="select sm fit" id="resource-filter">
-            <option value="all">All rooms (solo grid)</option>
-            <option value="team" selected>Rooms A–C (team grid)</option>
-            <option value="room-a">Room A only</option>
-            <option value="room-b">Room B only</option>
-          </select>
-        </label>
-        <label class="field" style="min-inline-size: 12rem;">
-          <span class="field-label">Event source</span>
-          <select class="select sm fit" id="source-mode">
-            <option value="local" selected>Local snapshot</option>
-            <option value="slow">Simulated slow source (600 ms)</option>
-          </select>
-        </label>
-        <div class="field">
-          <span class="field-label sr-only">Tools</span>
-          <button type="button" class="btn touch-target" id="tools-toggle" aria-expanded="false">Tools</button>
+        <p class="sc-range" id="anchor-label" data-date="">—</p>
+        <div class="sc-toolbar-end">
+          <div class="join sc-views" role="group" aria-label="Views">
+            <button type="button" class="btn sm" data-view="day">Day</button>
+            <button type="button" class="btn sm" data-view="threeDays">3 days</button>
+            <button type="button" class="btn sm" data-view="week">Week</button>
+            <button type="button" class="btn sm" data-view="resourceDay">Team day</button>
+            <button type="button" class="btn sm" data-view="resourceThreeDays">Team 3 days</button>
+            <button type="button" class="btn sm" data-view="month">Month</button>
+            <button type="button" class="btn sm" data-view="list">List</button>
+          </div>
+          <button type="button" class="btn sm neutral outline" id="tools-toggle">Tools</button>
+          <button type="button" class="btn sm neutral ghost" id="focus-toggle" aria-pressed="false">Focus</button>
         </div>
       </div>
-      <div class="card soft" id="tools-panel" hidden>
-        <label class="field">
-          <span class="field-label">Search loaded events</span>
-          <input class="input sm" type="search" id="tools-search" placeholder="Type a title…" autocomplete="off">
-        </label>
-        <ul id="tools-results" class="stack" style="gap: var(--space-10); padding: 0; list-style: none;"></ul>
-      </div>
-    </section>
 
-    <calendar-view class="actual-calendar" view="resourceThreeDays" date="2026-09-03"></calendar-view>
+      <output class="sc-cockpit" id="cockpit"></output>
 
-    <section class="grid grid-2 items-start">
-      <div class="card stack">
-        <h2 style="margin: 0;">Realtime (transport-agnostic)</h2>
-        <p class="muted">These buttons stand in for socket/polling messages. The core only sees incremental mutations.</p>
-        <div class="cluster">
-          <button type="button" class="btn sm" id="rt-add">Push event</button>
-          <button type="button" class="btn sm neutral outline" id="rt-move">Shift “Live sync” +1h</button>
-          <button type="button" class="btn sm danger outline" id="rt-remove">Remove “Live sync”</button>
+      <calendar-view class="actual-calendar" view="resourceThreeDays" date="2026-09-03"
+                     slot-min="07:00" slot-max="20:00"></calendar-view>
+
+      <details class="sc-dock" id="dock" open>
+        <summary>
+          Activity <span class="badge soft sm" id="dock-count">0</span>
+          <span class="muted sc-dock-hint">realtime stand-ins, and every intent the core hands the application</span>
+        </summary>
+        <div class="sc-dock-body">
+          <div class="sc-dock-actions">
+            <button type="button" class="btn sm" id="rt-add">Push event</button>
+            <button type="button" class="btn sm neutral outline" id="rt-move">Shift “Live sync” +1h</button>
+            <button type="button" class="btn sm danger outline" id="rt-remove">Remove “Live sync”</button>
+          </div>
+          <ol class="sc-log" id="event-log"></ol>
         </div>
-      </div>
-      <div class="card stack">
-        <h2 style="margin: 0;">Interaction log</h2>
-        <p class="muted">Every intent the core exposes to the application, as it happens.</p>
-        <ol class="sc-log stack" id="event-log" style="gap: 2px; padding-inline-start: 1.2em; margin: 0;"></ol>
-      </div>
-    </section>
-
-    <footer class="page-note muted">
-      <p>
-        Loaded from jsDelivr, pinned: <code>actual-css@0.6.0</code> + themes.
-        Calendar from the local <code>../dist/calendar.js</code> build — run
-        <code>bun run sync</code> before opening. Stays application-owned on purpose:
-        booking form, search backend, waiting list, billing, persistence and transport.
-      </p>
-    </footer>
-  </main>
+      </details>
+    </div>
+  </div>
 
   <!-- Creation sheet: calendar:select is an intention, the app decides. -->
   <dialog class="sc-dialog" id="create-dialog" aria-labelledby="create-title">
     <div class="sc-dialog-body stack">
       <h2 id="create-title" style="margin: 0;">What do you want to create?</h2>
-      <p class="cluster sc-slot-chips" style="padding: 0;">
+      <p class="cluster" style="gap: var(--space-20); padding: 0;">
         <span class="badge soft" id="create-date">—</span>
         <span class="badge soft" id="create-range">—</span>
         <span class="badge soft neutral" id="create-duration">—</span>
       </p>
       <div class="stack" style="gap: var(--space-20);">
-        <button type="button" class="btn primary" data-create="event">Event<span class="muted"> — booked on this slot</span></button>
+        <button type="button" class="btn primary" data-create="event">Booking<span class="muted"> — an event on this slot</span></button>
         <button type="button" class="btn neutral soft" data-create="background">Background<span class="muted"> — time geometry behind events</span></button>
         <button type="button" class="btn warning soft" data-create="blocked">Blocked<span class="muted"> — non-bookable marker event</span></button>
       </div>
@@ -308,69 +1122,126 @@
 
 <script>
   (() => {
+    const shell = document.getElementById("shell");
     const calendar = document.querySelector("calendar-view");
     const log = document.getElementById("event-log");
+    const dockCount = document.getElementById("dock-count");
     const anchorLabel = document.getElementById("anchor-label");
+    const cockpit = document.getElementById("cockpit");
     const ZONE = "Europe/Brussels";
+
+    let logged = 0;
 
     /** @param {string} message */
     function record(message) {
       const item = document.createElement("li");
       item.textContent = message;
       log.prepend(item);
-      while (log.children.length > 12) log.lastChild.remove();
+      while (log.children.length > 20) log.lastChild.remove();
+      logged += 1;
+      dockCount.textContent = String(logged);
     }
 
-    // --- Fictitious generic dataset: rooms × meetings ---------------------
+    // --- Fictitious generic dataset: rooms × bookings ---------------------
     const ROOMS = [
-      { id: "room-a", title: "Room A" },
-      { id: "room-b", title: "Room B" },
-      { id: "room-c", title: "Room C" },
+      { id: "room-a", title: "Room A · Atrium" },
+      { id: "room-b", title: "Room B · Loft" },
+      { id: "room-c", title: "Room C · Studio" },
     ];
-    const KINDS = ["review", "planning", "deadline"];
-    const TITLES = [
-      "Design review", "Sprint planning", "Release gate", "1:1 sync",
-      "Architecture walkthrough", "Demo Friday", "Backlog grooming", "Incident retro",
+
+    const KINDS = [
+      { id: "review", label: "Review" },
+      { id: "planning", label: "Planning" },
+      { id: "workshop", label: "Workshop" },
+      { id: "deadline", label: "Deadline" },
+      { id: "maintenance", label: "Maintenance" },
     ];
-    /** @type {Array<{ id: string, title: string, start: string, end: string, resourceId: string, extendedProps: { kind: string, seats: number } }>} */
-    const SNAPSHOT = [];
-    {
+
+    const TITLES = {
+      review: ["Design review", "Code review", "Portfolio review", "Quarterly review"],
+      planning: ["Sprint planning", "Roadmap sync", "Capacity planning", "Weekly stand-up"],
+      workshop: ["Discovery workshop", "Onboarding workshop", "Retro workshop", "Training session"],
+      deadline: ["Release gate", "Freeze deadline", "Handover", "Demo Friday"],
+      maintenance: ["Equipment check", "Network maintenance", "Deep clean", "Inventory"],
+    };
+
+    /**
+     * Deterministic pseudo-random source: the fixture must look busy and
+     * stay byte-identical between reloads and test runs.
+     * @param {number} seed
+     */
+    function makeRandom(seed) {
+      let state = seed;
+      return () => {
+        state = (state * 1103515245 + 12345) % 2147483648;
+        return state / 2147483648;
+      };
+    }
+
+    /**
+     * Six weeks of bookings around the anchor date, so month view is as
+     * populated as the time grids. Dates come from the element's own
+     * Temporal.PlainDate: the demo needs no date library of its own.
+     */
+    function seedStore() {
+      const random = makeRandom(20260903);
+      const store = [];
+      const first = calendar.date.subtract({ days: 10 });
       let n = 0;
-      for (let day = 3; day <= 9; day += 1) {
-        const date = `2026-09-0${day}`;
-        for (let i = 0; i < ROOMS.length; i += 1) {
-          const room = ROOMS[i];
-          const hour = 9 + ((day + i * 2) % 7);
-          const startHour = String(hour).padStart(2, "0");
-          const endHour = String(hour + 1).padStart(2, "0");
-          n += 1;
-          SNAPSHOT.push({
-            id: `seed-${n}`,
-            title: TITLES[(day + i) % TITLES.length],
-            start: `${date}T${startHour}:00:00+02:00[${ZONE}]`,
-            end: `${date}T${endHour}:00:00+02:00[${ZONE}]`,
-            resourceId: room.id,
-            extendedProps: { kind: KINDS[(day + i) % KINDS.length], seats: 4 + ((day + i) % 8) },
-          });
+      for (let index = 0; index < 42; index += 1) {
+        const date = first.add({ days: index });
+        if (date.dayOfWeek === 7) continue;
+        const perRoom = date.dayOfWeek === 6 ? 1 : 3 + Math.floor(random() * 3);
+        for (const room of ROOMS) {
+          let minutes = 8 * 60 + Math.floor(random() * 4) * 30;
+          for (let slot = 0; slot < perRoom; slot += 1) {
+            const duration = [30, 45, 60, 90][Math.floor(random() * 4)];
+            if (minutes + duration > 19 * 60) break;
+            const kind = KINDS[Math.floor(random() * KINDS.length)].id;
+            const titles = TITLES[kind];
+            n += 1;
+            store.push({
+              id: `seed-${n}`,
+              title: titles[Math.floor(random() * titles.length)],
+              start: stamp(date, minutes),
+              end: stamp(date, minutes + duration),
+              resourceId: room.id,
+              extendedProps: { kind, seats: 2 + Math.floor(random() * 10) },
+            });
+            minutes += duration + [0, 15, 30, 60, 90][Math.floor(random() * 5)];
+          }
         }
       }
-      // One deliberate overlap to show the column layout.
-      SNAPSHOT.push({
+
+      // One deliberate overlap on the anchor day, to show column layout.
+      store.push({
         id: "seed-overlap",
         title: "Overlap review",
-        start: `2026-09-03T09:30:00+02:00[${ZONE}]`,
-        end: `2026-09-03T10:30:00+02:00[${ZONE}]`,
+        start: stamp(calendar.date, 9 * 60 + 30),
+        end: stamp(calendar.date, 10 * 60 + 30),
         resourceId: "room-a",
         extendedProps: { kind: "deadline", seats: 6 },
       });
-      SNAPSHOT.push({
+      // Stable target for search and realtime stand-ins.
+      store.push({
         id: "live",
         title: "Live sync",
-        start: `2026-09-04T11:00:00+02:00[${ZONE}]`,
-        end: `2026-09-04T11:30:00+02:00[${ZONE}]`,
+        start: stamp(calendar.date.add({ days: 1 }), 11 * 60),
+        end: stamp(calendar.date.add({ days: 1 }), 11 * 60 + 30),
         resourceId: "room-b",
-        extendedProps: { kind: "review", seats: 3 },
+        extendedProps: { kind: "planning", seats: 3 },
       });
+      return store;
+    }
+
+    /**
+     * @param {{ toString(): string }} date PlainDate
+     * @param {number} minutes wall-clock minutes from midnight
+     */
+    function stamp(date, minutes) {
+      const hour = String(Math.floor(minutes / 60)).padStart(2, "0");
+      const minute = String(minutes % 60).padStart(2, "0");
+      return `${date}T${hour}:${minute}:00+02:00[${ZONE}]`;
     }
 
     /** @param {string} iso */
@@ -378,116 +1249,406 @@
       return iso.slice(11, 16);
     }
 
+    /** @param {string} iso */
+    function wallMinutesOf(iso) {
+      return Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
+    }
+
     /**
-     * Wall-clock minute difference between two ISO strings of the same day.
      * @param {string} startIso
      * @param {string} endIso
      */
     function wallMinutes(startIso, endIso) {
-      const start = Number(startIso.slice(11, 13)) * 60 + Number(startIso.slice(14, 16));
-      const end = Number(endIso.slice(11, 13)) * 60 + Number(endIso.slice(14, 16));
-      return end - start;
+      return wallMinutesOf(endIso) - wallMinutesOf(startIso);
     }
 
-    // --- Rich cards: geometry stays in the core, content is the app --------
-    const dayFormat = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
+    /** @param {string} iso an ISO date, `YYYY-MM-DD` or longer */
+    function asDate(iso) {
+      return new Date(`${iso.slice(0, 10)}T12:00:00`);
+    }
+
+    // The application store. The core holds the filtered projection.
+    /** @type {Array<any>} */
+    let store = [];
+    const activeRooms = new Set(ROOMS.map((room) => room.id));
+    const activeKinds = new Set(KINDS.map((kind) => kind.id));
+
+    function visibleStore() {
+      return store.filter((item) => activeKinds.has(item.extendedProps?.kind ?? "review"));
+    }
+
+    /**
+     * Counts shown in the chrome describe what the user is looking at, so
+     * they are always scoped to the range the core reports.
+     * @param {Array<any>} items
+     */
+    function inCurrentRange(items) {
+      const { start, end } = calendar.getVisibleRange();
+      const from = start.toString();
+      const to = end.toString();
+      return items.filter((item) => {
+        const day = String(item.start).slice(0, 10);
+        return day >= from && day < to;
+      });
+    }
+
+    // --- Rendering hooks: geometry stays in the core, content is the app ---
+    // Undefined locale: the core month renderer formats with the browser
+    // locale too, so the whole page stays consistent wherever it is opened.
+    const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+    const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+    const rangeFormat = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+    const longFormat = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+    /** @param {string} id */
+    function roomTitle(id) {
+      return ROOMS.find((room) => room.id === id)?.title ?? id;
+    }
+
     calendar.configure({
-      eventContent({ event }) {
+      pxPerMinute: 1.5,
+      eventContent({ event, element }) {
+        const kind = event.extendedProps?.kind ?? "review";
+        // The core hands the application its own node: the tone is set as
+        // a data attribute, no post-render pass and no mutation observer.
+        element.dataset.kind = kind;
+
+        const start = String(event.start);
+        const end = String(event.end);
+
+        if (calendar.view === "list") {
+          const row = document.createElement("span");
+          row.className = "sc-row";
+          const time = document.createElement("span");
+          time.className = "sc-time";
+          time.textContent = `${wallClock(start)}–${wallClock(end)}`;
+          const title = document.createElement("span");
+          title.textContent = event.title ?? "Booking";
+          const room = document.createElement("span");
+          room.className = "sc-time";
+          room.textContent = roomTitle(String(event.resourceId ?? ""));
+          const tag = document.createElement("span");
+          tag.className = "sc-tag";
+          tag.textContent = kind;
+          row.append(time, title, room, tag);
+          return row;
+        }
+
+        if (calendar.view === "month") {
+          const chip = document.createElement("span");
+          chip.textContent = `${wallClock(start)} ${event.title ?? "Booking"}`;
+          return chip;
+        }
+
         const wrap = document.createElement("span");
         wrap.className = "sc-card";
         const title = document.createElement("strong");
-        title.textContent = event.title ?? "Event";
+        title.textContent = event.title ?? "Booking";
         const meta = document.createElement("span");
         meta.className = "sc-meta";
-        meta.textContent = `${wallClock(String(event.start))}–${wallClock(String(event.end))} · ${event.extendedProps?.seats ?? "?"} seats`;
+        meta.textContent = `${wallClock(start)}–${wallClock(end)} · ${event.extendedProps?.seats ?? "?"} seats`;
         const tag = document.createElement("span");
         tag.className = "sc-tag";
-        tag.textContent = event.extendedProps?.kind ?? "event";
+        tag.textContent = kind;
         wrap.append(title, meta, tag);
         return wrap;
       },
-      dayHeaderContent({ date, resource }) {
+      dayHeaderContent({ date, resource, element }) {
+        const iso = date.toString();
         const count = calendar.events.filter(
-          (item) => String(item.start).slice(0, 10) === date.toString() && (!resource || item.resourceId === resource.id),
+          (item) => String(item.start).slice(0, 10) === iso && (!resource || item.resourceId === resource.id),
         ).length;
-        const node = document.createElement("span");
-        node.textContent = dayFormat.format(new Date(`${date}T12:00:00`));
+        if (iso === todayIso()) element.dataset.today = "true";
+        if (date.dayOfWeek > 5) element.dataset.weekend = "true";
+
+        const node = document.createDocumentFragment();
+        const dow = document.createElement("span");
+        dow.className = "sc-dow";
+        dow.textContent = dayFormat.format(asDate(iso));
+        const dom = document.createElement("span");
+        dom.className = "sc-dom";
+        dom.textContent = String(date.day);
         const badge = document.createElement("span");
         badge.className = "sc-count";
         badge.textContent = String(count);
-        node.append(badge);
+        node.append(dow, dom, badge);
         return node;
       },
       resourceHeaderContent({ resource }) {
-        const node = document.createElement("span");
-        node.textContent = resource.title;
+        const node = document.createDocumentFragment();
+        const label = document.createElement("span");
+        label.textContent = resource.title;
+        const count = document.createElement("span");
+        count.className = "sc-count";
+        count.textContent = String(
+          inCurrentRange(calendar.events.filter((item) => item.resourceId === resource.id)).length,
+        );
+        node.append(label, count);
         return node;
       },
     });
+
+    /** Wall-clock “now” in the calendar time zone, as `YYYY-MM-DD HH:mm`. */
+    const nowFormat = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: ZONE,
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+
+    function nowStamp() {
+      return nowFormat.format(new Date());
+    }
+
+    function todayIso() {
+      return nowStamp().slice(0, 10);
+    }
+
+    // --- Boot ---------------------------------------------------------------
+    store = seedStore();
     calendar.resources = ROOMS;
-    calendar.events = SNAPSHOT;
+    calendar.events = visibleStore();
     calendar.backgrounds = [
       {
         id: "cleaning",
         title: "Cleaning",
         resourceId: "room-c",
-        start: `2026-09-03T12:00:00+02:00[${ZONE}]`,
-        end: `2026-09-03T13:00:00+02:00[${ZONE}]`,
+        start: stamp(calendar.date, 12 * 60),
+        end: stamp(calendar.date, 13 * 60),
       },
     ];
 
-    /** @param {string} id */
-    function paintKind(id) {
-      const node = calendar.querySelector(`[data-event-id="${CSS.escape(id)}"]`);
-      const event = calendar.getEventById(id);
-      if (node && event?.extendedProps?.kind) node.dataset.kind = event.extendedProps.kind;
+    function applyFilters() {
+      calendar.resources = ROOMS.filter((room) => activeRooms.has(room.id));
+      calendar.events = visibleStore();
+      refreshChrome();
     }
-    // eventContent runs before the button is attached, so kinds are painted
-    // on the next frame after every render.
-    const observer = new MutationObserver(() => {
-      for (const event of calendar.events) paintKind(event.id);
-    });
-    observer.observe(calendar, { childList: true, subtree: true });
 
-    // --- Toolbar -----------------------------------------------------------
+    // --- Toolbar and chrome --------------------------------------------------
     const viewButtons = [...document.querySelectorAll("[data-view]")];
+
     function refreshChrome() {
-      anchorLabel.textContent = `${calendar.getAttribute("view")} · ${calendar.getAttribute("date")}`;
+      const view = calendar.view;
+      const { start, end } = calendar.getVisibleRange();
+      const anchor = calendar.date.toString();
+      anchorLabel.dataset.date = anchor;
+      if (view === "month") {
+        anchorLabel.innerHTML = "";
+        anchorLabel.append(monthFormat.format(asDate(anchor)));
+      } else if (start.equals(end.subtract({ days: 1 }))) {
+        anchorLabel.textContent = longFormat.format(asDate(anchor));
+      } else {
+        const last = end.subtract({ days: 1 }).toString();
+        anchorLabel.textContent = `${rangeFormat.format(asDate(anchor))} – ${rangeFormat.format(asDate(last))} ${anchor.slice(0, 4)}`;
+      }
+
       for (const button of viewButtons) {
-        const active = button.dataset.view === calendar.getAttribute("view");
+        const active = button.dataset.view === view;
         button.classList.toggle("primary", active);
         button.setAttribute("aria-pressed", String(active));
       }
+      renderMiniMonth();
+      renderRooms();
+      renderLegend();
+      renderCockpit();
     }
-    document.querySelector('.join[aria-label="Views"]').addEventListener("click", (event) => {
-      const view = /** @type {HTMLElement} */ (event.target).dataset?.view;
+
+    function renderCockpit() {
+      const inRange = inCurrentRange(calendar.events);
+      const now = nowStamp();
+      const upcoming = [...calendar.events]
+        .map((item) => ({ item, key: `${String(item.start).slice(0, 10)} ${wallClock(String(item.start))}` }))
+        .filter((entry) => entry.key >= now)
+        .sort((a, b) => (a.key < b.key ? -1 : 1))[0];
+
+      const busiest = ROOMS.map((room) => ({
+        room,
+        count: inRange.filter((item) => item.resourceId === room.id).length,
+      })).sort((a, b) => b.count - a.count)[0];
+
+      cockpit.replaceChildren();
+      cockpit.append(
+        chip([dot(), strong(String(inRange.length)), " bookings in view"]),
+        chip(upcoming
+          ? ["Next: ", strong(String(upcoming.item.title)), ` ${whenLabel(String(upcoming.item.start))} · ${roomTitle(String(upcoming.item.resourceId ?? ""))}`]
+          : ["Nothing scheduled after ", strong(now.slice(11))]),
+        chip([strong(`${activeRooms.size}/${ROOMS.length}`), " rooms shown"]),
+        chip(busiest && busiest.count > 0 ? ["Busiest: ", strong(busiest.room.title)] : ["No room loaded"]),
+      );
+    }
+
+    /**
+     * `at 14:00` for today, `Fri 4 Sept, 09:00` otherwise.
+     * @param {string} iso
+     */
+    function whenLabel(iso) {
+      const day = iso.slice(0, 10);
+      const clock = wallClock(iso);
+      if (day === todayIso()) return `at ${clock}`;
+      return `${dayFormat.format(asDate(day))} ${rangeFormat.format(asDate(day))}, ${clock}`;
+    }
+
+    /** @param {Array<string | Node>} parts */
+    function chip(parts) {
+      const node = document.createElement("span");
+      node.append(...parts);
+      return node;
+    }
+
+    /** @param {string} text */
+    function strong(text) {
+      const node = document.createElement("strong");
+      node.textContent = text;
+      return node;
+    }
+
+    function dot() {
+      const node = document.createElement("span");
+      node.className = "sc-dot";
+      return node;
+    }
+
+    // --- Mini month ----------------------------------------------------------
+    const miniGrid = document.getElementById("mini-grid");
+    const miniTitle = document.getElementById("mini-title");
+    let miniAnchor = null;
+
+    function renderMiniMonth() {
+      const anchor = calendar.date;
+      if (!miniAnchor || miniAnchor.year !== anchor.year || miniAnchor.month !== anchor.month) {
+        miniAnchor = anchor;
+      }
+      const month = miniAnchor;
+      miniTitle.textContent = monthFormat.format(asDate(month.toString()));
+
+      const busyDays = new Set(calendar.events.map((item) => String(item.start).slice(0, 10)));
+      const firstOfMonth = month.with({ day: 1 });
+      const gridStart = firstOfMonth.subtract({ days: (firstOfMonth.dayOfWeek + 6) % 7 });
+      const anchorIso = anchor.toString();
+      const today = todayIso();
+
+      miniGrid.replaceChildren();
+      for (let index = 0; index < 7; index += 1) {
+        const head = document.createElement("span");
+        head.className = "sc-mini-dow";
+        head.textContent = dayFormat.format(asDate(gridStart.add({ days: index }).toString())).slice(0, 2);
+        miniGrid.append(head);
+      }
+      for (let index = 0; index < 42; index += 1) {
+        const date = gridStart.add({ days: index });
+        const iso = date.toString();
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "sc-mini-day";
+        cell.textContent = String(date.day);
+        cell.dataset.date = iso;
+        if (date.month !== month.month) cell.dataset.outside = "true";
+        if (iso === today) cell.dataset.today = "true";
+        if (iso === anchorIso) cell.dataset.anchor = "true";
+        if (busyDays.has(iso)) cell.dataset.events = "true";
+        cell.addEventListener("click", () => {
+          miniAnchor = date;
+          calendar.gotoDate(iso);
+        });
+        miniGrid.append(cell);
+      }
+    }
+
+    document.getElementById("mini-prev").addEventListener("click", () => {
+      miniAnchor = (miniAnchor ?? calendar.date).add({ months: -1 });
+      renderMiniMonth();
+    });
+    document.getElementById("mini-next").addEventListener("click", () => {
+      miniAnchor = (miniAnchor ?? calendar.date).add({ months: 1 });
+      renderMiniMonth();
+    });
+
+    // --- Room checklist ------------------------------------------------------
+    const roomList = document.getElementById("room-list");
+    const roomSummary = document.getElementById("room-summary");
+
+    function renderRooms() {
+      roomSummary.textContent = `${activeRooms.size}/${ROOMS.length}`;
+      roomList.replaceChildren();
+      for (const room of ROOMS) {
+        const item = document.createElement("li");
+        const label = document.createElement("label");
+        label.className = "sc-check";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.className = "check";
+        input.checked = activeRooms.has(room.id);
+        input.addEventListener("change", () => {
+          if (input.checked) activeRooms.add(room.id);
+          else activeRooms.delete(room.id);
+          record(`rooms → ${[...activeRooms].join(", ") || "none"}`);
+          applyFilters();
+        });
+        const text = document.createElement("span");
+        text.textContent = room.title;
+        const count = document.createElement("span");
+        count.className = "sc-count-mini";
+        count.textContent = String(
+          inCurrentRange(visibleStore().filter((event) => event.resourceId === room.id)).length,
+        );
+        label.append(input, text, count);
+        item.append(label);
+        roomList.append(item);
+      }
+    }
+
+    // --- Kind legend (also a filter) -----------------------------------------
+    const kindLegend = document.getElementById("kind-legend");
+
+    function renderLegend() {
+      kindLegend.replaceChildren();
+      for (const kind of KINDS) {
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.kind = kind.id;
+        button.setAttribute("aria-pressed", String(activeKinds.has(kind.id)));
+        const swatch = document.createElement("span");
+        swatch.className = "sc-swatch";
+        const label = document.createElement("span");
+        label.textContent = kind.label;
+        const count = document.createElement("span");
+        count.className = "sc-count-mini";
+        count.textContent = String(
+          inCurrentRange(store.filter((event) => event.extendedProps?.kind === kind.id)).length,
+        );
+        button.append(swatch, label, count);
+        button.addEventListener("click", () => {
+          if (activeKinds.has(kind.id)) activeKinds.delete(kind.id);
+          else activeKinds.add(kind.id);
+          record(`kinds → ${[...activeKinds].join(", ") || "none"}`);
+          applyFilters();
+        });
+        item.append(button);
+        kindLegend.append(item);
+      }
+    }
+
+    // --- Navigation ----------------------------------------------------------
+    document.querySelector(".sc-views").addEventListener("click", (event) => {
+      const view = event.target.dataset?.view;
       if (!view) return;
       calendar.setView(view);
-      refreshChrome();
     });
-    document.getElementById("nav-prev").addEventListener("click", () => { calendar.prev(); refreshChrome(); });
-    document.getElementById("nav-next").addEventListener("click", () => { calendar.next(); refreshChrome(); });
-    document.getElementById("nav-today").addEventListener("click", () => { calendar.today(); refreshChrome(); });
+    document.getElementById("nav-prev").addEventListener("click", () => calendar.prev());
+    document.getElementById("nav-next").addEventListener("click", () => calendar.next());
+    document.getElementById("nav-today").addEventListener("click", () => calendar.today());
 
-    document.getElementById("resource-filter").addEventListener("change", (event) => {
-      const value = /** @type {HTMLSelectElement} */ (event.target).value;
-      if (value === "all") {
-        calendar.resources = [];
-        calendar.setView("week");
-      } else if (value === "team") {
-        calendar.resources = ROOMS;
-        calendar.setView("resourceThreeDays");
-      } else {
-        calendar.resources = ROOMS.filter((room) => room.id === value);
-        calendar.setView("resourceDay");
-      }
-      refreshChrome();
+    // The core announces its own state changes; the shell just follows.
+    calendar.addEventListener("calendar:viewchange", () => refreshChrome());
+    calendar.addEventListener("calendar:datechange", () => refreshChrome());
+    calendar.addEventListener("calendar:loaderror", (event) => {
+      record(`source error: ${event.detail?.error?.message ?? "unknown"}`);
     });
 
     // Simulated async source: abort + stale rejection are exercised by
     // flipping views/dates quickly while it is active.
     document.getElementById("source-mode").addEventListener("change", (event) => {
-      const slow = /** @type {HTMLSelectElement} */ (event.target).value === "slow";
+      const slow = event.target.value === "slow";
       calendar.configure({
         eventSource: slow
           ? async ({ signal }) => {
@@ -499,96 +1660,161 @@
                 }, { once: true });
               });
               record("slow source resolved (stale responses are dropped by the core)");
-              return SNAPSHOT;
+              return visibleStore();
             }
           : undefined,
       });
       if (slow) void calendar.refetchEvents();
-      else calendar.events = SNAPSHOT;
+      else calendar.events = visibleStore();
     });
 
-    // --- Creation sheet ----------------------------------------------------
-    const createDialog = /** @type {HTMLDialogElement} */ (document.getElementById("create-dialog"));
-    /** @type {{ start: any, end: any, resourceId: string | null } | null} */
+    // --- Creation sheet ------------------------------------------------------
+    const createDialog = document.getElementById("create-dialog");
+    /** @type {{ start: string, end: string, resourceId: string | null } | null} */
     let pendingSlot = null;
-    calendar.addEventListener("calendar:select", (event) => {
-      const detail = /** @type {CustomEvent} */ (event).detail;
-      pendingSlot = { start: detail.start, end: detail.end, resourceId: detail.resourceId };
-      document.getElementById("create-date").textContent = String(detail.start).slice(0, 10);
-      document.getElementById("create-range").textContent =
-        `${wallClock(String(detail.start))} – ${wallClock(String(detail.end))}`;
-      const minutes = wallMinutes(String(detail.start), String(detail.end));
-      document.getElementById("create-duration").textContent = `${minutes} min${detail.resourceId ? ` · ${detail.resourceId}` : ""}`;
-      record(`select ${String(detail.start).slice(0, 16)} → ${String(detail.end).slice(0, 16)}${detail.resourceId ? ` · ${detail.resourceId}` : ""}`);
+
+    /**
+     * @param {string} startIso
+     * @param {string} endIso
+     * @param {string | null} resourceId
+     */
+    function openCreate(startIso, endIso, resourceId) {
+      pendingSlot = { start: startIso, end: endIso, resourceId };
+      document.getElementById("create-date").textContent = longFormat.format(asDate(startIso));
+      document.getElementById("create-range").textContent = `${wallClock(startIso)} – ${wallClock(endIso)}`;
+      const minutes = wallMinutes(startIso, endIso);
+      document.getElementById("create-duration").textContent =
+        `${minutes} min${resourceId ? ` · ${roomTitle(resourceId)}` : ""}`;
       createDialog.showModal();
+    }
+
+    calendar.addEventListener("calendar:select", (event) => {
+      const detail = event.detail;
+      record(`select ${String(detail.start).slice(0, 16)} → ${String(detail.end).slice(0, 16)}${detail.resourceId ? ` · ${detail.resourceId}` : ""}`);
+      openCreate(String(detail.start), String(detail.end), detail.resourceId);
     });
+
+    document.getElementById("new-booking").addEventListener("click", () => {
+      const room = ROOMS.find((item) => activeRooms.has(item.id));
+      const resourceId = calendar.view.startsWith("resource") ? (room?.id ?? null) : null;
+      openCreate(stamp(calendar.date, 9 * 60), stamp(calendar.date, 9 * 60 + 30), resourceId);
+    });
+
     createDialog.addEventListener("click", (event) => {
-      const kind = /** @type {HTMLElement} */ (event.target).closest("[data-create]")?.dataset?.create;
+      const kind = event.target.closest("[data-create]")?.dataset?.create;
       if (!kind || !pendingSlot) return;
-      const stamp = new Date().toISOString().slice(11, 19).replaceAll(":", "");
+      const id = `${kind}-${Date.now()}`;
       if (kind === "background") {
         calendar.backgrounds = [...calendar.backgrounds, {
-          id: `bg-${stamp}`,
+          id,
           title: "Blocked range",
-          start: String(pendingSlot.start),
-          end: String(pendingSlot.end),
+          start: pendingSlot.start,
+          end: pendingSlot.end,
           ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
         }];
         record("background created from selection");
       } else {
-        const created = calendar.addEvent({
-          id: `event-${stamp}`,
+        const created = {
+          id,
           title: kind === "blocked" ? "Blocked — do not book" : "New booking",
-          start: String(pendingSlot.start),
-          end: String(pendingSlot.end),
+          start: pendingSlot.start,
+          end: pendingSlot.end,
           ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
           extendedProps: { kind: kind === "blocked" ? "blocked" : "review", seats: 2 },
-        });
-        paintKind(created.id);
-        record(`event created: ${created.id}`);
+        };
+        store.push(created);
+        calendar.addEvent(created);
+        record(`event created: ${id}`);
+        refreshChrome();
       }
       pendingSlot = null;
       createDialog.close();
     });
 
-    // --- Detail sheet ------------------------------------------------------
-    const detailDialog = /** @type {HTMLDialogElement} */ (document.getElementById("detail-dialog"));
+    // --- Detail sheet --------------------------------------------------------
+    const detailDialog = document.getElementById("detail-dialog");
     /** @type {string | null} */
     let detailId = null;
+
     calendar.addEventListener("calendar:eventclick", (event) => {
-      const detail = /** @type {CustomEvent} */ (event).detail;
-      const item = detail.event;
+      const item = event.detail.event;
       detailId = item.id;
-      document.getElementById("detail-title").textContent = item.title ?? "Event";
+      document.getElementById("detail-title").textContent = item.title ?? "Booking";
       document.getElementById("detail-meta").textContent =
-        `${String(item.start).slice(0, 16)} → ${String(item.end).slice(0, 16)}${item.resourceId ? ` · ${item.resourceId}` : ""}`;
+        `${longFormat.format(asDate(String(item.start)))} · ${wallClock(String(item.start))}–${wallClock(String(item.end))}` +
+        `${item.resourceId ? ` · ${roomTitle(String(item.resourceId))}` : ""} · ${item.extendedProps?.seats ?? "?"} seats`;
       record(`eventclick: ${item.id}`);
       detailDialog.showModal();
     });
-    document.getElementById("detail-shift").addEventListener("click", async () => {
+
+    /**
+     * Wall-clock +1h on the ISO string keeps the demo free of date math;
+     * a real application would use Temporal here.
+     * @param {string} iso
+     */
+    function shiftHour(iso) {
+      return iso.replace(/T(\d{2}):/, (_, hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
+    }
+
+    /** @param {string} id */
+    function shiftStored(id) {
+      const stored = store.find((item) => item.id === id);
+      if (stored) {
+        stored.start = shiftHour(stored.start);
+        stored.end = shiftHour(stored.end);
+      }
+    }
+
+    document.getElementById("detail-shift").addEventListener("click", () => {
       if (!detailId) return;
       const item = calendar.getEventById(detailId);
       if (!item) return;
-      // Wall-clock +1h on the ISO string keeps the demo free of date math;
-      // a real app would use Temporal here.
-      const shift = (/** @type {string} */ iso) =>
-        iso.replace(/T(\d{2}):/, (_, /** @type {string} */ hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
-      const moved = calendar.moveEvent(detailId, { start: shift(String(item.start)), end: shift(String(item.end)) });
+      const moved = calendar.moveEvent(detailId, {
+        start: shiftHour(String(item.start)),
+        end: shiftHour(String(item.end)),
+      });
+      if (moved) shiftStored(detailId);
       record(moved ? `eventmove committed: ${detailId} (+1h, revert available)` : `eventmove rejected: ${detailId}`);
       detailDialog.close();
     });
+
     document.getElementById("detail-delete").addEventListener("click", () => {
-      if (detailId && calendar.removeEvent(detailId)) record(`removed: ${detailId}`);
+      if (detailId && calendar.removeEvent(detailId)) {
+        store = store.filter((item) => item.id !== detailId);
+        record(`removed: ${detailId}`);
+        refreshChrome();
+      }
       detailId = null;
       detailDialog.close();
     });
 
-    // --- Context menu (core intent, app menu) -------------------------------
+    // Pointer drag/resize also has to reach the application store.
+    calendar.addEventListener("calendar:eventmove", (event) => {
+      const detail = event.detail;
+      const stored = store.find((item) => item.id === detail.event?.id);
+      if (stored) {
+        stored.start = String(detail.event.start);
+        stored.end = String(detail.event.end);
+        if (detail.event.resourceId) stored.resourceId = detail.event.resourceId;
+      }
+      record(`eventmove: ${detail.event?.id}`);
+    });
+    calendar.addEventListener("calendar:eventresize", (event) => {
+      const detail = event.detail;
+      const stored = store.find((item) => item.id === detail.event?.id);
+      if (stored) {
+        stored.start = String(detail.event.start);
+        stored.end = String(detail.event.end);
+      }
+      record(`eventresize: ${detail.event?.id}`);
+    });
+
+    // --- Context menu (core intent, app menu) ---------------------------------
     const menu = document.getElementById("context-menu");
     calendar.addEventListener("calendar:eventcontextmenu", (event) => {
       event.preventDefault();
-      const detail = /** @type {CustomEvent} */ (event).detail;
-      const native = /** @type {PointerEvent} */ (detail.nativeEvent);
+      const detail = event.detail;
+      const native = detail.nativeEvent;
       menu.replaceChildren();
       const targetId = detail.event?.id ?? null;
       const actions = targetId
@@ -603,14 +1829,17 @@
           menu.hidden = true;
           if (action === "delete" && targetId) {
             calendar.removeEvent(targetId);
+            store = store.filter((item) => item.id !== targetId);
             record(`removed via menu: ${targetId}`);
+            refreshChrome();
           } else if (action === "shift" && targetId) {
             const item = calendar.getEventById(targetId);
             if (item) {
-              const shift = (/** @type {string} */ iso) =>
-                iso.replace(/T(\d{2}):/, (_, /** @type {string} */ hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
-              calendar.moveEvent(targetId, { start: shift(String(item.start)), end: shift(String(item.end)) });
-              record(`eventmove via menu: ${targetId}`);
+              calendar.moveEvent(targetId, {
+                start: shiftHour(String(item.start)),
+                end: shiftHour(String(item.end)),
+              });
+              shiftStored(targetId);
             }
           } else if (action === "create") {
             record(`menu on empty slot: ${String(detail.date)} ${String(detail.time)} — use drag-select to create`);
@@ -624,31 +1853,34 @@
       record(`eventcontextmenu: ${targetId ?? "empty slot"}`);
     });
     document.addEventListener("click", (event) => {
-      if (!menu.hidden && !menu.contains(/** @type {Node} */ (event.target))) menu.hidden = true;
-    });
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") menu.hidden = true;
+      if (!menu.hidden && !menu.contains(event.target)) menu.hidden = true;
     });
 
-    // --- Tools: local search over loaded events -----------------------------
-    const toolsToggle = document.getElementById("tools-toggle");
-    const toolsPanel = document.getElementById("tools-panel");
-    const toolsSearch = /** @type {HTMLInputElement} */ (document.getElementById("tools-search"));
+    // --- Search: navigation primitives, application index ----------------------
+    const toolsSearch = document.getElementById("tools-search");
     const toolsResults = document.getElementById("tools-results");
-    toolsToggle.addEventListener("click", () => {
-      toolsPanel.hidden = !toolsPanel.hidden;
-      toolsToggle.setAttribute("aria-expanded", String(!toolsPanel.hidden));
-      if (!toolsPanel.hidden) toolsSearch.focus();
-    });
+
+    function focusSearch() {
+      openDrawer(true);
+      toolsSearch.focus();
+      toolsSearch.select();
+    }
+
+    document.getElementById("tools-toggle").addEventListener("click", focusSearch);
+
     toolsSearch.addEventListener("input", () => {
       const query = toolsSearch.value.trim().toLowerCase();
       toolsResults.replaceChildren();
       if (query.length < 2) return;
-      const hits = calendar.events.filter((item) => (item.title ?? "").toLowerCase().includes(query)).slice(0, 8);
+      const hits = store
+        .filter((item) =>
+          `${item.title} ${roomTitle(String(item.resourceId ?? ""))}`.toLowerCase().includes(query))
+        .sort((a, b) => (a.start < b.start ? -1 : 1))
+        .slice(0, 8);
       if (hits.length === 0) {
         const empty = document.createElement("li");
         empty.className = "muted";
-        empty.textContent = "No loaded event matches — a backend search would live here.";
+        empty.textContent = "No loaded booking matches — a backend search would live here.";
         toolsResults.append(empty);
         return;
       }
@@ -656,14 +1888,18 @@
         const row = document.createElement("li");
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "btn sm neutral outline";
-        button.textContent = `${hit.title} · ${String(hit.start).slice(0, 16)}`;
+        const title = document.createElement("strong");
+        title.textContent = hit.title;
+        const meta = document.createElement("small");
+        meta.textContent = `${rangeFormat.format(asDate(String(hit.start)))} · ${wallClock(String(hit.start))} · ${roomTitle(String(hit.resourceId ?? ""))}`;
+        button.append(title, meta);
         button.addEventListener("click", () => {
           calendar.gotoDate(String(hit.start).slice(0, 10));
-          refreshChrome();
-          record(`tools → ${hit.id}`);
+          calendar.scrollToTime(wallClock(String(hit.start)));
+          record(`search → ${hit.id}`);
+          openDrawer(false);
           requestAnimationFrame(() => requestAnimationFrame(() => {
-            /** @type {HTMLElement | null} */ (calendar.querySelector(`[data-event-id="${CSS.escape(hit.id)}"]`))?.focus();
+            calendar.querySelector(`[data-event-id="${CSS.escape(hit.id)}"]`)?.focus();
           }));
         });
         row.append(button);
@@ -671,42 +1907,102 @@
       }
     });
 
-    // --- Realtime stand-ins --------------------------------------------------
+    // --- Realtime stand-ins ----------------------------------------------------
     document.getElementById("rt-add").addEventListener("click", () => {
-      const created = calendar.addEvent({
+      const created = {
         id: `pushed-${Date.now()}`,
         title: "Pushed booking",
-        start: `2026-09-03T13:00:00+02:00[${ZONE}]`,
-        end: `2026-09-03T13:30:00+02:00[${ZONE}]`,
+        start: stamp(calendar.date, 13 * 60),
+        end: stamp(calendar.date, 13 * 60 + 30),
         resourceId: "room-a",
         extendedProps: { kind: "planning", seats: 5 },
-      });
-      paintKind(created.id);
+      };
+      store.push(created);
+      calendar.addEvent(created);
       record(`realtime add: ${created.id}`);
+      refreshChrome();
     });
+
     document.getElementById("rt-move").addEventListener("click", () => {
       const item = calendar.getEventById("live");
       if (!item) {
         record("realtime move: “Live sync” no longer exists");
         return;
       }
-      const shift = (/** @type {string} */ iso) =>
-        iso.replace(/T(\d{2}):/, (_, /** @type {string} */ hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
-      calendar.moveEvent("live", { start: shift(String(item.start)), end: shift(String(item.end)) });
+      calendar.moveEvent("live", {
+        start: shiftHour(String(item.start)),
+        end: shiftHour(String(item.end)),
+      });
+      shiftStored("live");
       record("realtime move: “Live sync” +1h");
     });
+
     document.getElementById("rt-remove").addEventListener("click", () => {
-      record(calendar.removeEvent("live") ? "realtime remove: “Live sync”" : "realtime remove: already gone");
+      if (calendar.removeEvent("live")) {
+        store = store.filter((item) => item.id !== "live");
+        record("realtime remove: “Live sync”");
+        refreshChrome();
+      } else {
+        record("realtime remove: already gone");
+      }
     });
 
-    // --- Misc ---------------------------------------------------------------
+    // --- Shell chrome ----------------------------------------------------------
+    const scrim = document.getElementById("sidebar-scrim");
+    const sidebarToggle = document.getElementById("sidebar-toggle");
+
+    /** @param {boolean} open */
+    function openDrawer(open) {
+      shell.dataset.drawer = open ? "open" : "closed";
+      sidebarToggle.setAttribute("aria-expanded", String(open));
+      scrim.hidden = !open;
+    }
+
+    sidebarToggle.addEventListener("click", () => openDrawer(shell.dataset.drawer !== "open"));
+    scrim.addEventListener("click", () => openDrawer(false));
+
+    const focusToggle = document.getElementById("focus-toggle");
+    focusToggle.addEventListener("click", () => {
+      const on = shell.dataset.focus !== "true";
+      shell.dataset.focus = String(on);
+      focusToggle.setAttribute("aria-pressed", String(on));
+    });
+
     document.getElementById("theme-switcher").addEventListener("change", (event) => {
-      const value = /** @type {HTMLSelectElement} */ (event.target).value;
+      const value = event.target.value;
       if (value) document.documentElement.dataset.theme = value;
       else document.documentElement.removeAttribute("data-theme");
     });
-    if (window.innerWidth < 768) calendar.setView("threeDays");
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        menu.hidden = true;
+        openDrawer(false);
+        return;
+      }
+      const target = event.target;
+      const typing = target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "/") {
+        event.preventDefault();
+        focusSearch();
+      } else if (event.key === "t" || event.key === "T") {
+        calendar.today();
+      } else if (event.key === "ArrowLeft") {
+        calendar.prev();
+      } else if (event.key === "ArrowRight") {
+        calendar.next();
+      } else if (event.key === "f" || event.key === "F") {
+        focusToggle.click();
+      }
+    });
+
+    // Narrow viewports open on a single day, with the log out of the way.
+    if (window.innerWidth < 1024) document.getElementById("dock").open = false;
+    if (window.innerWidth < 640) calendar.setView("day");
     refreshChrome();
+    calendar.scrollToTime("08:00");
     record("shell ready: core renders, app owns the chrome");
   })();
 </script>
