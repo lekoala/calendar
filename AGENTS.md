@@ -38,6 +38,16 @@ Examples use fictitious generic resources and events.
 - CSS is normal author CSS with custom properties and semantic classes. Avoid inline styling except calculated geometry (`top`, `height`, overlap `left/width`, transforms where needed).
 - The core should not own application toolbars, sidebars, command launchers, status bars or mini-calendars. They can live in the same package later as optional generic components, but remain composition peers.
 
+## Internal state
+
+Avoid JavaScript private class fields (`#field`) in public library classes.
+
+Use conventional internal properties (`_state`, `_interaction`, etc.) and keep implementation details in module-scoped functions where possible.
+
+Underscore-prefixed members are internal implementation details. They are not public or protected API and may change without notice.
+
+Do not introduce subclassing contracts around underscore-prefixed members. If extension becomes a supported use case, expose an explicit public hook/API.
+
 ## Date/time contract
 
 - Use `Temporal.PlainDate` for civil navigation dates.
