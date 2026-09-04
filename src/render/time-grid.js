@@ -1198,6 +1198,11 @@ export function renderTimeGrid({
           }
           autoscroll?.update(moveEvent.clientY);
           const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
+          // Outside every column the drag arms "drop out of the calendar":
+          // the application lights its parking target while the pointer
+          // hovers the grid edge (axis strip included).
+          if (hit) node.removeAttribute("data-dropout");
+          else node.setAttribute("data-dropout", "true");
           if (!hit) return;
           const raw = hit.minutes - grabOffset;
           const target = bodies[hit.column];
@@ -1220,6 +1225,7 @@ export function renderTimeGrid({
           autoscroll?.stop();
           mirror?.remove();
           node.classList.remove("cv-drag-source");
+          node.removeAttribute("data-dropout");
         };
 
         /** @param {PointerEvent} upEvent @returns {void} */
@@ -1236,6 +1242,9 @@ export function renderTimeGrid({
           // ("drag out of the calendar"). The commit below only runs when
           // the release itself is over a column.
           if (!gridHit(upEvent.clientX, upEvent.clientY)) {
+            // Same as a committed drop: the residual click on the source card
+            // must not fall through to `calendar:eventclick`.
+            suppressClick = true;
             root.dispatchEvent(
               new CustomEvent("calendar:eventdropout", {
                 bubbles: true,

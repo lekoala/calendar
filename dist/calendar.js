@@ -5231,6 +5231,10 @@
             }
             autoscroll?.update(moveEvent.clientY);
             const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
+            if (hit)
+              node.removeAttribute("data-dropout");
+            else
+              node.setAttribute("data-dropout", "true");
             if (!hit)
               return;
             const raw = hit.minutes - grabOffset;
@@ -5251,6 +5255,7 @@
             autoscroll?.stop();
             mirror?.remove();
             node.classList.remove("cv-drag-source");
+            node.removeAttribute("data-dropout");
           };
           const onUp = (upEvent) => {
             const wasMoved = moved;
@@ -5261,6 +5266,7 @@
             if (!wasMoved)
               return;
             if (!gridHit(upEvent.clientX, upEvent.clientY)) {
+              suppressClick = true;
               root.dispatchEvent(new CustomEvent("calendar:eventdropout", {
                 bubbles: true,
                 composed: true,

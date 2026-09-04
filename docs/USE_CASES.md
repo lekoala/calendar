@@ -176,8 +176,9 @@ Variants:
 - copy/paste duplicates (`Ctrl+C`, "Copy", then paste creates a new id) —
   copy stays a plain clipboard, never the move queue;
 - bulk fill: "Replanify the resource's day" or "this day" queues all
-  affected events; each is then placed individually (drag or paste), which
-  is exactly the §12 workflow;
+  affected events (Tools menu, or right-click the day header — in resource
+  views the action is scoped to that room's column); each is then placed
+  individually (drag or paste), which is exactly the §12 workflow;
 - sidebar parking: `Cut`/park and the drag-out gesture feed the same queue —
   releasing an event drag outside the grid dispatches
   `calendar:eventdropout`, and the shell parks the event;

@@ -80,7 +80,6 @@
       inline-size: 1.15em;
       block-size: 1.15em;
       line-height: 1;
-      vertical-align: middle;
     }
 
     .sc-shell .ti::before {
@@ -543,12 +542,27 @@
 
     .sc-workbench-hint {
       margin: 0;
+      margin-inline-start: auto;
       color: var(--text-subtle);
       font-size: 10px;
     }
 
     .actual-calendar .cv-allday-event[data-parked="true"] {
       opacity: 0.55;
+    }
+
+    /* Parking affordance: while an event drag is held outside the columns
+       (grid edge, axis strip), the workbench panel glows as the drop zone.
+       The core only toggles `data-dropout` on the dragged node; the shell
+       reaches its sibling sidebar through the shared `:has()` ancestor. */
+    .sc-shell:has(.cv-event[data-dropout="true"]) #workbench-panel {
+      outline: 2px dashed var(--primary);
+      outline-offset: 2px;
+      box-shadow: var(--shadow-popout);
+    }
+
+    .sc-shell:has(.cv-event[data-dropout="true"]) .sc-workbench-hint::before {
+      content: "release to park · ";
     }
 
     .sc-check:hover,
@@ -615,7 +629,7 @@
     .sc-main {
       display: grid;
       grid-area: main;
-      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
       grid-template-columns: minmax(0, 1fr);
       min-inline-size: 0;
       min-block-size: 0;
@@ -625,10 +639,31 @@
     .sc-toolbar {
       display: flex;
       align-items: center;
+      grid-row: 1;
       gap: var(--space-20);
       padding: var(--space-10) var(--space-30);
       border-block-end: var(--border-width) solid var(--border);
       background: var(--surface);
+    }
+
+    /* Pinned tools escaped the menu: a compact cluster left of the view
+       switch, claiming no strip of its own. Desktop only (a phone has no
+       room beside the grid), hidden while empty, and each icon keeps its
+       tooltip so the pin stays self-naming. */
+    .sc-tools-pinned-bar {
+      display: none;
+    }
+
+    @media (min-width: 64rem) {
+      .sc-tools-pinned-bar:not([hidden]) {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-10);
+      }
+
+      .sc-tools-pinned-bar .sc-pinned-tool {
+        --btn-pad-x: 0.5em;
+      }
     }
 
     .sc-range {
@@ -687,6 +722,7 @@
       display: flex;
       flex-wrap: nowrap;
       align-items: center;
+      grid-row: 2;
       gap: var(--space-40);
       overflow-x: auto;
       margin: 0;
@@ -751,6 +787,7 @@
     .sc-activity {
       display: grid;
       gap: var(--space-20);
+      grid-row: 5;
       padding: var(--space-20) var(--space-30);
       border-block-start: var(--border-width) solid var(--border);
       background: var(--surface);
@@ -806,6 +843,7 @@
       flex-direction: column;
       min-inline-size: 0;
       min-block-size: 0;
+      grid-row: 4;
       overflow: hidden;
       --calendar-bg: var(--surface-subtle);
       --calendar-surface: var(--surface);
@@ -1011,6 +1049,16 @@
       box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
     }
 
+    /* All-day lane bars wear the same tone cards as timed events: the core
+       styles them neutrally, so the kind token does the reskinning here. */
+    .actual-calendar .cv-allday-event {
+      margin: 1px 2px;
+      border: 0;
+      border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 34%);
+      background: var(--sc-tone, var(--primary));
+      color: var(--sc-tone-fg, var(--primary-fg));
+    }
+
     .actual-calendar .cv-event:focus-visible {
       outline: 2px solid var(--focus);
       outline-offset: 1px;
@@ -1024,6 +1072,13 @@
        from starting a drag, so the card only has to look the part. */
     .actual-calendar .cv-event[data-locked="true"] {
       cursor: default;
+    }
+
+    /* Archived rule: past events never arm a drag/resize either, so the card
+       just drops the grab affordance and reads slightly faded. */
+    .actual-calendar .cv-event[data-archived="true"] {
+      cursor: default;
+      filter: saturate(0.85);
     }
 
     /* Parked state: queued events keep their place in the grid until a
@@ -1040,6 +1095,7 @@
       display: flex;
       flex-wrap: wrap;
       align-items: center;
+      grid-row: 3;
       gap: 0.5rem;
       padding: 0.35rem 0.75rem;
       border-block-end: 1px solid var(--edge, var(--calendar-line));
@@ -2020,6 +2076,10 @@
           <small id="anchor-sub">—</small>
         </p>
         <div class="sc-toolbar-end">
+          <!-- Pinned tools have left the menu: they sit beside the view
+               switch as a one-click icon + tooltip cluster, not on a strip
+               of their own. -->
+          <div class="sc-tools-pinned-bar" id="tools-pinned-bar" role="toolbar" aria-label="Pinned tools" hidden></div>
           <button type="button" class="btn sm neutral outline sc-viewbtn" id="view-toggle"
                   popovertarget="view-menu" aria-expanded="false" aria-haspopup="menu">
             <i class="ti ti-users" id="view-icon" aria-hidden="true"></i>
@@ -2372,6 +2432,12 @@
   import { autoUpdate, reposition, repositionAt } from "@lekoala/floating";
   import "@lekoala/combobox/define";
 
+  // TODO(runtime): chrome controls still rely on native `title` tooltips
+  // (pinned tools, view switch, locale chips, theme swatches). Later pass:
+  // wire Actual's own runtime (`actual-css/js/tooltip` via `data-tooltip`),
+  // or route these triggers through the same floating-backed `.tooltip` the
+  // event hover already uses (`showTip`).
+
   const shell = document.getElementById("shell");
   const sidebar = document.getElementById("sidebar");
   const calendar = document.querySelector("calendar-view");
@@ -2668,7 +2734,16 @@
   function visibleStore() {
     return store
       .filter((item) => activeKinds.has(item.extendedProps?.kind ?? "review"))
-      .map((item) => (isLocked(item) ? { ...item, editable: false } : item));
+      .map((item) => {
+        // Two read-only doors share one shape: facilities-owned kinds are
+        // handed `editable: false`, and so are events that are already over.
+        // The core then never arms a pointer drag/resize for them, and
+        // `moveEvent()`/`resizeEvent()` stay quiet on the keyboard path.
+        if (isLocked(item) || beforeToday(String(item.end))) {
+          return { ...item, editable: false, movable: false, resizable: false };
+        }
+        return item;
+      });
   }
 
   /**
@@ -2728,6 +2803,9 @@
     const day = start.slice(0, 10);
     const from = wallMinutesOf(start);
     const to = wallMinutesOf(end);
+    if (beforeToday(start)) {
+      return "That slot is already in the past.";
+    }
     if (POLICY.closedWeekdays.includes(isoWeekday(day))) {
       return "Saturdays are staffed for viewing only.";
     }
@@ -3118,6 +3196,57 @@
     record("workbench emptied");
   });
 
+  /** @type {{ view: string, dates: Array<{ toString(): string }>, resources: Array<{ id: string, title?: string }> }} */
+  let lastRender = { view: "", dates: [], resources: [] };
+  calendar.addEventListener("calendar:render", (event) => {
+    lastRender = event.detail;
+  });
+
+  /**
+   * Right-click a day header to queue that whole day: the header is core
+   * DOM without its own intent, so the application delegates to it — same
+   * pattern as event cards. In resource views the day header carries its
+   * resource column, so the action can be scoped to one room.
+   */
+  calendar.addEventListener("contextmenu", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".cv-event") !== null) return;
+    const header = target.closest(".cv-day-header");
+    if (!header) return;
+    const index = [...calendar.querySelectorAll(".cv-day-header")].indexOf(header);
+    if (index < 0) return;
+    const resourceView = String(lastRender.view).startsWith("resource");
+    const columns = resourceView
+      ? lastRender.resources.flatMap((resource) =>
+          lastRender.dates.map((date) => ({ date, resource })),
+        )
+      : lastRender.dates.map((date) => ({ date, resource: null }));
+    const column = columns[index];
+    if (!column) return;
+    event.preventDefault();
+    const date = column.date.toString();
+    const resource = column.resource ?? null;
+    openContextMenu(
+      [
+        resource
+          ? {
+              label: `Replanify this day · ${resource.title ?? resource.id}`,
+              icon: "arrows-shuffle",
+              run: () => parkDayFor(date, String(resource.id)),
+            }
+          : {
+              label: "Replanify all bookings of this day",
+              icon: "arrows-shuffle",
+              run: () => parkDay(date),
+            },
+      ],
+      event.clientX,
+      event.clientY,
+    );
+    record(`day contextmenu: ${date}${resource ? ` · ${resource.id}` : ""}`);
+  });
+
   /** @param {any} item */
   function parkEvent(item) {
     const queued = workbench.add(item);
@@ -3128,11 +3257,31 @@
 
   /** Add every current booking of one civil day to the workbench. @param {string} iso */
   function parkDay(iso) {
+    if (beforeToday(iso)) {
+      record(`replanify refused: ${iso.slice(0, 10)} is in the past`);
+      toast("That day is already over — its bookings stay put.", "warning");
+      return;
+    }
     const inDay = calendar.events.filter(
       (event) => String(event.start).slice(0, 10) === iso.slice(0, 10),
     );
     const added = workbench.addMany(inDay);
     record(`workbench +${added} from ${iso}`);
+  }
+
+  /** Add the bookings of one resource on one civil day. @param {string} iso @param {string} resourceId */
+  function parkDayFor(iso, resourceId) {
+    if (beforeToday(iso)) {
+      record(`replanify refused: ${iso.slice(0, 10)} is in the past`);
+      toast("That day is already over — its bookings stay put.", "warning");
+      return;
+    }
+    const inDay = calendar.events.filter(
+      (event) =>
+        event.resourceId === resourceId && String(event.start).slice(0, 10) === iso.slice(0, 10),
+    );
+    const added = workbench.addMany(inDay);
+    record(`workbench +${added} from ${iso} (${resourceId})`);
   }
 
   /**
@@ -3244,6 +3393,7 @@
       element.dataset.kind = kind;
       const locked = POLICY.lockedKinds.includes(kind);
       if (locked) element.dataset.locked = "true";
+      if (beforeToday(String(event.end))) element.dataset.archived = "true";
       if (fresh.has(event.id)) element.dataset.fresh = "true";
       // Parked state is applied by `syncWorkbenchMarkers()` after the
       // render; the card itself never duplicates the queue's knowledge of
@@ -3280,7 +3430,7 @@
       wrap.className = "sc-card";
       const when = document.createElement("span");
       when.className = "sc-when";
-      when.textContent = `${wallClock(start)}–${wallClock(end)}`;
+      when.textContent = event.allDay === true ? "All day" : `${wallClock(start)}–${wallClock(end)}`;
       const title = document.createElement("strong");
       if (locked) title.append(icon("lock"));
       const label = document.createElement("span");
@@ -3356,6 +3506,20 @@
 
   function todayIso() {
     return nowStamp().slice(0, 10);
+  }
+
+  /**
+   * Drag freeze boundary. Events that ended before today are archived and
+   * stay put: the limit sits at the end of yesterday, so the whole current
+   * day remains draggable - the demo grid keeps today alive at any hour
+   * instead of freezing the moment real time passes a booking.
+   *
+   * Both timed and all-day bounds compare as civil dates (`YYYY-MM-DD`), the
+   * same shape `todayIso()` produces, so the comparison is chronological.
+   * @param {string} iso an event start or end, `YYYY-MM-DD` or a zoned ISO string
+   */
+  function beforeToday(iso) {
+    return String(iso).slice(0, 10) < todayIso();
   }
 
   // --- Views --------------------------------------------------------------
@@ -3506,7 +3670,7 @@
         ? ["Next: ", strong(String(upcoming.item.title)), ` ${whenLabel(String(upcoming.item.start))} · ${roomTitle(String(upcoming.item.resourceId ?? ""))}`]
         : ["Nothing scheduled after ", strong(now.slice(11))]),
       chip([strong(`${activeRooms.size}/${ROOMS.length}`), " rooms shown"]),
-      chip(busiest && busiest.count > 0 ? ["Busiest: ", strong(busiest.room.title)] : ["No room loaded"]),
+      chip(busiest?.count > 0 ? ["Busiest: ", strong(busiest.room.title)] : ["No room loaded"]),
       lastChip(),
     );
   }
@@ -3818,8 +3982,8 @@
     }
     miniLegend.replaceChildren(
       legendItem(POLICY.viewer === "admin" ? "Free" : "Bookable for you"),
-      legendItem("nearly full", "is-warning"),
-      legendItem("fully booked · dimmed: closed", "is-danger"),
+      legendItem("Nearly full", "is-warning"),
+      legendItem("Fully booked", "is-danger"),
     );
   }
 
@@ -3938,6 +4102,7 @@
       ["ban", "Hatched ranges are non-bookable; a drop landing on one is refused."],
       ["beach", "Saturdays are view-only, Sundays are not rendered."],
       ["lock", "Maintenance is owned by facilities and cannot be dragged."],
+      ["history", "Events that are over stay put — no drag, resize or rebooking into the past."],
       ["clipboard-check", "Deadlines are confirmed by the desk, and rolled back if refused."],
     ];
     const list = document.getElementById("rules");
@@ -4241,7 +4406,7 @@
   /** Move an all-day booking forward by one civil day. @param {string} id */
   function shiftDay(id) {
     const item = calendar.getEventById(id);
-    if (!item || item.allDay !== true) return false;
+    if (item?.allDay !== true) return false;
     // Boundaries are canonical `Temporal.PlainDate`, so the day arithmetic
     // stays civil and the move walks through the same optimistic commit.
     const start = /** @type {any} */ (item.start).add({ days: 1 });
@@ -4703,6 +4868,32 @@
   function refreshPinnedSection() {
     // Re-derive visibility with the current filter: it keeps any row found.
     applyToolFilter();
+    renderPinnedBar();
+  }
+
+  /**
+   * Pinned tools as a one-click desktop strip: an icon per pinned row that
+   * re-fires the row's own menu action. The menu button works programmatic
+   * clicks while the popover is closed, so no action logic is duplicated.
+   */
+  function renderPinnedBar() {
+    const bar = document.getElementById("tools-pinned-bar");
+    bar.replaceChildren();
+    const pinned = [...toolsPinnedList.querySelectorAll(".menu-item")];
+    for (const item of pinned) {
+      const label = item.querySelector(".menu-item-text")?.textContent?.trim() ?? "Pinned tool";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn sm neutral ghost icon-only sc-pinned-tool";
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      const glyph = item.querySelector(".menu-item-icon .ti");
+      const tone = glyph ? [...glyph.classList].find((name) => name.startsWith("ti-")) : null;
+      if (tone) button.append(icon(tone.slice(3)));
+      button.addEventListener("click", () => item.click());
+      bar.append(button);
+    }
+    bar.hidden = pinned.length === 0;
   }
 
   function applyToolFilter() {

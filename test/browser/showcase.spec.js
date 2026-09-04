@@ -389,7 +389,7 @@ test("a seeded fully-booked day shows red, and no day mixes markers", async ({ p
   // A green day is never simultaneously red.
   await expect(page.locator('.sc-mini-day[data-marked="true"][data-full="true"]')).toHaveCount(0);
   await expect(page.locator("#mini-legend .is-danger")).toBeVisible();
-  await expect(page.locator("#mini-legend")).toContainText("fully booked");
+  await expect(page.locator("#mini-legend")).toContainText(/fully booked/i);
 });
 
 test("room and kind filters change what the core is given", async ({ page }) => {
@@ -479,7 +479,7 @@ test("a nearly-full day shows amber before it tips to red", async ({ page }) => 
     /nearly full$/,
   );
   await expect(page.locator("#mini-legend .is-warning")).toBeVisible();
-  await expect(page.locator("#mini-legend")).toContainText("nearly full");
+  await expect(page.locator("#mini-legend")).toContainText(/nearly full/i);
   // A day fully covered in every room still outranks it: red is the
   // exhausted verdict.
   await page.evaluate((day) => {
@@ -868,11 +868,30 @@ test("the tools shelf filters the catalog and pins rows without breaking them", 
     "false",
   );
 
-  // Unpinning restores the row to its section home.
+  // A pinned tool also escapes the menu: one icon above the calendar, with
+  // the tool's name as its tooltip, firing the same row action.
+  await expect(page.locator("#tools-pinned-bar")).toBeVisible();
+  await expect(page.locator("#tools-pinned-bar .sc-pinned-tool")).toHaveCount(1);
+  await expect(page.locator("#tools-pinned-bar .sc-pinned-tool")).toHaveAttribute(
+    "aria-label",
+    "Week numbers",
+  );
+  await page.locator("#tools-pinned-bar .sc-pinned-tool").click();
+  await flushRender(page);
+  await expect(page.locator('#tools-pinned-list [data-grid="weeks"]')).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+
+  // The bar click light-dismissed the menu; reopen it before unpinning.
+  await page.click("#tools-toggle");
+
+  // Unpinning restores the row to its section home and hides the strip.
   await page.locator('#tools-pinned-list .sc-pin[aria-label^="Pin Week numbers"]').click();
   await expect(page.locator("#tools-pinned")).toBeHidden();
+  await expect(page.locator("#tools-pinned-bar")).toBeHidden();
   await expect(page.locator("#grid-menu li")).toHaveCount(6);
-  await expect(page.locator('#grid-menu [data-grid="weeks"]')).toHaveAttribute("aria-checked", "false");
+  await expect(page.locator('#grid-menu [data-grid="weeks"]')).toHaveAttribute("aria-checked", "true");
 });
 
 test("the locale switch drives the core labels and the shell's own dates", async ({ page }) => {
@@ -1184,7 +1203,7 @@ test("pasting the armed item places it, and an occupied slot keeps it", async ({
   await page.keyboard.press("Escape");
 });
 
-test("dragging a booking out of the grid parks it in the workbench", async ({ page }) => {
+test("dragging a booking out of the grid parks it, glows the zone and opens no modal", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
@@ -1196,12 +1215,28 @@ test("dragging a booking out of the grid parks it in the workbench", async ({ pa
   const y = (box?.y ?? 0) + (box?.height ?? 0) / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
-  // Sweep far above the grid: the release is outside every column, so the
-  // core dispatches `calendar:eventdropout` and the shell parks the event.
-  await page.mouse.move(x + 30, y - 300, { steps: 8 });
+  // Sweep far above the grid. While the pointer is outside every column the
+  // core arms `data-dropout` on the dragged card and the shell lights the
+  // workbench panel as the drop zone.
+  await page.mouse.move(x + 30, y - 300, { steps: 6 });
+  await expect(page.locator(`.cv-event[data-event-id="${id}"]:not(.cv-drag-mirror)`)).toHaveAttribute(
+    "data-dropout",
+    "true",
+  );
+  const glow = await page.evaluate(
+    () =>
+      getComputedStyle(/** @type {HTMLElement} */ (document.getElementById("workbench-panel"))).outlineWidth,
+  );
+  expect(glow).not.toBe("0px");
   await page.mouse.up();
   await flushRender(page);
+  // The residual click is suppressed: no detail dialog, the event is parked.
+  await expect(page.locator("#detail-dialog")).toBeHidden();
   await expect(page.locator(`#workbench-list [data-event-id="${id}"]`)).toBeVisible();
+  await expect(page.locator(`.cv-event[data-event-id="${id}"]:not(.cv-drag-mirror)`)).not.toHaveAttribute(
+    "data-dropout",
+    "true",
+  );
 });
 
 test("a blocked-range slot queues the bookings it overlaps", async ({ page }) => {
@@ -1244,5 +1279,30 @@ test("a blocked-range slot queues the bookings it overlaps", async ({ page }) =>
     .getByRole("menuitem", { name: /affected by this block/i })
     .click();
   await flushRender(page);
+  await expect(page.locator("#workbench-list li")).toHaveCount(expected);
+});
+
+test("right-clicking a day header queues that day's bookings", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  // The default resource view's first day header belongs to room A / the
+  // anchor day, so the action is scoped to that resource's day.
+  await page.locator(".cv-day-header").first().click({ button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  await page
+    .locator("#context-menu")
+    .getByRole("menuitem", { name: /Replanify this day/i })
+    .click();
+  await flushRender(page);
+  await expect(page.locator("#workbench-panel")).toBeVisible();
+  const expected = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const resourceId = calendar.resources[0].id;
+    const day = calendar.date.toString();
+    return /** @type {Array<{ resourceId: unknown, start: unknown }>} */ (calendar.events).filter(
+      (event) => event.resourceId === resourceId && String(event.start).slice(0, 10) === day,
+    ).length;
+  });
   await expect(page.locator("#workbench-list li")).toHaveCount(expected);
 });

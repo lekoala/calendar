@@ -93,6 +93,13 @@ HTML5 DnD is a desktop gesture: touch and keyboard go through the same
 placement via the paste/armed-item path instead of simulating drag. The
 grid draws nothing new until a registered source actually starts dragging.
 
+Dragging an event out of the calendar is the inverse gesture: while the
+pointer is outside every column (grid edge, time axis strip) the dragged
+node carries `data-dropout`, which an application can style (a sibling
+parking panel glows via `:has()`), and releasing there dispatches
+`calendar:eventdropout`. The residual click on the source card is
+suppressed, so parking never falls through to `calendar:eventclick`.
+
 A viewport autoscroller advances the scroll while the pointer rests near the scroller edge. It is a separate helper, not part of layout math.
 
 Event nodes use `touch-action: pan-x pan-y` so a touch gesture starting on an event can still scroll the grid; a scroll takeover fires `pointercancel`, which the drag/resize paths already treat as an abort without commit. Resize handles keep `touch-action: none` for precision. Touch range selection remains a later milestone.
