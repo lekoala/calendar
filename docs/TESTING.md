@@ -85,8 +85,25 @@ Manual stress only: 12 resources × 3 days, 6 resources × 7 days. Columns keep 
 - day/week range;
 - timezone with DST transition;
 - `Europe/Brussels` wall-clock event across DST week;
-- all-day/civil-date boundaries if added;
+- civil `Temporal.PlainDate` boundaries: `[D, D+1)` single day, multi-day
+  exclusive spans, adjacency (end D === start D+1 never overlaps);
+- DST 23h/25h via two consecutive civil midnights (the civil day never
+  stops being "the 29th");
+- timed ↔ all-day overlaps; civil queries stay the civil day they name
+  whatever `timeZone` runs the calendar;
 - locale formatting is presentation-only, never temporal math.
+
+### All-day lane
+
+- `[D, D+1)` single-day bar, multi-day bar spans only its civil columns;
+- all-day background paints the full-height lane tint;
+- `allDaySlot: false` hides the lane from time grids, month/list keep it;
+- same-room stacking, different rooms sharing a row, unassigned bars
+  stacking against each other;
+- resource bars never cross into a neighbouring room's block;
+- bar click → `calendar:eventclick`; drag shifts the whole span by days;
+  Shift+arrows move by one day; context/long-press intents;
+- accessible names carry the civil span ("…, all day").
 
 ### Resources
 

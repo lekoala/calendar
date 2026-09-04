@@ -43,6 +43,21 @@ export type SliceOptions = {
  */
 export declare function toZonedDateTime(value: unknown, timeZone: string): Temporal.ZonedDateTime;
 /**
+ * Project a half-open range onto absolute instants. Timed boundaries pass
+ * through unchanged; all-day civil dates map to their local midnights in
+ * `timeZone`. Two consecutive civil midnights therefore span the real 23- or
+ * 25-hour DST day without the range ever leaving the civil calendar.
+ *
+ * @param {unknown} start
+ * @param {unknown} end
+ * @param {string} timeZone
+ * @returns {{ start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime }}
+ */
+export declare function instantRangeOf(start: unknown, end: unknown, timeZone: string): {
+    start: Temporal.ZonedDateTime;
+    end: Temporal.ZonedDateTime;
+};
+/**
  * Wall-clock minutes from midnight for a zoned value.
  *
  * @param {Temporal.ZonedDateTime} zoned
@@ -97,6 +112,10 @@ export declare function sliceTimedEventForDay(event: {
  * Wall-clock based, locale-independent: `Title, 2026-09-03, 09:00 to 10:30`.
  * The end date is repeated only when it differs from the start date.
  *
+ * All-day events name their civil span instead: `Title, 2026-09-03, all day`
+ * for a single day and `Title, 2026-09-03 to 2026-09-05, all day` for the
+ * inclusive `[start, end)` coverage.
+ *
  * @param {{ title?: unknown, start: unknown, end: unknown }} event
  * @param {string} timeZone
  * @param {string} [untitled] fallback title, defaults to the English label
@@ -111,6 +130,9 @@ export declare function describeEvent(event: {
  * Civil-day overlap for summary representations (month cells, list groups).
  * True when any part of [start, end) falls on `date` in `timeZone`. An event
  * ending exactly at midnight does not overlap the next day.
+ *
+ * All-day ranges compare at the civil level over the same half-open span, so
+ * a day ending `[D, D+1)` covers exactly one date.
  *
  * @param {{ start: unknown, end: unknown }} range
  * @param {Temporal.PlainDate | string} date

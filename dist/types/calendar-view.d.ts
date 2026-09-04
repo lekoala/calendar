@@ -40,6 +40,10 @@ export type CalendarConfig = {
      */
     slotLabelInterval?: number;
     editable?: boolean;
+    /**
+     * show the all-day lane in time grids when it has content (default true)
+     */
+    allDaySlot?: boolean;
     eventSource?: (query: EventSourceQuery) => Promise<unknown[]>;
     backgroundSource?: (query: EventSourceQuery) => Promise<unknown[]>;
     eventContent?: (info: object) => unknown;

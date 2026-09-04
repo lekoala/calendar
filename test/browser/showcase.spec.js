@@ -525,9 +525,34 @@ test("the mini month names its verdict in the accessible name", async ({ page })
 test("the live strip reports the visible range", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  const shown = await page.locator(".cv-event").count();
+  // The shell counts every booking in range, time-grid and all-day alike.
+  const shown = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const { start, end } = calendar.getVisibleRange();
+    const from = start.toString();
+    const to = end.toString();
+    return /** @type {Array<{ start: unknown }>} */ (calendar.events).filter((item) => {
+      const day = String(item.start).slice(0, 10);
+      return day >= from && day < to;
+    }).length;
+  });
   await expect(page.locator("#cockpit")).toContainText(`${shown} bookings in view`);
   await expect(page.locator("#cockpit")).toContainText("3/3 rooms shown");
+});
+
+test("the seeded all-day closure lives in the lane and opens the detail sheet", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await expect(page.locator(".cv-allday-event")).toHaveCount(1);
+  const bar = page.locator(".cv-allday-event[data-event-id='seed-all-day']");
+  await expect(bar).toContainText("Atrium closure");
+  await expect(bar).toHaveAttribute("aria-label", "Atrium closure, 2026-09-03 to 2026-09-05, all day");
+  // Timed bookings stay in the bodies; the lane bar never leaks down there.
+  await expect(page.locator(".cv-day-body .cv-allday-event")).toHaveCount(0);
+  await bar.click();
+  await expect(page.locator("#detail-dialog")).toBeVisible();
+  await expect(page.locator("#detail-title")).toHaveText("Atrium closure");
+  await expect(page.locator("#detail-meta")).toContainText("all day");
 });
 
 test("the shell reports the source lifecycle while a slow source runs", async ({ page }) => {
@@ -805,6 +830,50 @@ test("grid options travel through configure(), not through the toolbar", async (
   await page.click('#grid-menu [data-grid="halfhour"]');
   await flushRender(page);
   expect(await page.locator(".cv-axis-label").count()).toBeGreaterThan(hourly);
+});
+
+test("the tools shelf filters the catalog and pins rows without breaking them", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await closePanel(page);
+  await page.click("#tools-toggle");
+  await expect(page.locator("#tools-menu")).toBeVisible();
+
+  // Filtering hides non-matching rows and empties the sections they lived
+  // in - here only the two rows whose label carries "now" remain.
+  await page.fill("#tools-filter", "now");
+  await expect(page.locator('[data-tool="now"]')).toBeVisible();
+  await expect(page.locator("#source-menu li").first()).toBeHidden();
+  await expect(page.locator("#tools-menu > section:not([hidden])")).toHaveCount(2);
+
+  // Escape inside the search field clears the query first (a text field
+  // swallows Esc by spec, so the platform cannot close the shelf from it),
+  // and only the second press closes the menu. A reopened shelf starts bare.
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#tools-filter")).toHaveValue("");
+  await expect(page.locator("#tools-menu > section:not([hidden])")).toHaveCount(4);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#tools-menu")).toBeHidden();
+  await page.click("#tools-toggle");
+  await expect(page.locator("#tools-filter")).toHaveValue("");
+
+  // Pinning moves a row to the pinned lane; a pinned option keeps working.
+  await page.locator('#grid-menu li [aria-label^="Pin Week numbers"]').click();
+  await expect(page.locator("#tools-pinned")).toBeVisible();
+  await expect(page.locator("#tools-pinned-list .menu-item-text").first()).toHaveText("Week numbers");
+  await expect(page.locator("#grid-menu li")).toHaveCount(5);
+  await page.locator('#tools-pinned-list [data-grid="weeks"]').click();
+  await flushRender(page);
+  await expect(page.locator('#tools-pinned-list [data-grid="weeks"]')).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+
+  // Unpinning restores the row to its section home.
+  await page.locator('#tools-pinned-list .sc-pin[aria-label^="Pin Week numbers"]').click();
+  await expect(page.locator("#tools-pinned")).toBeHidden();
+  await expect(page.locator("#grid-menu li")).toHaveCount(6);
+  await expect(page.locator('#grid-menu [data-grid="weeks"]')).toHaveAttribute("aria-checked", "false");
 });
 
 test("the locale switch drives the core labels and the shell's own dates", async ({ page }) => {

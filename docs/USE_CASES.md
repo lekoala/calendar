@@ -52,6 +52,13 @@ Examples:
 
 This is still `resourceTimeGrid(duration=1 day)`, but UX defaults may differ from a 3-day comparison.
 
+Team-day overlaps include day-spanning closures and absences. Those are
+all-day events (`allDay: true`, civil `Temporal.PlainDate`, end exclusive):
+they render in the shared all-day lane, occupy the room's whole day in
+availability logic, and move as whole days. A "the room is closed this
+week" block is the same shape as a background, so `calendar.backgrounds`
+accepts the identical civil contract.
+
 ## 4. Large organization
 
 The organization may have dozens/hundreds of resources, but users normally display a filtered subset.

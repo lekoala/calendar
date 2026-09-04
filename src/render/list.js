@@ -1,7 +1,7 @@
 import { Temporal } from "temporal-polyfill";
 import { formatClock, formatDayHeader } from "../core/dates.js";
 import { DEFAULT_LABELS } from "../core/labels.js";
-import { describeEvent, eventOverlapsDate, toZonedDateTime, wallMinutes } from "../core/slicing.js";
+import { describeEvent, eventOverlapsDate, instantRangeOf, wallMinutes } from "../core/slicing.js";
 
 /**
  * Minimal chronological list over the visible dates. Each day is a group
@@ -31,10 +31,12 @@ export function renderList({ dates, events, options, eventContent, dayHeaderCont
   root.className = "cv-list";
 
   /**
+   * Timeline key so timed and all-day rows interleave by their actual start.
+   *
    * @param {import("../core/model.js").NormalizedEvent} event
    * @returns {number}
    */
-  const startEpoch = (event) => toZonedDateTime(event.start, timeZone).epochMilliseconds;
+  const startEpoch = (event) => instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds;
 
   for (const date of dates) {
     const group = document.createElement("section");
@@ -71,8 +73,10 @@ export function renderList({ dates, events, options, eventContent, dayHeaderCont
         item.append(content);
       } else if (content != null) {
         item.textContent = String(content);
+      } else if (event.start instanceof Temporal.PlainDate) {
+        item.textContent = event.title ?? labels.untitledEvent;
       } else {
-        item.textContent = `${formatClock(wallMinutes(toZonedDateTime(event.start, timeZone)))} ${event.title ?? labels.untitledEvent}`;
+        item.textContent = `${formatClock(wallMinutes(instantRangeOf(event.start, event.end, timeZone).start))} ${event.title ?? labels.untitledEvent}`;
       }
       // Native <button> activation covers pointer click and Enter/Space equally.
       item.addEventListener("click", (nativeEvent) => {

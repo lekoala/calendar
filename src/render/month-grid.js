@@ -1,7 +1,7 @@
 import { Temporal } from "temporal-polyfill";
 import { zonedDateTimeAt } from "../core/dates.js";
 import { DEFAULT_LABELS, formatLabel } from "../core/labels.js";
-import { describeEvent, eventOverlapsDate, toZonedDateTime } from "../core/slicing.js";
+import { describeEvent, eventOverlapsDate, instantRangeOf } from "../core/slicing.js";
 
 /**
  * Summary month grid. Weeks are full weeks covering the anchor month, from
@@ -50,10 +50,12 @@ export function renderMonthGrid({ weeks, month, events, options, eventContent, m
   root.append(head);
 
   /**
+   * Timeline key so timed and all-day chips interleave by their real start.
+   *
    * @param {import("../core/model.js").NormalizedEvent} event
    * @returns {number}
    */
-  const startEpoch = (event) => toZonedDateTime(event.start, timeZone).epochMilliseconds;
+  const startEpoch = (event) => instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds;
 
   for (const week of weeks) {
     const row = document.createElement("div");

@@ -1,4 +1,4 @@
-import { toZonedDateTime } from "./slicing.js";
+import { instantRangeOf } from "./slicing.js";
 
 /**
  * Public read surface over canonical event/background state.
@@ -8,9 +8,14 @@ import { toZonedDateTime } from "./slicing.js";
  * the DOM. Comparison is by absolute instant over half-open `[start, end)`
  * ranges, so adjacent ranges (`end === start`) never overlap.
  *
+ * Query and stored boundaries may be timed (`ZonedDateTime` / ISO strings
+ * with a zone) or civil (`PlainDate` / `YYYY-MM-DD` strings): civil values
+ * project to their local midnights in `timeZone`, which is how an all-day
+ * event and a timed booking on the same day meet.
+ *
  * @typedef {object} OverlapRange
- * @property {unknown} start range start (`Temporal.ZonedDateTime` or ISO string)
- * @property {unknown} end range end (`Temporal.ZonedDateTime` or ISO string)
+ * @property {unknown} start range start (`ZonedDateTime`/ISO string, or `PlainDate` for a civil query)
+ * @property {unknown} end range end (`ZonedDateTime`/ISO string, or `PlainDate` for a civil query)
  *
  * @typedef {object} OverlapEntry
  * @property {"event" | "background"} kind
@@ -56,8 +61,9 @@ export function queryOverlaps({
   if (!range || range.start == null || range.end == null) {
     throw new TypeError("getEventOverlaps requires { start, end }");
   }
-  const startMs = toZonedDateTime(range.start, timeZone).epochMilliseconds;
-  const endMs = toZonedDateTime(range.end, timeZone).epochMilliseconds;
+  const { start: startInstant, end: endInstant } = instantRangeOf(range.start, range.end, timeZone);
+  const startMs = startInstant.epochMilliseconds;
+  const endMs = endInstant.epochMilliseconds;
   if (!(endMs > startMs)) return [];
 
   const scoped = Array.from(resourceIds ?? []);
@@ -66,9 +72,8 @@ export function queryOverlaps({
 
   for (const event of events) {
     if (scoped.length > 0 && !scoped.includes(/** @type {string} */ (event.resourceId))) continue;
-    const eventStart = toZonedDateTime(event.start, timeZone).epochMilliseconds;
-    const eventEnd = toZonedDateTime(event.end, timeZone).epochMilliseconds;
-    if (!rangesOverlap(startMs, endMs, eventStart, eventEnd)) continue;
+    const { start: eventStart, end: eventEnd } = instantRangeOf(event.start, event.end, timeZone);
+    if (!rangesOverlap(startMs, endMs, eventStart.epochMilliseconds, eventEnd.epochMilliseconds)) continue;
     const entry = { kind: /** @type {"event"} */ ("event"), event };
     if (filter && !filter(entry)) continue;
     hits.push(event);
@@ -79,9 +84,16 @@ export function queryOverlaps({
       if (scoped.length > 0 && background.resourceId != null && !scoped.includes(background.resourceId)) {
         continue;
       }
-      const backgroundStart = toZonedDateTime(background.start, timeZone).epochMilliseconds;
-      const backgroundEnd = toZonedDateTime(background.end, timeZone).epochMilliseconds;
-      if (!rangesOverlap(startMs, endMs, backgroundStart, backgroundEnd)) continue;
+      const { start: backgroundStart, end: backgroundEnd } = instantRangeOf(
+        background.start,
+        background.end,
+        timeZone,
+      );
+      if (
+        !rangesOverlap(startMs, endMs, backgroundStart.epochMilliseconds, backgroundEnd.epochMilliseconds)
+      ) {
+        continue;
+      }
       const entry = { kind: /** @type {"background"} */ ("background"), background };
       if (filter && !filter(entry)) continue;
       hits.push(background);

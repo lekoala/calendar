@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { layoutEvents } from "../../src/core/layout.js";
+import { layoutDaySegments, layoutEvents } from "../../src/core/layout.js";
 
 /**
  * @param {Array<[number, number]>} ranges
@@ -112,4 +112,76 @@ test("same start and end ties split deterministically", () => {
   ]);
   assert.deepEqual([first.column, second.column], [0, 1]);
   assert.equal(first.columns, 2);
+});
+
+/**
+ * @param {Array<{ startDay: number, endDay: number, resourceId?: string | null }>} segs
+ */
+function lane(segs) {
+  return layoutDaySegments(
+    segs.map((segment) => ({
+      event: { id: `${segment.startDay}-${segment.endDay}-${segment.resourceId ?? "solo"}` },
+      resourceId: segment.resourceId ?? null,
+      startDay: segment.startDay,
+      endDay: segment.endDay,
+    })),
+  );
+}
+
+test("single all-day segment lands on row zero", () => {
+  const [segment] = lane([{ startDay: 0, endDay: 1 }]);
+  assert.equal(segment.row, 0);
+});
+
+test("same-room overlapping days stack, adjacent days share a row", () => {
+  const [span, inside, next] = lane([
+    { startDay: 0, endDay: 3, resourceId: "a" },
+    { startDay: 1, endDay: 2, resourceId: "a" },
+    { startDay: 3, endDay: 4, resourceId: "a" },
+  ]);
+  assert.deepEqual([span.row, inside.row], [0, 1]);
+  // `[0,3)` ends where `[3,4)` starts: half-open, no row conflict.
+  assert.equal(next.row, 0);
+});
+
+test("different resources never fight for a row", () => {
+  const [a, b] = lane([
+    { startDay: 0, endDay: 5, resourceId: "a" },
+    { startDay: 0, endDay: 5, resourceId: "b" },
+  ]);
+  assert.equal(a.row, 0);
+  assert.equal(b.row, 0);
+});
+
+test("unassigned bars stack against the other unassigned bars only", () => {
+  const [one, two, other] = lane([
+    { startDay: 0, endDay: 2, resourceId: null },
+    { startDay: 1, endDay: 3, resourceId: null },
+    { startDay: 0, endDay: 2, resourceId: "b" },
+  ]);
+  assert.deepEqual([one.row, two.row], [0, 1]);
+  // A different room ignores the unassigned rows entirely.
+  assert.equal(other.row, 0);
+});
+
+test("all-day row packing stays deterministic after reorder", () => {
+  const forward = lane([
+    { startDay: 0, endDay: 2, resourceId: "a" },
+    { startDay: 1, endDay: 3, resourceId: "a" },
+    { startDay: 0, endDay: 4, resourceId: "b" },
+  ]);
+  const reversed = lane([
+    { startDay: 0, endDay: 4, resourceId: "b" },
+    { startDay: 1, endDay: 3, resourceId: "a" },
+    { startDay: 0, endDay: 2, resourceId: "a" },
+  ]);
+  /**
+   * @param {Array<{ event: { id: string }, row: number }>} items
+   * @returns {Array<[string, number]>}
+   */
+  const rowsById = (items) =>
+    [...new Map(items.map((item) => [String(item.event.id), item.row]))].sort((a, b) =>
+      a[0] < b[0] ? -1 : 1,
+    );
+  assert.deepEqual(rowsById(forward), rowsById(reversed));
 });

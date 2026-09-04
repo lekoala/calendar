@@ -3926,7 +3926,8 @@
     noResources: "No resources selected.",
     more: "+{hidden} more",
     calendarRegion: "Calendar",
-    untitledEvent: "Event"
+    untitledEvent: "Event",
+    allDaySlotLabel: "All day"
   };
   var LABEL_PLACEHOLDER_PATTERN = /\{(\w+)\}/g;
   function formatLabel(template, values) {
@@ -3937,15 +3938,36 @@
   }
 
   // src/core/model.js
+  function normalizeRangeBound(value, allDay) {
+    if (allDay) {
+      if (value instanceof Temporal2.PlainDate)
+        return value;
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return Temporal2.PlainDate.from(value);
+      }
+      throw new TypeError("All-day boundaries must be Temporal.PlainDate or YYYY-MM-DD strings");
+    }
+    if (value instanceof Temporal2.ZonedDateTime)
+      return value;
+    if (typeof value === "string") {
+      try {
+        return Temporal2.ZonedDateTime.from(value);
+      } catch {}
+    }
+    throw new TypeError("Timed boundaries must be Temporal.ZonedDateTime or ISO strings with a zone");
+  }
   function normalizeEvent(event) {
-    if (!event || event.id == null || !event.start || !event.end) {
+    if (!event || event.id == null || event.start == null || event.end == null) {
       throw new TypeError("Event requires id, start and end");
     }
-    const { classNames, extendedProps, ...rest } = event;
+    const { classNames, extendedProps, start, end, allDay = false, ...rest } = event;
     return {
       editable: true,
       ...rest,
       id: String(event.id),
+      allDay,
+      start: normalizeRangeBound(start, allDay),
+      end: normalizeRangeBound(end, allDay),
       classNames: Array.from(classNames ?? []),
       extendedProps: { ...extendedProps ?? {} }
     };
@@ -3972,13 +3994,16 @@
     };
   }
   function normalizeBackground(background) {
-    if (!background || background.id == null || !background.start || !background.end) {
+    if (!background || background.id == null || background.start == null || background.end == null) {
       throw new TypeError("Background requires id, start and end");
     }
-    const { classNames, extendedProps, ...rest } = background;
+    const { classNames, extendedProps, start, end, allDay = false, ...rest } = background;
     return {
       ...rest,
       id: String(background.id),
+      allDay,
+      start: normalizeRangeBound(start, allDay),
+      end: normalizeRangeBound(end, allDay),
       classNames: Array.from(classNames ?? []),
       extendedProps: { ...extendedProps ?? {} }
     };
@@ -3993,6 +4018,18 @@
       return Temporal2.ZonedDateTime.from(value).withTimeZone(timeZone);
     }
     throw new TypeError("Event boundaries must be Temporal.ZonedDateTime or ISO strings");
+  }
+  function instantRangeOf(start, end, timeZone) {
+    const project = (value) => {
+      if (value instanceof Temporal2.PlainDate) {
+        return value.toZonedDateTime({ timeZone, plainTime: "00:00" });
+      }
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return Temporal2.PlainDate.from(value).toZonedDateTime({ timeZone, plainTime: "00:00" });
+      }
+      return toZonedDateTime(value, timeZone);
+    };
+    return { start: project(start), end: project(end) };
   }
   function wallMinutes(zoned) {
     const time = zoned.toPlainTime();
@@ -4028,9 +4065,16 @@
     });
   }
   function describeEvent(event, timeZone, untitled = "Event") {
+    const title = event.title ?? untitled;
+    if (event.start instanceof Temporal2.PlainDate) {
+      const endPlain = event.end;
+      const span = endPlain.since(event.start).days;
+      if (span <= 1)
+        return `${title}, ${event.start.toString()}, all day`;
+      return `${title}, ${event.start.toString()} to ${endPlain.subtract({ days: 1 }).toString()}, all day`;
+    }
     const start = toZonedDateTime(event.start, timeZone);
     const end = toZonedDateTime(event.end, timeZone);
-    const title = event.title ?? untitled;
     const startDay = start.toPlainDate().toString();
     const endDay = end.toPlainDate().toString();
     const startText = `${startDay}, ${formatClock(wallMinutes(start))}`;
@@ -4039,6 +4083,15 @@
   }
   function eventOverlapsDate(range, date, timeZone) {
     const day = toPlainDate(date);
+    if (range.start instanceof Temporal2.PlainDate) {
+      const startDay = range.start;
+      const endDay = range.end;
+      if (Temporal2.PlainDate.compare(day, startDay) < 0)
+        return false;
+      if (Temporal2.PlainDate.compare(day, endDay) >= 0)
+        return false;
+      return true;
+    }
     const startZoned = toZonedDateTime(range.start, timeZone);
     const endZoned = toZonedDateTime(range.end, timeZone);
     if (Temporal2.ZonedDateTime.compare(endZoned, startZoned) <= 0)
@@ -4070,8 +4123,9 @@
     if (!range || range.start == null || range.end == null) {
       throw new TypeError("getEventOverlaps requires { start, end }");
     }
-    const startMs = toZonedDateTime(range.start, timeZone).epochMilliseconds;
-    const endMs = toZonedDateTime(range.end, timeZone).epochMilliseconds;
+    const { start: startInstant, end: endInstant } = instantRangeOf(range.start, range.end, timeZone);
+    const startMs = startInstant.epochMilliseconds;
+    const endMs = endInstant.epochMilliseconds;
     if (!(endMs > startMs))
       return [];
     const scoped = Array.from(resourceIds ?? []);
@@ -4079,9 +4133,8 @@
     for (const event of events) {
       if (scoped.length > 0 && !scoped.includes(event.resourceId))
         continue;
-      const eventStart = toZonedDateTime(event.start, timeZone).epochMilliseconds;
-      const eventEnd = toZonedDateTime(event.end, timeZone).epochMilliseconds;
-      if (!rangesOverlap(startMs, endMs, eventStart, eventEnd))
+      const { start: eventStart, end: eventEnd } = instantRangeOf(event.start, event.end, timeZone);
+      if (!rangesOverlap(startMs, endMs, eventStart.epochMilliseconds, eventEnd.epochMilliseconds))
         continue;
       const entry = { kind: "event", event };
       if (filter && !filter(entry))
@@ -4093,10 +4146,10 @@
         if (scoped.length > 0 && background.resourceId != null && !scoped.includes(background.resourceId)) {
           continue;
         }
-        const backgroundStart = toZonedDateTime(background.start, timeZone).epochMilliseconds;
-        const backgroundEnd = toZonedDateTime(background.end, timeZone).epochMilliseconds;
-        if (!rangesOverlap(startMs, endMs, backgroundStart, backgroundEnd))
+        const { start: backgroundStart, end: backgroundEnd } = instantRangeOf(background.start, background.end, timeZone);
+        if (!rangesOverlap(startMs, endMs, backgroundStart.epochMilliseconds, backgroundEnd.epochMilliseconds)) {
           continue;
+        }
         const entry = { kind: "background", background };
         if (filter && !filter(entry))
           continue;
@@ -4114,7 +4167,7 @@
     const fragment = document.createDocumentFragment();
     const root = document.createElement("div");
     root.className = "cv-list";
-    const startEpoch = (event) => toZonedDateTime(event.start, timeZone).epochMilliseconds;
+    const startEpoch = (event) => instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds;
     for (const date of dates) {
       const group = document.createElement("section");
       group.className = "cv-list-day";
@@ -4147,8 +4200,10 @@
           item.append(content);
         } else if (content != null) {
           item.textContent = String(content);
+        } else if (event.start instanceof Temporal2.PlainDate) {
+          item.textContent = event.title ?? labels.untitledEvent;
         } else {
-          item.textContent = `${formatClock(wallMinutes(toZonedDateTime(event.start, timeZone)))} ${event.title ?? labels.untitledEvent}`;
+          item.textContent = `${formatClock(wallMinutes(instantRangeOf(event.start, event.end, timeZone).start))} ${event.title ?? labels.untitledEvent}`;
         }
         item.addEventListener("click", (nativeEvent) => {
           item.dispatchEvent(new CustomEvent("calendar:eventclick", {
@@ -4186,7 +4241,7 @@
       head.append(cell);
     }
     root.append(head);
-    const startEpoch = (event) => toZonedDateTime(event.start, timeZone).epochMilliseconds;
+    const startEpoch = (event) => instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds;
     for (const week of weeks) {
       const row = document.createElement("div");
       row.className = "cv-month-week";
@@ -4370,6 +4425,24 @@
         width: 1 / columns
       };
     });
+  }
+  function layoutDaySegments(segments) {
+    const sorted = segments.map((segment, index) => ({ ...segment, index })).sort((a, b) => a.startDay - b.startDay || b.endDay - a.endDay || a.index - b.index);
+    const rows = [];
+    const assigned = new Map;
+    for (const segment of sorted) {
+      let row = rows.findIndex((entries) => entries.every((entry) => entry.resourceId !== segment.resourceId || entry.end <= segment.startDay));
+      if (row < 0) {
+        row = rows.length;
+        rows.push([]);
+      }
+      rows[row].push({ resourceId: segment.resourceId, end: segment.endDay });
+      assigned.set(segment.index, row);
+    }
+    return segments.map((segment, index) => ({
+      ...segment,
+      row: assigned.get(index)
+    }));
   }
 
   // src/core/resources.js
@@ -4599,6 +4672,248 @@
       fragment.append(root);
       return fragment;
     }
+    const overVisibleDays = (range) => dates.some((date) => eventOverlapsDate(range, date, timeZone));
+    const daySpan = (range) => {
+      let start = -1;
+      let end = -1;
+      for (let index = 0;index < columns.length; index += 1) {
+        const column = columns[index];
+        const applies = "resourceId" in range ? eventBelongsToColumn(range, column) : backgroundAppliesToColumn(range, column);
+        if (!applies || !eventOverlapsDate(range, column.date, timeZone))
+          continue;
+        if (start < 0)
+          start = index;
+        end = index;
+      }
+      if (start < 0)
+        return null;
+      return { startDay: start, endDay: end + 1 };
+    };
+    const allDaySegments = events.filter((event) => event.allDay === true && overVisibleDays(event)).map((event) => {
+      const span = daySpan(event);
+      return span === null ? null : { event, resourceId: event.resourceId ?? null, startDay: span.startDay, endDay: span.endDay };
+    }).filter((segment) => segment !== null);
+    const allDayBackgroundSegments = backgrounds.filter((background) => background.allDay === true && overVisibleDays(background)).map((background) => {
+      const span = daySpan(background);
+      return span === null ? null : { background, startDay: span.startDay, endDay: span.endDay };
+    }).filter((segment) => segment !== null);
+    const showAllDay = options.allDaySlot !== false && (allDaySegments.length > 0 || allDayBackgroundSegments.length > 0);
+    const allDayBars = [];
+    const columnAtX = (clientX) => {
+      for (let index = 0;index < bodies.length; index += 1) {
+        const rect = bodies[index].body.getBoundingClientRect();
+        if (clientX >= rect.left && clientX < rect.right)
+          return columns[index];
+      }
+      return columns[0];
+    };
+    const columnIndexAtX = (clientX) => {
+      for (let index = 0;index < bodies.length; index += 1) {
+        const rect = bodies[index].body.getBoundingClientRect();
+        if (clientX >= rect.left && clientX < rect.right)
+          return index;
+      }
+      return -1;
+    };
+    const commitAllDayMove = (evt, days, resourceId, nativeEvent) => {
+      if (!(evt.start instanceof Temporal2.PlainDate))
+        return null;
+      const start = evt.start;
+      const end = evt.end;
+      return host.commitEventMove({
+        event: evt,
+        previous: { start: evt.start, end: evt.end, resourceId: evt.resourceId ?? null },
+        current: { start: start.add({ days }), end: end.add({ days }), resourceId },
+        nativeEvent
+      });
+    };
+    function beginAllDayDrag(bar, event, startDay, endDay, nativeEvent) {
+      if (nativeEvent.button !== 0)
+        return;
+      tryCapture(bar, nativeEvent.pointerId);
+      const downX = nativeEvent.clientX;
+      const downY = nativeEvent.clientY;
+      let moved = false;
+      let mirror = null;
+      let pending = null;
+      const onMove = (moveEvent) => {
+        if (longPressConsumed)
+          return;
+        if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
+          moved = true;
+        if (!moved)
+          return;
+        if (!mirror) {
+          mirror = bar.cloneNode(true);
+          mirror.classList.add("cv-drag-mirror");
+          mirror.tabIndex = -1;
+          mirror.setAttribute("aria-hidden", "true");
+          bar.classList.add("cv-drag-source");
+          lane.append(mirror);
+        }
+        const index = columnIndexAtX(moveEvent.clientX);
+        if (index < 0)
+          return;
+        const droppable = columns[index].resource?.droppable !== false;
+        pending = { index, droppable };
+        mirror.style.gridColumn = `${index + 2} / ${Math.min(columns.length, index + (endDay - startDay)) + 2}`;
+        mirror.style.gridRow = String(Number.parseFloat(bar.style.gridRow) || 1);
+        mirror.classList.toggle("cv-invalid", !droppable);
+      };
+      const cleanup = () => {
+        bar.removeEventListener("pointermove", onMove);
+        bar.removeEventListener("pointerup", onUp);
+        bar.removeEventListener("pointercancel", onCancel);
+        mirror?.remove();
+        bar.classList.remove("cv-drag-source");
+      };
+      const onUp = (upEvent) => {
+        const wasMoved = moved;
+        const range = pending;
+        cleanup();
+        if (longPressConsumed)
+          return;
+        if (!wasMoved || !range?.droppable)
+          return;
+        suppressClick = true;
+        const dayDelta = range.index - startDay;
+        const resourceId = columns[range.index].resource?.id ?? null;
+        const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
+        if (next) {
+          host.announce(describeEvent(next, timeZone, labels.untitledEvent));
+          host.refocusEvent(event.id);
+        }
+      };
+      const onCancel = (_cancelEvent) => {
+        cleanup();
+        longPressConsumed = false;
+        suppressClick = false;
+      };
+      bar.addEventListener("pointermove", onMove);
+      bar.addEventListener("pointerup", onUp);
+      bar.addEventListener("pointercancel", onCancel);
+    }
+    const lane = document.createElement("div");
+    lane.className = "cv-allday";
+    lane.style.gridTemplateColumns = gridTemplate;
+    lane.style.gridColumn = "1 / -1";
+    lane.style.gridRow = "2";
+    if (showAllDay) {
+      const corner = document.createElement("span");
+      corner.className = "cv-allday-corner";
+      corner.textContent = labels.allDaySlotLabel;
+      corner.setAttribute("aria-hidden", "true");
+      lane.append(corner);
+      for (const tint of allDayBackgroundSegments) {
+        const node = document.createElement("div");
+        node.className = ["cv-allday-background", ...tint.background.classNames ?? []].join(" ");
+        node.style.gridColumn = `${tint.startDay + 2} / ${tint.endDay + 2}`;
+        node.style.gridRow = "1 / -1";
+        lane.append(node);
+      }
+      for (const segment of layoutDaySegments(allDaySegments)) {
+        const { event, startDay, endDay } = segment;
+        const bar = document.createElement("button");
+        bar.type = "button";
+        bar.className = ["cv-allday-event", ...event.classNames ?? []].join(" ");
+        bar.dataset.eventId = event.id;
+        bar.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
+        bar.style.gridColumn = `${startDay + 2} / ${endDay + 2}`;
+        bar.style.gridRow = String(segment.row + 1);
+        const column = columns[startDay];
+        const content = eventContent?.({
+          event,
+          date: column.date,
+          resource: column.resource,
+          element: bar
+        });
+        if (content instanceof Node)
+          bar.append(content);
+        else if (content != null)
+          bar.textContent = String(content);
+        else
+          bar.textContent = event.title ?? labels.untitledEvent;
+        lane.append(bar);
+        allDayBars.push({ bar, event, startDay, endDay });
+        bar.addEventListener("click", (nativeEvent) => {
+          if (suppressClick) {
+            suppressClick = false;
+            longPressConsumed = false;
+            nativeEvent.stopPropagation();
+            nativeEvent.preventDefault();
+            return;
+          }
+          const target = columnAtX(nativeEvent.clientX);
+          bar.dispatchEvent(new CustomEvent("calendar:eventclick", {
+            bubbles: true,
+            composed: true,
+            cancelable: true,
+            detail: { event, date: target.date, resource: target.resource, nativeEvent }
+          }));
+        }, true);
+        bar.addEventListener("contextmenu", (nativeEvent) => {
+          const target = columnAtX(nativeEvent.clientX);
+          dispatchContextMenu(bar, {
+            event,
+            date: target.date,
+            resourceId: target.resource?.id ?? null,
+            clientX: nativeEvent.clientX,
+            clientY: nativeEvent.clientY
+          }, nativeEvent);
+        });
+        watchLongPress(bar, (press) => {
+          const target = columnAtX(press.clientX);
+          dispatchContextMenu(bar, {
+            event,
+            date: target.date,
+            resourceId: target.resource?.id ?? null,
+            clientX: press.clientX,
+            clientY: press.clientY
+          }, press);
+        });
+        const movable = isMovable(event, host.editable);
+        bar.addEventListener("keydown", (keyboardEvent) => {
+          if (keyboardEvent.ctrlKey || keyboardEvent.metaKey || !keyboardEvent.shiftKey)
+            return;
+          const key = keyboardEvent.key;
+          if (key !== "ArrowLeft" && key !== "ArrowRight")
+            return;
+          if (!movable)
+            return;
+          keyboardEvent.preventDefault();
+          const next = commitAllDayMove(event, key === "ArrowRight" ? 1 : -1, event.resourceId ?? null, keyboardEvent);
+          if (next)
+            host.announce(describeEvent(next, timeZone, labels.untitledEvent));
+        });
+        if (movable) {
+          bar.addEventListener("pointerdown", (nativeEvent) => beginAllDayDrag(bar, event, startDay, endDay, nativeEvent));
+        }
+      }
+    }
+    let headerColumn = 2;
+    for (const column of columns) {
+      const header = document.createElement("header");
+      header.className = "cv-day-header";
+      header.style.gridColumn = String(headerColumn);
+      header.style.gridRow = "1";
+      headerColumn += 1;
+      const content = dayHeaderContent?.({
+        date: column.date,
+        resource: column.resource,
+        element: header
+      });
+      if (content instanceof Node)
+        header.append(content);
+      else if (content != null)
+        header.textContent = String(content);
+      else
+        header.textContent = formatDayHeader(column.date, locale);
+      root.append(header);
+    }
+    if (showAllDay)
+      root.append(lane);
+    axis.style.gridColumn = "1";
+    axis.style.gridRow = showAllDay ? "3" : "2";
     const bodies = [];
     const columnSlices = [];
     function columnEdges(index, excludeId = null) {
@@ -4637,22 +4952,10 @@
       const day = document.createElement("section");
       day.className = "cv-day";
       day.dataset.date = column.date.toString();
+      day.style.gridColumn = String(columnIndex + 2);
+      day.style.gridRow = showAllDay ? "3" : "2";
       if (column.resource)
         day.dataset.resourceId = column.resource.id;
-      const header = document.createElement("header");
-      header.className = "cv-day-header";
-      const headerContent = dayHeaderContent?.({
-        date: column.date,
-        resource: column.resource,
-        element: header
-      });
-      if (headerContent instanceof Node)
-        header.append(headerContent);
-      else if (headerContent != null)
-        header.textContent = String(headerContent);
-      else
-        header.textContent = formatDayHeader(column.date, locale);
-      day.append(header);
       const body = document.createElement("div");
       body.className = "cv-day-body";
       body.style.height = `${totalHeight}px`;
@@ -4665,6 +4968,8 @@
       const sliceOptions = { timeZone, slotMin: startMinutes, slotMax: endMinutes };
       const backgroundSlices = [];
       for (const background of backgrounds) {
+        if (background.allDay === true)
+          continue;
         if (!backgroundAppliesToColumn(background, column))
           continue;
         const slice = sliceTimedEventForDay(background, column.date, sliceOptions);
@@ -4686,6 +4991,8 @@
       }
       const dayEvents = [];
       for (const event of events) {
+        if (event.allDay === true)
+          continue;
         if (!eventBelongsToColumn(event, column))
           continue;
         const slice = sliceTimedEventForDay(event, column.date, sliceOptions);
@@ -5356,11 +5663,14 @@
       if (index < 0)
         return null;
       const before = this.#events[index];
+      const allDay = before.allDay === true;
+      const start = normalizeRangeBound(current.start, allDay);
+      const end = normalizeRangeBound(current.end, allDay);
       const apply = (state) => {
         this.#events = this.#events.map((item, i) => i === index ? { ...item, ...state } : item);
         this.#queueRender();
       };
-      apply({ start: current.start, end: current.end, resourceId: current.resourceId });
+      apply({ start, end, resourceId: current.resourceId });
       let reverted = false;
       const revert = () => {
         if (reverted)
@@ -5402,6 +5712,8 @@
     resizeEvent(id, current) {
       const event = this.getEventById(id);
       if (!event || !isResizable(event, this.#config.editable))
+        return null;
+      if (event.allDay)
         return null;
       return this.#commitEventResize({
         event,
@@ -5540,7 +5852,8 @@
         pxPerMinute: this.#config.pxPerMinute ?? DEFAULTS.pxPerMinute,
         snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
         defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
-        monthEventLimit: this.#config.monthEventLimit ?? 3
+        monthEventLimit: this.#config.monthEventLimit ?? 3,
+        allDaySlot: this.#config.allDaySlot ?? true
       };
     }
     #render() {

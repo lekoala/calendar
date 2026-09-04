@@ -34,4 +34,30 @@ export declare function layoutEvents<T>(items: Array<{
     left: number;
     width: number;
 }>;
+/**
+ * Row packing for the all-day lane over a fixed set of visible civil dates.
+ * Segments carry day indices into those dates (`endDay` exclusive) and a
+ * `resourceId`: collisions only happen inside one resource block, so bars of
+ * different rooms never fight for a row, while bars of the same room stack
+ * exactly like the day column does with `layoutEvents`.
+ *
+ * Only civil-day geometry is involved, never instants: a 23- or 25-hour DST
+ * day occupies one index either way.
+ *
+ * @template T
+ * @param {Array<{ event: T, resourceId: string | null, startDay: number, endDay: number }>} segments
+ * @returns {Array<{ event: T, resourceId: string | null, startDay: number, endDay: number, row: number }>}
+ */
+export declare function layoutDaySegments<T>(segments: Array<{
+    event: T;
+    resourceId: string | null;
+    startDay: number;
+    endDay: number;
+}>): Array<{
+    event: T;
+    resourceId: string | null;
+    startDay: number;
+    endDay: number;
+    row: number;
+}>;
 //# sourceMappingURL=layout.d.ts.map

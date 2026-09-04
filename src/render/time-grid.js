@@ -11,7 +11,7 @@ import {
 import { defaultSnapThreshold, eventGeometry, findSnapTarget, snapMinutes } from "../core/geometry.js";
 import { hitTest } from "../core/hit.js";
 import { DEFAULT_LABELS } from "../core/labels.js";
-import { layoutEvents } from "../core/layout.js";
+import { layoutDaySegments, layoutEvents } from "../core/layout.js";
 import { isMovable, isResizable } from "../core/model.js";
 import {
   backgroundAppliesToColumn,
@@ -19,7 +19,13 @@ import {
   getResourceColumns,
   getTimeGridColumns,
 } from "../core/resources.js";
-import { describeEvent, sliceTimedEventForDay, toZonedDateTime, wallMinutes } from "../core/slicing.js";
+import {
+  describeEvent,
+  eventOverlapsDate,
+  sliceTimedEventForDay,
+  toZonedDateTime,
+  wallMinutes,
+} from "../core/slicing.js";
 import { createAutoscroller } from "./autoscroll.js";
 
 /**
@@ -64,6 +70,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
  * @property {number} [slotLabelInterval] minutes between axis labels (default 60)
+ * @property {boolean} [allDaySlot] show the all-day lane when it has content (default true)
  */
 
 /**
@@ -116,6 +123,8 @@ export function renderTimeGrid({
   // (possibly zero columns when no resource is selected).
   const resourceView = isResourceView(view);
   const columns = resourceView ? getResourceColumns(resources, dates) : getTimeGridColumns(dates);
+  // One axis track plus one per date column, so the all-day lane can mirror
+  // the exact same tracks when it spans them.
   const gridTemplate = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
 
   // Grouped resource header row: one header per resource spanning its date
@@ -352,6 +361,344 @@ export function renderTimeGrid({
     return fragment;
   }
 
+  // --- All-day lane -------------------------------------------------------
+  // Timed events and civil all-day events are separate planes. The lane uses
+  // the same columns as the time grid, so a bar spans civil days inside its
+  // resource block and never crosses into the neighbouring room.
+  /**
+   * @param {{ start: unknown, end: unknown, allDay?: boolean }} range
+   * @returns {boolean}
+   */
+  const overVisibleDays = (range) => dates.some((date) => eventOverlapsDate(range, date, timeZone));
+
+  /**
+   * Column span of one all-day range on the shared column grid.
+   *
+   * @param {{
+   *   start: unknown, end: unknown, resourceId?: string | null,
+   *   allDay?: boolean,
+   * }} range
+   * @returns {{ startDay: number, endDay: number } | null}
+   */
+  const daySpan = (range) => {
+    let start = -1;
+    let end = -1;
+    for (let index = 0; index < columns.length; index += 1) {
+      const column = columns[index];
+      const applies =
+        "resourceId" in range
+          ? eventBelongsToColumn(range, column)
+          : backgroundAppliesToColumn(range, column);
+      if (!applies || !eventOverlapsDate(range, column.date, timeZone)) continue;
+      if (start < 0) start = index;
+      end = index;
+    }
+    if (start < 0) return null;
+    return { startDay: start, endDay: end + 1 };
+  };
+
+  const allDaySegments = events
+    .filter((event) => event.allDay === true && overVisibleDays(event))
+    .map((event) => {
+      const span = daySpan(event);
+      return span === null
+        ? null
+        : { event, resourceId: event.resourceId ?? null, startDay: span.startDay, endDay: span.endDay };
+    })
+    .filter((segment) => segment !== null);
+  const allDayBackgroundSegments = backgrounds
+    .filter((background) => background.allDay === true && overVisibleDays(background))
+    .map((background) => {
+      const span = daySpan(background);
+      return span === null ? null : { background, startDay: span.startDay, endDay: span.endDay };
+    })
+    .filter((segment) => segment !== null);
+
+  const showAllDay =
+    options.allDaySlot !== false && (allDaySegments.length > 0 || allDayBackgroundSegments.length > 0);
+  /** @type {Array<{ bar: HTMLButtonElement, event: import("../core/model.js").NormalizedEvent, startDay: number, endDay: number }>} */
+  const allDayBars = [];
+
+  /**
+   * Column under a pointer x-coordinate, or the first column when the pointer
+   * is over the axis gutter. Read after render, when `bodies` is populated.
+   *
+   * @param {number} clientX
+   * @returns {TimeGridColumn}
+   */
+  const columnAtX = (clientX) => {
+    for (let index = 0; index < bodies.length; index += 1) {
+      const rect = bodies[index].body.getBoundingClientRect();
+      if (clientX >= rect.left && clientX < rect.right) return columns[index];
+    }
+    return columns[0];
+  };
+
+  /** @param {number} clientX @returns {number} */
+  const columnIndexAtX = (clientX) => {
+    for (let index = 0; index < bodies.length; index += 1) {
+      const rect = bodies[index].body.getBoundingClientRect();
+      if (clientX >= rect.left && clientX < rect.right) return index;
+    }
+    return -1;
+  };
+
+  /**
+   * Day-preserving move of one all-day bar, shared by pointer drag and
+   * Shift+arrows. Boundaries stay `Temporal.PlainDate`, so both commute
+   * through the same optimistic commit as every other move.
+   *
+   * @param {import("../core/model.js").NormalizedEvent} evt
+   * @param {number} days
+   * @param {string | null} resourceId
+   * @param {Event | null} nativeEvent
+   * @returns {import("../core/model.js").NormalizedEvent | null}
+   */
+  const commitAllDayMove = (evt, days, resourceId, nativeEvent) => {
+    if (!(evt.start instanceof Temporal.PlainDate)) return null;
+    const start = /** @type {Temporal.PlainDate} */ (evt.start);
+    const end = /** @type {Temporal.PlainDate} */ (evt.end);
+    return host.commitEventMove({
+      event: evt,
+      previous: { start: evt.start, end: evt.end, resourceId: evt.resourceId ?? null },
+      current: { start: start.add({ days }), end: end.add({ days }), resourceId },
+      nativeEvent,
+    });
+  };
+
+  /**
+   * Pointer drag of an all-day bar: day-snapped, whole span preserved, can
+   * cross resources. The original bar stays put while a mirror follows the
+   * pointer; a non-droppable target reverts silently.
+   *
+   * @param {HTMLButtonElement} bar
+   * @param {import("../core/model.js").NormalizedEvent} event
+   * @param {number} startDay
+   * @param {number} endDay
+   * @param {PointerEvent} nativeEvent
+   * @returns {void}
+   */
+  function beginAllDayDrag(bar, event, startDay, endDay, nativeEvent) {
+    if (nativeEvent.button !== 0) return;
+    tryCapture(bar, nativeEvent.pointerId);
+    const downX = nativeEvent.clientX;
+    const downY = nativeEvent.clientY;
+    let moved = false;
+    /** @type {HTMLButtonElement | null} */
+    let mirror = null;
+    /** @type {{ index: number, droppable: boolean } | null} */
+    let pending = null;
+
+    /** @param {PointerEvent} moveEvent @returns {void} */
+    const onMove = (moveEvent) => {
+      if (longPressConsumed) return;
+      if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
+      if (!moved) return;
+      if (!mirror) {
+        mirror = /** @type {HTMLButtonElement} */ (bar.cloneNode(true));
+        mirror.classList.add("cv-drag-mirror");
+        mirror.tabIndex = -1;
+        mirror.setAttribute("aria-hidden", "true");
+        bar.classList.add("cv-drag-source");
+        lane.append(mirror);
+      }
+      const index = columnIndexAtX(moveEvent.clientX);
+      if (index < 0) return;
+      const droppable = columns[index].resource?.droppable !== false;
+      pending = { index, droppable };
+      mirror.style.gridColumn = `${index + 2} / ${Math.min(columns.length, index + (endDay - startDay)) + 2}`;
+      mirror.style.gridRow = String(Number.parseFloat(bar.style.gridRow) || 1);
+      mirror.classList.toggle("cv-invalid", !droppable);
+    };
+
+    const cleanup = () => {
+      bar.removeEventListener("pointermove", onMove);
+      bar.removeEventListener("pointerup", onUp);
+      bar.removeEventListener("pointercancel", onCancel);
+      mirror?.remove();
+      bar.classList.remove("cv-drag-source");
+    };
+
+    /** @param {PointerEvent} upEvent @returns {void} */
+    const onUp = (upEvent) => {
+      const wasMoved = moved;
+      const range = pending;
+      cleanup();
+      if (longPressConsumed) return;
+      if (!wasMoved || !range?.droppable) return;
+      suppressClick = true;
+      const dayDelta = range.index - startDay;
+      const resourceId = columns[range.index].resource?.id ?? null;
+      const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
+      if (next) {
+        host.announce(describeEvent(next, timeZone, labels.untitledEvent));
+        host.refocusEvent(event.id);
+      }
+    };
+
+    /** @param {PointerEvent} _cancelEvent @returns {void} */
+    const onCancel = (_cancelEvent) => {
+      cleanup();
+      longPressConsumed = false;
+      suppressClick = false;
+    };
+
+    bar.addEventListener("pointermove", onMove);
+    bar.addEventListener("pointerup", onUp);
+    bar.addEventListener("pointercancel", onCancel);
+  }
+
+  const lane = document.createElement("div");
+  lane.className = "cv-allday";
+  lane.style.gridTemplateColumns = gridTemplate;
+  lane.style.gridColumn = "1 / -1";
+  lane.style.gridRow = "2";
+  if (showAllDay) {
+    const corner = document.createElement("span");
+    corner.className = "cv-allday-corner";
+    corner.textContent = labels.allDaySlotLabel;
+    corner.setAttribute("aria-hidden", "true");
+    lane.append(corner);
+    for (const tint of allDayBackgroundSegments) {
+      const node = document.createElement("div");
+      node.className = ["cv-allday-background", ...(tint.background.classNames ?? [])].join(" ");
+      node.style.gridColumn = `${tint.startDay + 2} / ${tint.endDay + 2}`;
+      node.style.gridRow = "1 / -1";
+      lane.append(node);
+    }
+    for (const segment of layoutDaySegments(allDaySegments)) {
+      const { event, startDay, endDay } = segment;
+      const bar = document.createElement("button");
+      bar.type = "button";
+      bar.className = ["cv-allday-event", ...(event.classNames ?? [])].join(" ");
+      bar.dataset.eventId = event.id;
+      bar.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
+      bar.style.gridColumn = `${startDay + 2} / ${endDay + 2}`;
+      bar.style.gridRow = String(segment.row + 1);
+      const column = columns[startDay];
+      const content = eventContent?.({
+        event,
+        date: column.date,
+        resource: column.resource,
+        element: bar,
+      });
+      if (content instanceof Node) bar.append(content);
+      else if (content != null) bar.textContent = String(content);
+      else bar.textContent = event.title ?? labels.untitledEvent;
+      lane.append(bar);
+      allDayBars.push({ bar, event, startDay, endDay });
+
+      // --- All-day interactions (v1) ---------------------------------------
+      // Native <button> activation covers pointer click and Enter/Space; a
+      // single capture-phase handler both dispatches eventclick and drops the
+      // residual click after a drag or long-press. Day-edge resize, creation
+      // inside the lane and timed<->all-day conversion stay deferred.
+      bar.addEventListener(
+        "click",
+        (nativeEvent) => {
+          if (suppressClick) {
+            suppressClick = false;
+            longPressConsumed = false;
+            nativeEvent.stopPropagation();
+            nativeEvent.preventDefault();
+            return;
+          }
+          const target = columnAtX(nativeEvent.clientX);
+          bar.dispatchEvent(
+            new CustomEvent("calendar:eventclick", {
+              bubbles: true,
+              composed: true,
+              cancelable: true,
+              detail: { event, date: target.date, resource: target.resource, nativeEvent },
+            }),
+          );
+        },
+        true,
+      );
+
+      bar.addEventListener("contextmenu", (nativeEvent) => {
+        const target = columnAtX(nativeEvent.clientX);
+        dispatchContextMenu(
+          bar,
+          {
+            event,
+            date: target.date,
+            resourceId: target.resource?.id ?? null,
+            clientX: nativeEvent.clientX,
+            clientY: nativeEvent.clientY,
+          },
+          nativeEvent,
+        );
+      });
+
+      watchLongPress(bar, (press) => {
+        const target = columnAtX(press.clientX);
+        dispatchContextMenu(
+          bar,
+          {
+            event,
+            date: target.date,
+            resourceId: target.resource?.id ?? null,
+            clientX: press.clientX,
+            clientY: press.clientY,
+          },
+          press,
+        );
+      });
+
+      const movable = isMovable(event, host.editable);
+
+      bar.addEventListener("keydown", (keyboardEvent) => {
+        if (keyboardEvent.ctrlKey || keyboardEvent.metaKey || !keyboardEvent.shiftKey) return;
+        const key = keyboardEvent.key;
+        if (key !== "ArrowLeft" && key !== "ArrowRight") return;
+        if (!movable) return;
+        keyboardEvent.preventDefault();
+        const next = commitAllDayMove(
+          event,
+          key === "ArrowRight" ? 1 : -1,
+          event.resourceId ?? null,
+          keyboardEvent,
+        );
+        if (next) host.announce(describeEvent(next, timeZone, labels.untitledEvent));
+      });
+
+      if (movable) {
+        bar.addEventListener("pointerdown", (nativeEvent) =>
+          beginAllDayDrag(bar, event, startDay, endDay, nativeEvent),
+        );
+      }
+    }
+  }
+
+  // --- Day header row -----------------------------------------------------
+  // Headers are grid items of their own row so the lane can sit between the
+  // sticky headers and the scrolling time bodies.
+  let headerColumn = 2;
+  for (const column of columns) {
+    const header = document.createElement("header");
+    header.className = "cv-day-header";
+    header.style.gridColumn = String(headerColumn);
+    header.style.gridRow = "1";
+    headerColumn += 1;
+    const content = dayHeaderContent?.({
+      date: column.date,
+      resource: column.resource,
+      element: header,
+    });
+    if (content instanceof Node) header.append(content);
+    else if (content != null) header.textContent = String(content);
+    else header.textContent = formatDayHeader(column.date, locale);
+    root.append(header);
+  }
+
+  if (showAllDay) root.append(lane);
+
+  // Explicit row/column placement for the axis too, so it never auto-places
+  // into the header or lane row.
+  axis.style.gridColumn = "1";
+  axis.style.gridRow = showAllDay ? "3" : "2";
+
   /** @type {Array<{ column: TimeGridColumn, body: HTMLDivElement }>} */
   const bodies = [];
   // Per-column slice boundaries feeding neighbor snapping. Parallel to
@@ -420,22 +767,9 @@ export function renderTimeGrid({
     const day = document.createElement("section");
     day.className = "cv-day";
     day.dataset.date = column.date.toString();
+    day.style.gridColumn = String(columnIndex + 2);
+    day.style.gridRow = showAllDay ? "3" : "2";
     if (column.resource) day.dataset.resourceId = column.resource.id;
-
-    const header = document.createElement("header");
-    header.className = "cv-day-header";
-    // Day headers render one date cell per column. In resource views the
-    // resource name lives in the grouped row above; the day header keeps
-    // only the date (plus optional resource context for hooks).
-    const headerContent = dayHeaderContent?.({
-      date: column.date,
-      resource: column.resource,
-      element: header,
-    });
-    if (headerContent instanceof Node) header.append(headerContent);
-    else if (headerContent != null) header.textContent = String(headerContent);
-    else header.textContent = formatDayHeader(column.date, locale);
-    day.append(header);
 
     const body = document.createElement("div");
     body.className = "cv-day-body";
@@ -453,6 +787,7 @@ export function renderTimeGrid({
     /** @type {Array<{ start: number, end: number }>} */
     const backgroundSlices = [];
     for (const background of backgrounds) {
+      if (background.allDay === true) continue;
       if (!backgroundAppliesToColumn(background, column)) continue;
       const slice = sliceTimedEventForDay(background, column.date, sliceOptions);
       if (!slice) continue;
@@ -473,6 +808,7 @@ export function renderTimeGrid({
 
     const dayEvents = [];
     for (const event of events) {
+      if (event.allDay === true) continue;
       if (!eventBelongsToColumn(event, column)) continue;
       const slice = sliceTimedEventForDay(event, column.date, sliceOptions);
       if (!slice) continue;

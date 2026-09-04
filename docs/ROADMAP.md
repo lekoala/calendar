@@ -15,6 +15,12 @@ Shipped in 0.1:
   hover, range selection, drag, resize and autoscroll; a full keyboard
   model; accessibility (live region, reduced motion, forced colors);
   overlap queries; civil `dates` helpers.
+- **All-day lane** — explicit `allDay` events/backgrounds on strict civil
+  `Temporal.PlainDate` boundaries (half-open end); a lane mirroring the
+  time-grid columns in solo and resource views, per-resource stacking,
+  click/context-menu/day-drag/Shift-arrows moves; `allDaySlot` toggles the
+  lane; civil overlap queries; DST by consecutive civil midnights. Day-edge
+  resize, lane creation and timed↔all-day conversion remain deferred.
 - **Distribution** — pure ESM entries (no registration side effect), opt-in
   `define`, classic IIFE + minified twin, zero-config standalone build, CSS,
   generated `dist/types` and `custom-elements.json`; `sync`/`verify` gates.
@@ -25,8 +31,7 @@ Deliberately deferred (revisit only with a concrete use case):
 
 - keyed DOM reconciliation — 0.x renders by full replacement;
 - a consolidated pointer engine;
-- density policies per view: all-day lane, slot-row policy,
-  `datesAboveResources`;
+- density policies per view: slot-row policy, `datesAboveResources`;
 - source-range caching;
 - external drag & drop and dropzones (`calendar:externaldrop` /
   `calendar:eventdropout`);

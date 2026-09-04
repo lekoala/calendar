@@ -43,6 +43,10 @@ PATCH /occurrences/:id
 }
 ```
 
+All-day moves keep their civil shape: the committed boundaries are
+`Temporal.PlainDate`, so the same PATCH carries `YYYY-MM-DD` in `start`/`end`
+and no wall clock is invented for a day that has none.
+
 | Field        | Purpose                                                     |
 | ------------ | ----------------------------------------------------------- |
 | `revision`   | Concurrency: the server accepts only the expected revision  |

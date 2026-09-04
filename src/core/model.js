@@ -1,3 +1,5 @@
+import { Temporal } from "temporal-polyfill";
+
 /**
  * @typedef {object} CalendarEvent
  * @property {string} id
@@ -5,6 +7,7 @@
  * @property {unknown} start
  * @property {unknown} end
  * @property {string | null} [resourceId]
+ * @property {boolean} [allDay] when true, boundaries are civil `Temporal.PlainDate` (half-open `[start, end)`)
  * @property {boolean} [editable]
  * @property {boolean} [movable]
  * @property {boolean} [resizable]
@@ -13,7 +16,7 @@
  */
 
 /**
- * @typedef {Required<Pick<CalendarEvent, "id" | "classNames" | "extendedProps">> & CalendarEvent} NormalizedEvent
+ * @typedef {Required<Pick<CalendarEvent, "id" | "allDay" | "classNames" | "extendedProps">> & CalendarEvent} NormalizedEvent
  */
 
 /**
@@ -26,6 +29,7 @@
  * @property {unknown} [start]
  * @property {unknown} [end]
  * @property {string | null} [resourceId]
+ * @property {boolean} [allDay]
  * @property {boolean} [editable]
  * @property {boolean} [movable]
  * @property {boolean} [resizable]
@@ -49,23 +53,58 @@
  * @property {unknown} start
  * @property {unknown} end
  * @property {string} [resourceId]
+ * @property {boolean} [allDay] when true, boundaries are civil `Temporal.PlainDate`
  * @property {string[]} [classNames]
  * @property {Record<string, unknown>} [extendedProps]
  */
+
+/**
+ * Canonical boundary value for one event/background end. Timed ranges use
+ * `Temporal.ZonedDateTime` instances; all-day ranges use `Temporal.PlainDate`
+ * civil dates. Both keep the same half-open `[start, end)` contract, and the
+ * conversion is strict: an `allDay` flag never changes the nature of already
+ * dated input, and neither type silently accepts the other.
+ *
+ * @param {unknown} value
+ * @param {boolean} allDay
+ * @returns {Temporal.ZonedDateTime | Temporal.PlainDate}
+ */
+export function normalizeRangeBound(value, allDay) {
+  if (allDay) {
+    if (value instanceof Temporal.PlainDate) return value;
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return Temporal.PlainDate.from(value);
+    }
+    throw new TypeError("All-day boundaries must be Temporal.PlainDate or YYYY-MM-DD strings");
+  }
+  if (value instanceof Temporal.ZonedDateTime) return value;
+  if (typeof value === "string") {
+    try {
+      return Temporal.ZonedDateTime.from(value);
+    } catch {
+      // Date-only strings never parse as instants; fall through to the
+      // strict error so mis-flagged all-day input fails loudly.
+    }
+  }
+  throw new TypeError("Timed boundaries must be Temporal.ZonedDateTime or ISO strings with a zone");
+}
 
 /**
  * @param {EventInput} event
  * @returns {NormalizedEvent}
  */
 export function normalizeEvent(event) {
-  if (!event || event.id == null || !event.start || !event.end) {
+  if (!event || event.id == null || event.start == null || event.end == null) {
     throw new TypeError("Event requires id, start and end");
   }
-  const { classNames, extendedProps, ...rest } = event;
+  const { classNames, extendedProps, start, end, allDay = false, ...rest } = event;
   return /** @type {NormalizedEvent} */ ({
     editable: true,
     ...rest,
     id: String(event.id),
+    allDay,
+    start: /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (normalizeRangeBound(start, allDay)),
+    end: /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (normalizeRangeBound(end, allDay)),
     classNames: Array.from(classNames ?? []),
     extendedProps: { ...(extendedProps ?? {}) },
   });
@@ -124,7 +163,7 @@ export function normalizeResource(resource) {
 }
 
 /**
- * @typedef {Required<Pick<CalendarBackground, "id" | "classNames" | "extendedProps">> & CalendarBackground} NormalizedBackground
+ * @typedef {Required<Pick<CalendarBackground, "id" | "allDay" | "classNames" | "extendedProps">> & CalendarBackground} NormalizedBackground
  */
 
 /**
@@ -133,6 +172,7 @@ export function normalizeResource(resource) {
  * @property {unknown} [start]
  * @property {unknown} [end]
  * @property {string} [resourceId]
+ * @property {boolean} [allDay]
  * @property {string[]} [classNames]
  * @property {Record<string, unknown>} [extendedProps]
  */
@@ -142,13 +182,16 @@ export function normalizeResource(resource) {
  * @returns {NormalizedBackground}
  */
 export function normalizeBackground(background) {
-  if (!background || background.id == null || !background.start || !background.end) {
+  if (!background || background.id == null || background.start == null || background.end == null) {
     throw new TypeError("Background requires id, start and end");
   }
-  const { classNames, extendedProps, ...rest } = background;
+  const { classNames, extendedProps, start, end, allDay = false, ...rest } = background;
   return /** @type {NormalizedBackground} */ ({
     ...rest,
     id: String(background.id),
+    allDay,
+    start: /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (normalizeRangeBound(start, allDay)),
+    end: /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (normalizeRangeBound(end, allDay)),
     classNames: Array.from(classNames ?? []),
     extendedProps: { ...(extendedProps ?? {}) },
   });

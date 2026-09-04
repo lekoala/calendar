@@ -77,3 +77,42 @@ export function layoutEvents(items) {
     };
   });
 }
+
+/**
+ * Row packing for the all-day lane over a fixed set of visible civil dates.
+ * Segments carry day indices into those dates (`endDay` exclusive) and a
+ * `resourceId`: collisions only happen inside one resource block, so bars of
+ * different rooms never fight for a row, while bars of the same room stack
+ * exactly like the day column does with `layoutEvents`.
+ *
+ * Only civil-day geometry is involved, never instants: a 23- or 25-hour DST
+ * day occupies one index either way.
+ *
+ * @template T
+ * @param {Array<{ event: T, resourceId: string | null, startDay: number, endDay: number }>} segments
+ * @returns {Array<{ event: T, resourceId: string | null, startDay: number, endDay: number, row: number }>}
+ */
+export function layoutDaySegments(segments) {
+  const sorted = segments
+    .map((segment, index) => ({ ...segment, index }))
+    .sort((a, b) => a.startDay - b.startDay || b.endDay - a.endDay || a.index - b.index);
+  /** @type {Array<Array<{ resourceId: string | null, end: number }>>} */
+  const rows = [];
+  /** @type {Map<number, number>} */
+  const assigned = new Map();
+  for (const segment of sorted) {
+    let row = rows.findIndex((entries) =>
+      entries.every((entry) => entry.resourceId !== segment.resourceId || entry.end <= segment.startDay),
+    );
+    if (row < 0) {
+      row = rows.length;
+      rows.push([]);
+    }
+    rows[row].push({ resourceId: segment.resourceId, end: segment.endDay });
+    assigned.set(segment.index, row);
+  }
+  return segments.map((segment, index) => ({
+    ...segment,
+    row: /** @type {number} */ (assigned.get(index)),
+  }));
+}

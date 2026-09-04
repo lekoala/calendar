@@ -72,7 +72,39 @@ event.movable ?? event.editable ?? calendar.editable
 event.resizable ?? event.editable ?? calendar.editable
 ```
 
-Internally the calendar uses Temporal only. At the boundary it accepts a `Temporal.ZonedDateTime` or an ISO string with offset/timezone, normalized toward `calendar.timeZone`. Events exposed to render hooks and DOM events carry `Temporal.ZonedDateTime` values.
+Internally the calendar uses Temporal only. A timed event takes a
+`Temporal.ZonedDateTime` or an ISO string with offset/timezone, normalized
+toward `calendar.timeZone`; events exposed to render hooks and DOM events
+carry `Temporal.ZonedDateTime` values.
+
+An all-day event carries `allDay: true`, explicit (never auto-detected), and
+rides **civil dates** instead of instants:
+
+```js
+{
+  id: "closure-1",
+  title: "Atrium closure",
+  allDay: true,
+  start: "2026-09-03",   // Temporal.PlainDate, or a YYYY-MM-DD string
+  end: "2026-09-06",     // exclusive, same [start, end) contract as timed
+  resourceId: "resource-a",
+}
+```
+
+The two boundary types are strict: `allDay: true` accepts only civil input,
+`allDay: false`/absent only zoned input, and a mismatch throws. In canonical
+state, `calendar.events` items and `getEventById(id)` return a
+`Temporal.PlainDate` for all-day `start`/`end`, so a consumer can tell the
+two apart by type instead of by flag. Projecting both to their local
+midnights in `calendar.timeZone` is what makes an all-day range comparable
+to timed events (`getEventOverlaps`), and two consecutive civil midnights
+span the real 23-/25-hour DST day without the civil day changing meaning.
+
+All-day scope in the time grid is the **lane**: see config `allDaySlot` and
+VIEWS. Resizing an all-day event is not wired in v0.x —
+`resizeEvent(id, ...)` returns `null` for it (day-edge resize is deferred).
+Month and list render all-day events as their civil-day chips/rows already;
+`allDaySlot: false` hides them from time grids only.
 
 ## Resource model
 
@@ -97,12 +129,13 @@ Potential future fields: `groupId`, `order`, rendering metadata. Avoid hierarchy
   resourceId: "resource-a",
   start: "...",
   end: "...",
+  allDay: false,          // optional; all-day backgrounds take PlainDate dates
   classNames: [],
   extendedProps: {}
 }
 ```
 
-No built-in semantic type. A background without `resourceId` is global and applies to every resource column; an event without `resourceId` is hidden in resource views (see view policy).
+No built-in semantic type. A background without `resourceId` is global and applies to every resource column; an event without `resourceId` is hidden in resource views (see view policy). An `allDay` background ("the room is closed this week") uses the same civil boundary types as all-day events and paints the full-height lane tint in time grids.
 
 ## Configuration
 
@@ -117,6 +150,7 @@ calendar.configure({
   firstDay: 1,
   hiddenDays: [],
   slotLabelInterval: 60,
+  allDaySlot: true,
   eventSource,
   backgroundSource,
   eventContent,
@@ -141,7 +175,7 @@ replace the localized defaults wherever they return content.
 
 `labels` overrides the fixed English strings merged over the defaults
 (`noEvents`, `noResources`, `more` with a `{hidden}` placeholder,
-`calendarRegion`, `untitledEvent`). There is no locale data bundle to load:
+`calendarRegion`, `untitledEvent`, `allDaySlotLabel`). There is no locale data bundle to load:
 `Intl`/`Temporal` already carry CLDR, so translating the core is one
 `configure({ labels })` call; fetching a translation file stays an
 application concern.
@@ -151,6 +185,8 @@ application concern.
 `firstDay` and `hiddenDays` use the ISO weekday numbering Temporal exposes, `1` = Monday through `7` = Sunday. `0` is accepted as an alias for Sunday, since that is what `Date.prototype.getDay` returns and the two conventions agree on every other day. `firstDay` sets where a civil week starts, for both week anchoring and month week derivation. `hiddenDays` lists weekdays that are never rendered; hiding all seven is ignored rather than rendering an empty calendar.
 
 `slotLabelInterval` is the number of minutes between time axis labels. It is a density policy, not a format: what a label reads is `slotLabelContent`'s business.
+
+`allDaySlot` controls the all-day lane in time grids. It defaults to `true`, and the lane renders only when an all-day event or background is visible in the current range (an empty lane takes no space). `false` hides all-day events/backgrounds from time grids deliberately; month and list remain date-driven and keep showing them.
 
 Everything here is set through `configure()` rather than through attributes. Content hooks cannot be attributes at all, and keeping the options that drive date derivation in one place avoids an attribute-versus-property precedence rule. Serializable options may still gain attributes later.
 
@@ -228,7 +264,17 @@ const hits = calendar.getEventOverlaps(
 
 `start`/`end` are `Temporal.ZonedDateTime` values or ISO strings, compared by
 absolute instant over half-open `[start, end)` ranges; an empty or inverted
-range yields `[]`. `resourceIds = []` means no resource filter; a non-empty
+range yields `[]`. Civil boundaries (`Temporal.PlainDate` or `YYYY-MM-DD`
+strings) are accepted too and project to their local midnights in the
+calendar time zone, which is how an all-day event and a timed booking on the
+same day meet:
+
+```js
+// Every all-day/weekend blocker touching the civil day.
+const hits = calendar.getEventOverlaps({ start: "2026-09-03", end: "2026-09-04" });
+```
+
+`resourceIds = []` means no resource filter; a non-empty
 list keeps only entries belonging to those resources, except resource-less
 backgrounds, which are global context and match any list. Results follow
 paint order (events in state order, then backgrounds in state order).

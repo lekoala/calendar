@@ -12,6 +12,7 @@
  * @property {string} more month `+n more` fallback template, with a `{hidden}` placeholder
  * @property {string} calendarRegion accessible name of the scroll region
  * @property {string} untitledEvent fallback title for events without one
+ * @property {string} allDaySlotLabel corner label of the all-day lane
  */
 
 /** @type {CalendarLabels} */
@@ -21,6 +22,7 @@ export const DEFAULT_LABELS = {
   more: "+{hidden} more",
   calendarRegion: "Calendar",
   untitledEvent: "Event",
+  allDaySlotLabel: "All day",
 };
 
 const LABEL_PLACEHOLDER_PATTERN = /\{(\w+)\}/g;

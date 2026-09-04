@@ -41,6 +41,31 @@ export function toZonedDateTime(value, timeZone) {
 }
 
 /**
+ * Project a half-open range onto absolute instants. Timed boundaries pass
+ * through unchanged; all-day civil dates map to their local midnights in
+ * `timeZone`. Two consecutive civil midnights therefore span the real 23- or
+ * 25-hour DST day without the range ever leaving the civil calendar.
+ *
+ * @param {unknown} start
+ * @param {unknown} end
+ * @param {string} timeZone
+ * @returns {{ start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime }}
+ */
+export function instantRangeOf(start, end, timeZone) {
+  /** @param {unknown} value @returns {Temporal.ZonedDateTime} */
+  const project = (value) => {
+    if (value instanceof Temporal.PlainDate) {
+      return value.toZonedDateTime({ timeZone, plainTime: "00:00" });
+    }
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return Temporal.PlainDate.from(value).toZonedDateTime({ timeZone, plainTime: "00:00" });
+    }
+    return toZonedDateTime(value, timeZone);
+  };
+  return { start: project(start), end: project(end) };
+}
+
+/**
  * Wall-clock minutes from midnight for a zoned value.
  *
  * @param {Temporal.ZonedDateTime} zoned
@@ -112,15 +137,25 @@ export function sliceTimedEventForDay(event, date, options) {
  * Wall-clock based, locale-independent: `Title, 2026-09-03, 09:00 to 10:30`.
  * The end date is repeated only when it differs from the start date.
  *
+ * All-day events name their civil span instead: `Title, 2026-09-03, all day`
+ * for a single day and `Title, 2026-09-03 to 2026-09-05, all day` for the
+ * inclusive `[start, end)` coverage.
+ *
  * @param {{ title?: unknown, start: unknown, end: unknown }} event
  * @param {string} timeZone
  * @param {string} [untitled] fallback title, defaults to the English label
  * @returns {string}
  */
 export function describeEvent(event, timeZone, untitled = "Event") {
+  const title = event.title ?? untitled;
+  if (event.start instanceof Temporal.PlainDate) {
+    const endPlain = /** @type {Temporal.PlainDate} */ (event.end);
+    const span = endPlain.since(event.start).days;
+    if (span <= 1) return `${title}, ${event.start.toString()}, all day`;
+    return `${title}, ${event.start.toString()} to ${endPlain.subtract({ days: 1 }).toString()}, all day`;
+  }
   const start = toZonedDateTime(event.start, timeZone);
   const end = toZonedDateTime(event.end, timeZone);
-  const title = event.title ?? untitled;
   const startDay = start.toPlainDate().toString();
   const endDay = end.toPlainDate().toString();
   const startText = `${startDay}, ${formatClock(wallMinutes(start))}`;
@@ -134,6 +169,9 @@ export function describeEvent(event, timeZone, untitled = "Event") {
  * True when any part of [start, end) falls on `date` in `timeZone`. An event
  * ending exactly at midnight does not overlap the next day.
  *
+ * All-day ranges compare at the civil level over the same half-open span, so
+ * a day ending `[D, D+1)` covers exactly one date.
+ *
  * @param {{ start: unknown, end: unknown }} range
  * @param {Temporal.PlainDate | string} date
  * @param {string} timeZone
@@ -141,6 +179,13 @@ export function describeEvent(event, timeZone, untitled = "Event") {
  */
 export function eventOverlapsDate(range, date, timeZone) {
   const day = toPlainDate(date);
+  if (range.start instanceof Temporal.PlainDate) {
+    const startDay = /** @type {Temporal.PlainDate} */ (range.start);
+    const endDay = /** @type {Temporal.PlainDate} */ (range.end);
+    if (Temporal.PlainDate.compare(day, startDay) < 0) return false;
+    if (Temporal.PlainDate.compare(day, endDay) >= 0) return false;
+    return true;
+  }
   const startZoned = toZonedDateTime(range.start, timeZone);
   const endZoned = toZonedDateTime(range.end, timeZone);
   if (Temporal.ZonedDateTime.compare(endZoned, startZoned) <= 0) return false;

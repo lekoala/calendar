@@ -1,10 +1,10 @@
 export type OverlapRange = {
     /**
-     * range start (`Temporal.ZonedDateTime` or ISO string)
+     * range start (`ZonedDateTime`/ISO string, or `PlainDate` for a civil query)
      */
     start: unknown;
     /**
-     * range end (`Temporal.ZonedDateTime` or ISO string)
+     * range end (`ZonedDateTime`/ISO string, or `PlainDate` for a civil query)
      */
     end: unknown;
 };
@@ -36,9 +36,14 @@ export type OverlapQuery = {
  * the DOM. Comparison is by absolute instant over half-open `[start, end)`
  * ranges, so adjacent ranges (`end === start`) never overlap.
  *
+ * Query and stored boundaries may be timed (`ZonedDateTime` / ISO strings
+ * with a zone) or civil (`PlainDate` / `YYYY-MM-DD` strings): civil values
+ * project to their local midnights in `timeZone`, which is how an all-day
+ * event and a timed booking on the same day meet.
+ *
  * @typedef {object} OverlapRange
- * @property {unknown} start range start (`Temporal.ZonedDateTime` or ISO string)
- * @property {unknown} end range end (`Temporal.ZonedDateTime` or ISO string)
+ * @property {unknown} start range start (`ZonedDateTime`/ISO string, or `PlainDate` for a civil query)
+ * @property {unknown} end range end (`ZonedDateTime`/ISO string, or `PlainDate` for a civil query)
  *
  * @typedef {object} OverlapEntry
  * @property {"event" | "background"} kind

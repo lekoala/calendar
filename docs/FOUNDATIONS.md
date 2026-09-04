@@ -26,13 +26,15 @@ The calendar starts with Temporal rather than accumulating a legacy `Date` layer
 
 Use:
 
-- `PlainDate` — navigation/date cells;
+- `PlainDate` — navigation/date cells and the boundaries of `allDay`
+  events/backgrounds (one canonical boundary type per `allDay` flag, both
+  half-open `[start, end)`);
 - `PlainTime` — slot boundaries (exclusive day end, not `24:00` as a `PlainTime`);
 - `Duration` — event/slot duration, including `snapDuration` and `defaultTimedEventDuration`;
 - `ZonedDateTime` — real scheduled items in a named timezone;
 - `Instant` — absolute instants when needed.
 
-Grid geometry follows calendar wall-clock time: a 23-hour or 25-hour daylight-saving day keeps its local hourly slots and does not change column height artificially. Canonical timezone-bearing serialization looks like `2026-10-25T09:00:00+01:00[Europe/Brussels]`.
+Grid geometry follows calendar wall-clock time: a 23-hour or 25-hour daylight-saving day keeps its local hourly slots and does not change column height artificially. Canonical timezone-bearing serialization looks like `2026-10-25T09:00:00+01:00[Europe/Brussels]`. An all-day civil day projects to its local midnights whenever an instant comparison is needed, so `[03/09, 04/09)` stays "the third" no matter which zone runs the calendar.
 
 The initial package uses the side-effect-free `temporal-polyfill` ponyfill. Native Temporal can replace it without changing the public model later.
 

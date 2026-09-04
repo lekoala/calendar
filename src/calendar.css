@@ -102,6 +102,61 @@
   white-space: nowrap;
 }
 
+/* All-day lane: mirrors the column tracks, sits between the sticky headers
+   and the time bodies, and scrolls away with the body like FullCalendar's
+   own day slot. A bar spans civil days inside one resource block only. */
+.cv-allday {
+  display: grid;
+  align-items: stretch;
+  gap: 2px;
+  padding-block: 4px;
+  border-bottom: 1px solid var(--calendar-line);
+  background: var(--calendar-surface);
+}
+
+.cv-allday-corner {
+  grid-column: 1;
+  align-self: center;
+  padding-inline: 0.5rem;
+  color: var(--calendar-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cv-allday-event {
+  z-index: 2;
+  min-inline-size: 0;
+  margin: 1px 2px;
+  padding: 0.15rem 0.4rem;
+  overflow: hidden;
+  border: 1px solid var(--calendar-event-border);
+  border-radius: 0.4rem;
+  background: var(--calendar-event-bg);
+  color: var(--calendar-text);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+  touch-action: pan-x pan-y;
+}
+
+.cv-allday-event:active {
+  cursor: grabbing;
+}
+
+.cv-allday-background {
+  z-index: 1;
+  margin: 1px 2px;
+  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 55%, transparent);
+  border-radius: 0.4rem;
+  background: var(--calendar-background-bg);
+  pointer-events: none;
+}
+
 /* Grouped resource headers stick above the day headers. */
 .calendar-view[data-view^="resource"] .cv-day-header {
   top: 3rem;
@@ -238,7 +293,8 @@
 
 .cv-event:focus-visible,
 .cv-month-event:focus-visible,
-.cv-list-event:focus-visible {
+.cv-list-event:focus-visible,
+.cv-allday-event:focus-visible {
   outline: 2px solid var(--calendar-accent);
   outline-offset: 1px;
 }
@@ -287,7 +343,8 @@
   .cv-event:focus-visible,
   .cv-month-event:focus-visible,
   .cv-month-more:focus-visible,
-  .cv-list-event:focus-visible {
+  .cv-list-event:focus-visible,
+  .cv-allday-event:focus-visible {
     outline-color: Highlight;
   }
 

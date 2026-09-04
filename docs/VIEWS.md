@@ -81,6 +81,19 @@ The two predicates are intentionally asymmetric — do not unify them:
 
 Multi-day ranges are sliced and clipped per visible day (`sliceTimedEventForDay`), so `Mon 22:00 → Tue 02:00` renders as `Mon 22:00 → slotMax` and `slotMin → Tue 02:00` where the slot range overlaps. Slices with no positive visible duration render nothing. Geometry uses wall-clock minutes in `calendar.timeZone`, including across DST transitions.
 
+### The all-day lane
+
+Timed events live in the day columns; `allDay` events and backgrounds live in a lane that mirrors the **same column tracks** and sits between the sticky day headers and the scrolling time bodies. `allDaySlot` (default `true`) shows the lane whenever an all-day event or background is visible in range; an empty lane takes no space.
+
+Rules:
+
+- a bar spans its civil days (`[start, end)` exclusive) inside **one resource block only** — it never crosses into the neighbouring room;
+- same-room bars stack into rows (`layoutDaySegments`); different rooms freely share a row;
+- solo views stack unassigned all-day bars against each other in the single block;
+- an all-day background paints the full-height tint of its span;
+- interactions v0.x: native button activation (`calendar:eventclick`), context menu / long-press, day-snapped pointer drag across days and resources, and Shift+arrows day moves — all through the same optimistic commit as timed events. Day-edge resize, creating inside the lane and timed↔all-day conversion are deferred;
+- all-day events are civil `Temporal.PlainDate`; month and list keep rendering them as their usual per-day chips/rows, and `allDaySlot: false` only hides them from time grids.
+
 ## Density guidance
 
 The practical pressure is roughly:

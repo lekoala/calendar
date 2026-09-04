@@ -69,6 +69,8 @@ During a drag the original node stays in place while a detached mirror follows t
 
 Dragging a slice of a multi-day event shifts the whole event: the day delta between source and target columns plus the wall-clock minute delta apply to both `start` and `end`, so the total duration is preserved (same contract as `Shift` + arrows). A single `click` handler in the capture phase both dispatches `calendar:eventclick` and drops the residual click after a drag, resize or long-press.
 
+All-day bars drag with the same state machine but day-snapped: the mirror rides the lane's column tracks within one resource block, and the commit shifts both `Temporal.PlainDate` boundaries by the difference in columns, preserving the civil span. Shift + arrows move a bar by one day; day-edge resizing and timed↔all-day conversion are deferred.
+
 A viewport autoscroller advances the scroll while the pointer rests near the scroller edge. It is a separate helper, not part of layout math.
 
 Event nodes use `touch-action: pan-x pan-y` so a touch gesture starting on an event can still scroll the grid; a scroll takeover fires `pointercancel`, which the drag/resize paths already treat as an abort without commit. Resize handles keep `touch-action: none` for precision. Touch range selection remains a later milestone.

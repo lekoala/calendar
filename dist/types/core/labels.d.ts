@@ -12,6 +12,7 @@
  * @property {string} more month `+n more` fallback template, with a `{hidden}` placeholder
  * @property {string} calendarRegion accessible name of the scroll region
  * @property {string} untitledEvent fallback title for events without one
+ * @property {string} allDaySlotLabel corner label of the all-day lane
  */
 export type CalendarLabels = {
     /**
@@ -34,6 +35,10 @@ export type CalendarLabels = {
      * fallback title for events without one
      */
     untitledEvent: string;
+    /**
+     * corner label of the all-day lane
+     */
+    allDaySlotLabel: string;
 };
 /** @type {CalendarLabels} */
 export declare const DEFAULT_LABELS: CalendarLabels;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Temporal } from "temporal-polyfill";
 import {
   applyRemoteUpdate,
   buildPatch,
@@ -55,6 +56,24 @@ test("buildPatch honors an explicit base revision override", () => {
     baseRevision: 9,
   });
   assert.equal(patch.revision, 9);
+});
+
+test("buildPatch keeps all-day moves civil (YYYY-MM-DD in the payload)", () => {
+  const patch = buildPatch({
+    event: { id: "event-1", extendedProps: { revision: 1 } },
+    // The calendar hands back canonical Temporal.PlainDate boundaries.
+    current: {
+      start: Temporal.PlainDate.from("2026-09-03"),
+      end: Temporal.PlainDate.from("2026-09-05"),
+      resourceId: "room-a",
+    },
+    origin: "drag",
+    clientId: "client-a",
+    mutationId: "mutation-4",
+  });
+  assert.equal(patch.start, "2026-09-03");
+  assert.equal(patch.end, "2026-09-05");
+  assert.equal(patch.resourceId, "room-a");
 });
 
 test("shouldIgnoreEcho drops the sender's own echo only", () => {

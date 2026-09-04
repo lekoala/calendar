@@ -4,6 +4,7 @@ import { Temporal } from "temporal-polyfill";
 import {
   describeEvent,
   eventOverlapsDate,
+  instantRangeOf,
   sliceRangeForDay,
   sliceTimedEventForDay,
   toZonedDateTime,
@@ -183,4 +184,47 @@ test("eventOverlapsDate rejects empty ranges", () => {
     end: "2026-09-07T09:00:00+02:00[Europe/Brussels]",
   };
   assert.equal(eventOverlapsDate(empty, "2026-09-07", ZONE), false);
+});
+
+test("instantRangeOf projects civil dates onto their local midnights", () => {
+  const { start, end } = instantRangeOf("2026-09-03", "2026-09-04", ZONE);
+  assert.equal(start.toString(), "2026-09-03T00:00:00+02:00[Europe/Brussels]");
+  assert.equal(end.toString(), "2026-09-04T00:00:00+02:00[Europe/Brussels]");
+});
+
+test("instantRangeOf spans the real DST day, not a fixed 24 hours", () => {
+  // Brussels springs forward on 2026-03-29: two consecutive midnights are
+  // only 23 hours apart, and fall back on 2026-10-25 for 25 hours. The civil
+  // day never stops being "the 29th".
+  const spring = instantRangeOf("2026-03-29", "2026-03-30", ZONE);
+  assert.equal((spring.end.epochMilliseconds - spring.start.epochMilliseconds) / 3600000, 23);
+  const fall = instantRangeOf("2026-10-25", "2026-10-26", ZONE);
+  assert.equal((fall.end.epochMilliseconds - fall.start.epochMilliseconds) / 3600000, 25);
+});
+
+test("describeEvent names all-day spans in civil terms", () => {
+  const day = {
+    start: Temporal.PlainDate.from("2026-09-03"),
+    end: Temporal.PlainDate.from("2026-09-04"),
+  };
+  assert.equal(describeEvent({ title: "Comp day", ...day }, ZONE), "Comp day, 2026-09-03, all day");
+  const span = {
+    start: Temporal.PlainDate.from("2026-09-03"),
+    end: Temporal.PlainDate.from("2026-09-06"),
+  };
+  assert.equal(
+    describeEvent({ title: "Offsite", ...span }, ZONE),
+    "Offsite, 2026-09-03 to 2026-09-05, all day",
+  );
+});
+
+test("eventOverlapsDate covers civil half-open spans, end exclusive", () => {
+  const range = {
+    start: Temporal.PlainDate.from("2026-09-03"),
+    end: Temporal.PlainDate.from("2026-09-05"),
+  };
+  assert.equal(eventOverlapsDate(range, "2026-09-03", ZONE), true);
+  assert.equal(eventOverlapsDate(range, "2026-09-04", ZONE), true);
+  assert.equal(eventOverlapsDate(range, "2026-09-05", ZONE), false);
+  assert.equal(eventOverlapsDate(range, "2026-09-02", ZONE), false);
 });

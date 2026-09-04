@@ -16,6 +16,7 @@ import {
   isResizable,
   normalizeBackground,
   normalizeEvent,
+  normalizeRangeBound,
   normalizeResource,
 } from "./core/model.js";
 import { queryOverlaps } from "./core/overlaps.js";
@@ -45,6 +46,7 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {number[]} [hiddenDays] weekdays never rendered, ISO 1-7
  * @property {number} [slotLabelInterval] minutes between time axis labels (default 60)
  * @property {boolean} [editable]
+ * @property {boolean} [allDaySlot] show the all-day lane in time grids when it has content (default true)
  * @property {(query: EventSourceQuery) => Promise<unknown[]>} [eventSource]
  * @property {(query: EventSourceQuery) => Promise<unknown[]>} [backgroundSource]
  * @property {(info: object) => unknown} [eventContent]
@@ -291,6 +293,12 @@ export class CalendarViewElement extends HTMLElement {
     const index = this.#events.findIndex((item) => item.id === event.id);
     if (index < 0) return null;
     const before = this.#events[index];
+    // Optimistic commits keep the canonical boundary types: a committed
+    // `current.start` string re-enters the same strict normalization as a
+    // source payload, so `calendar.events` never mixes raw input and state.
+    const allDay = before.allDay === true;
+    const start = normalizeRangeBound(current.start, allDay);
+    const end = normalizeRangeBound(current.end, allDay);
     /**
      * @param {{ start: unknown, end: unknown, resourceId: string | null }} state
      * @returns {void}
@@ -299,7 +307,7 @@ export class CalendarViewElement extends HTMLElement {
       this.#events = this.#events.map((item, i) => (i === index ? { ...item, ...state } : item));
       this.#queueRender();
     };
-    apply({ start: current.start, end: current.end, resourceId: current.resourceId });
+    apply({ start, end, resourceId: current.resourceId });
     let reverted = false;
     const revert = () => {
       if (reverted) return;
@@ -377,6 +385,9 @@ export class CalendarViewElement extends HTMLElement {
   resizeEvent(id, current) {
     const event = this.getEventById(id);
     if (!event || !isResizable(event, this.#config.editable)) return null;
+    // All-day events resize by day edges, not wall-clock minutes: the v0.x
+    // time-grid wire-up for that is not shipped yet, so refuse loudly.
+    if (event.allDay) return null;
     return this.#commitEventResize({
       event,
       previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
@@ -594,6 +605,7 @@ export class CalendarViewElement extends HTMLElement {
       snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
       defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
       monthEventLimit: this.#config.monthEventLimit ?? 3,
+      allDaySlot: this.#config.allDaySlot ?? true,
     };
   }
 

@@ -105,3 +105,62 @@ test("filter narrows without reading class arrays", () => {
     ["blocked"],
   );
 });
+
+test("an all-day event conflicts with a timed booking on the same civil day", () => {
+  const allDay = normalizeEvent({ id: "ad", allDay: true, start: "2026-09-03", end: "2026-09-04" });
+  const hits = queryOverlaps({
+    events: [allDay],
+    range: { start: at("09:00"), end: at("09:30") },
+    timeZone: ZONE,
+  });
+  assert.deepEqual(
+    hits.map((entry) => entry.id),
+    ["ad"],
+  );
+});
+
+test("a timed event ending at midnight does not overlap the next civil day", () => {
+  // Wed 23:00 -> Thu 00:00, half-open: Thursday is untouched.
+  const timed = normalizeEvent({
+    id: "t",
+    start: "2026-09-02T23:00:00+02:00[Europe/Brussels]",
+    end: "2026-09-03T00:00:00+02:00[Europe/Brussels]",
+  });
+  assert.deepEqual(
+    queryOverlaps({ events: [timed], range: { start: "2026-09-03", end: "2026-09-04" }, timeZone: ZONE }),
+    [],
+  );
+  assert.deepEqual(
+    queryOverlaps({ events: [timed], range: { start: "2026-09-02", end: "2026-09-03" }, timeZone: ZONE }).map(
+      (entry) => entry.id,
+    ),
+    ["t"],
+  );
+});
+
+test("a civil query stays the civil day it names, whatever zone runs the calendar", () => {
+  const allDay = normalizeEvent({ id: "ad", allDay: true, start: "2026-09-03", end: "2026-09-04" });
+  // From the calendar's own zone and from a far-away zone, "2026-09-03" is
+  // still the same civil day: both query and event project in `timeZone`.
+  for (const timeZone of [ZONE, "America/Los_Angeles"]) {
+    assert.deepEqual(
+      queryOverlaps({ events: [allDay], range: { start: "2026-09-03", end: "2026-09-04" }, timeZone }).map(
+        (entry) => entry.id,
+      ),
+      ["ad"],
+    );
+  }
+  // An instant that is late Sep 3 in Los Angeles is Sep 4 morning in
+  // Brussels: the Brussels all-day event does not cover it.
+  assert.deepEqual(
+    queryOverlaps({
+      events: [allDay],
+      range: {
+        start: "2026-09-03T20:00:00-07:00[America/Los_Angeles]",
+        end: "2026-09-03T21:00:00-07:00[America/Los_Angeles]",
+      },
+      timeZone: ZONE,
+    }),
+    [],
+  );
+});

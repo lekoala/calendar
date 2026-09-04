@@ -61,6 +61,10 @@ export type TimeGridOptions = {
      * minutes between axis labels (default 60)
      */
     slotLabelInterval?: number;
+    /**
+     * show the all-day lane when it has content (default true)
+     */
+    allDaySlot?: boolean;
 };
 export type ActiveSelection = {
     anchor: number;
@@ -110,6 +114,7 @@ export type ActiveSelection = {
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
  * @property {number} [slotLabelInterval] minutes between axis labels (default 60)
+ * @property {boolean} [allDaySlot] show the all-day lane when it has content (default true)
  */
 /**
  * @typedef {object} ActiveSelection

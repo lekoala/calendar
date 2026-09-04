@@ -1317,6 +1317,76 @@
       padding-block-end: 0;
     }
 
+    /* The tools shelf starts with a filter that spans both columns, and a
+       pinned lane that reuses the menu-row styles, so a favourite tool is
+       indistinguishable from its original. */
+    .sc-tools-search {
+      display: flex;
+      align-items: center;
+      gap: var(--space-15);
+      grid-column: 1 / -1;
+      padding: 0 var(--space-15);
+      margin-block-end: var(--space-10);
+    }
+
+    .sc-tools-search input {
+      min-inline-size: 0;
+      flex: 1;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: var(--font-size-sm);
+    }
+
+    .sc-tools-search input:focus {
+      outline: none;
+    }
+
+    .sc-tools-search input::placeholder {
+      color: var(--text-subtle);
+    }
+
+    .sc-mega .sc-tools-pinned {
+      grid-column: 1 / -1;
+    }
+
+    /* Pin toggle at the row end: hover/focus reveals it so the row's own
+       tick or shortcut stays untouched. The row reserves the space so the
+       reveal never shifts the layout. */
+    .sc-mega li {
+      position: relative;
+    }
+
+    .sc-mega .menu-item {
+      padding-inline-end: 2.2rem;
+    }
+
+    .sc-mega .sc-pin {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: 0.3rem;
+      display: grid;
+      place-items: center;
+      inline-size: 2rem;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--text-subtle);
+      opacity: 0.4;
+      cursor: pointer;
+    }
+
+    .sc-mega .sc-pin:hover,
+    .sc-mega .sc-pin:focus-visible,
+    .sc-mega .sc-pin[aria-pressed="true"] {
+      opacity: 1;
+    }
+
+    .sc-mega .sc-pin[aria-pressed="true"] {
+      color: var(--warning);
+    }
+
     .sc-account {
       min-inline-size: 15rem;
     }
@@ -1916,6 +1986,15 @@
   <!-- Tools: the application's own mega menu. Source lifecycle, realtime
        stand-ins, grid density and diagnostics - none of it in the toolbar. -->
   <div class="sc-pop sc-mega" id="tools-menu" popover role="dialog" aria-label="Tools">
+    <label class="sc-tools-search">
+      <i class="ti ti-search" aria-hidden="true"></i>
+      <input id="tools-filter" type="search" autocomplete="off" placeholder="Find a tool…"
+             aria-label="Find a tool">
+    </label>
+    <section class="sc-tools-pinned" id="tools-pinned" hidden>
+      <h3 class="menu-label"><i class="ti ti-star" aria-hidden="true"></i> Pinned</h3>
+      <ul class="menu" role="group" id="tools-pinned-list"></ul>
+    </section>
     <section>
       <h3 class="menu-label"><i class="ti ti-database" aria-hidden="true"></i> Event source</h3>
       <ul class="menu" role="group" id="source-menu">
@@ -2401,7 +2480,24 @@
       resourceId: "room-b",
       extendedProps: { kind: "planning", seats: 3 },
     });
+    // One all-day closure inside the visible window, so the time-grid lane is
+    // populated from the first load like every other feature of the shell.
+    // Civil boundaries ride Temporal.PlainDate, end exclusive.
+    store.push({
+      id: "seed-all-day",
+      title: "Atrium closure",
+      start: daysToString(calendar.date, 0),
+      end: daysToString(calendar.date, 3),
+      resourceId: "room-a",
+      allDay: true,
+      extendedProps: { kind: "planning", seats: 0 },
+    });
     return store;
+  }
+
+  /** Civil date `N` days out, as a `YYYY-MM-DD` string for all-day seeds. */
+  function daysToString(date, days) {
+    return /** @type {any} */ (date).add({ days }).toString();
   }
 
   /**
@@ -2668,7 +2764,7 @@
   ];
 
   /**
-   * The five fixed strings the core renders itself. `Intl` and `Temporal`
+   * The fixed strings the core renders itself. `Intl` and `Temporal`
    * already carry CLDR, so translating the core is this table and nothing
    * else - no bundle to fetch, which is the point of the contract. An empty
    * override falls back to the shipped English.
@@ -2680,6 +2776,7 @@
       more: "+{hidden} en plus",
       calendarRegion: "Calendrier",
       untitledEvent: "Évènement",
+      allDaySlotLabel: "Toute la journée",
     },
     nl: {
       noEvents: "Geen gebeurtenissen",
@@ -2687,6 +2784,7 @@
       more: "+{hidden} meer",
       calendarRegion: "Agenda",
       untitledEvent: "Gebeurtenis",
+      allDaySlotLabel: "Hele dag",
     },
   };
 
@@ -3160,6 +3258,8 @@
   function whenLabel(iso) {
     const day = iso.slice(0, 10);
     const time = wallClock(iso);
+    // All-day boundaries carry no wall clock: the day is the whole story.
+    if (!time) return fmt.range.format(asDate(day));
     if (day === todayIso()) return `at ${time}`;
     return `${fmt.day.format(asDate(day))} ${fmt.range.format(asDate(day))}, ${time}`;
   }
@@ -3299,6 +3399,15 @@
     /** @type {Array<{ resourceId: string | null, from: number, to: number }>} */
     const ranges = [];
     for (const item of calendar.events) {
+      // An all-day booking claims its whole civil day for the room.
+      if (item.allDay === true) {
+        const day = String(item.start).slice(0, 10);
+        const last = String(item.end).slice(0, 10);
+        if (iso >= day && iso < last) {
+          ranges.push({ resourceId: item.resourceId ?? null, from: 0, to: 24 * 60 });
+        }
+        continue;
+      }
       const start = String(item.start);
       const end = String(item.end);
       const startDay = start.slice(0, 10);
@@ -3681,7 +3790,10 @@
       stored.end = end;
       if (resourceId) stored.resourceId = resourceId;
     }
-    record(`event${kind}: ${detail.event?.id} → ${wallClock(start)}–${wallClock(end)}`);
+    // All-day boundaries are civil dates without a wall clock, so the log
+    // names the span by its dates instead of reading minutes out of thin air.
+    const label = (iso) => (iso.length > 10 ? wallClock(iso) : iso.slice(0, 10));
+    record(`event${kind}: ${detail.event?.id} → ${label(start)}–${label(end)}`);
 
     // The asynchronous half of the same contract: accepted optimistically,
     // then rolled back with `revert()` once the round-trip answers. The
@@ -3820,8 +3932,12 @@
     detailId = item.id;
     const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
     document.getElementById("detail-title").textContent = item.title ?? "Booking";
+    const when =
+      item.allDay === true
+        ? `${fmt.long.format(asDate(String(item.start)))} · all day`
+        : `${fmt.long.format(asDate(String(item.start)))} · ${wallClock(String(item.start))}–${wallClock(String(item.end))}`;
     document.getElementById("detail-meta").textContent =
-      `${fmt.long.format(asDate(String(item.start)))} · ${wallClock(String(item.start))}–${wallClock(String(item.end))}` +
+      when +
       `${item.resourceId ? ` · ${roomTitle(String(item.resourceId))}` : ""} · ${item.extendedProps?.seats ?? "?"} seats` +
       `${locked ? " · locked by facilities" : ""}`;
     document.getElementById("detail-shift").disabled = locked;
@@ -3849,6 +3965,17 @@
         end: shiftHour(String(item.end)),
       }),
     );
+  }
+
+  /** Move an all-day booking forward by one civil day. @param {string} id */
+  function shiftDay(id) {
+    const item = calendar.getEventById(id);
+    if (!item || item.allDay !== true) return false;
+    // Boundaries are canonical `Temporal.PlainDate`, so the day arithmetic
+    // stays civil and the move walks through the same optimistic commit.
+    const start = /** @type {any} */ (item.start).add({ days: 1 });
+    const end = /** @type {any} */ (item.end).add({ days: 1 });
+    return Boolean(calendar.moveEvent(id, { start, end }));
   }
 
   document.getElementById("detail-shift").addEventListener("click", () => {
@@ -3949,12 +4076,16 @@
 
     if (item) {
       const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
+      const allDay = item.allDay === true;
       // Wall-clock duration travels with the clipboard; the paste target
-      // supplies the new start. Multi-day spans keep their wall length.
-      const durationMin = Math.max(
-        15,
-        wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start)),
-      );
+      // supplies the new start. Multi-day spans keep their wall length,
+      // while all-day bookings are civil and keep out of the timed clipboard.
+      const durationMin = allDay
+        ? 0
+        : Math.max(
+            15,
+            wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start)),
+          );
       const clipEntry = (mode) => ({
         mode,
         id: String(item.id),
@@ -3963,14 +4094,16 @@
       });
       openContextMenu([
         { label: "Open booking", icon: "arrow-up-right", run: () => openDetail(item) },
-        { label: "Move +1h", icon: "clock-play", disabled: locked, run: () => shiftById(String(item.id)) },
+        allDay
+          ? { label: "Move +1 day", icon: "calendar-repeat", disabled: locked, run: () => shiftDay(String(item.id)) }
+          : { label: "Move +1h", icon: "clock-play", disabled: locked, run: () => shiftById(String(item.id)) },
         {
           label: "Cut",
           icon: "scissors",
-          disabled: locked,
+          disabled: locked || allDay,
           run: () => setClipboard(clipEntry("cut")),
         },
-        { label: "Copy", icon: "copy", run: () => setClipboard(clipEntry("copy")) },
+        { label: "Copy", icon: "copy", disabled: allDay, run: () => setClipboard(clipEntry("copy")) },
         { label: "Duplicate", icon: "copy-plus", run: () => duplicate(item) },
         {
           label: "Delete",
@@ -4064,6 +4197,7 @@
       start: String(item.start),
       end: String(item.end),
       ...(item.resourceId ? { resourceId: String(item.resourceId) } : {}),
+      ...(item.allDay === true ? { allDay: true } : {}),
       extendedProps: { ...item.extendedProps },
     };
     store.push(created);
@@ -4192,12 +4326,14 @@
     },
   };
 
-  const sourceMenu = document.getElementById("source-menu");
-  sourceMenu.addEventListener("click", (event) => {
+  // The shelf pins rows into a separate lane, so every tool handler
+  // delegates from the menu root instead of its section list: a pinned row
+  // still reaches its own section logic.
+  toolsMenu.addEventListener("click", (event) => {
     const button = event.target.closest("[data-source]");
     if (!button) return;
     const mode = button.dataset.source;
-    for (const item of sourceMenu.querySelectorAll("[data-source]")) {
+    for (const item of toolsMenu.querySelectorAll("[data-source]")) {
       item.setAttribute("aria-checked", String(item === button));
     }
     calendar.configure({ eventSource: sources[mode] });
@@ -4207,8 +4343,7 @@
   });
 
   // Grid density and derivation options, all of them `configure()` calls.
-  const gridMenu = document.getElementById("grid-menu");
-  gridMenu.addEventListener("click", (event) => {
+  toolsMenu.addEventListener("click", (event) => {
     const button = event.target.closest("[data-grid]");
     if (!button) return;
     const on = button.getAttribute("aria-checked") !== "true";
@@ -4240,6 +4375,98 @@
     }
     record(`grid → ${option} ${on ? "on" : "off"}`);
   });
+
+  // --- Tools shelf: filter + pinned tools ----------------------------------
+  // The mega menu is a catalog; the shelf narrows it. Pins are session-only
+  // (an application would persist the ids), which keeps the demo restartable.
+  const toolsFilter = document.getElementById("tools-filter");
+  const toolsPinnedSection = document.getElementById("tools-pinned");
+  const toolsPinnedList = document.getElementById("tools-pinned-list");
+
+  function refreshPinnedSection() {
+    // Re-derive visibility with the current filter: it keeps any row found.
+    applyToolFilter();
+  }
+
+  function applyToolFilter() {
+    const query = toolsFilter.value.trim().toLowerCase();
+    for (const section of toolsMenu.querySelectorAll(":scope > section")) {
+      let any = false;
+      for (const row of section.querySelectorAll("li")) {
+        const visible = query === "" || (row.textContent?.toLowerCase() ?? "").includes(query);
+        row.hidden = !visible;
+        if (visible) any = true;
+      }
+      // Empty sections hide only while a filter is active; the pinned lane
+      // additionally hides on its own when it holds nothing.
+      const pinned = section === toolsPinnedSection;
+      section.hidden = query !== "" ? !any : pinned && toolsPinnedList.children.length === 0;
+    }
+  }
+
+  toolsFilter.addEventListener("input", applyToolFilter);
+
+  // A text field inside an `auto` popover swallows Escape by spec, so the
+  // platform never closes the shelf from the input: Escape first clears the
+  // query, a second press closes the menu.
+  toolsFilter.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (toolsFilter.value !== "") {
+      toolsFilter.value = "";
+      applyToolFilter();
+      event.stopPropagation();
+      event.preventDefault();
+    } else {
+      toolsMenu.hidePopover();
+    }
+  });
+
+  // The menu keeps its DOM across renders, so a closed shelf must forget any
+  // filter before the next open shows a half-hidden catalog.
+  toolsMenu.addEventListener("toggle", (event) => {
+    if (event.newState !== "open") return;
+    toolsFilter.value = "";
+    applyToolFilter();
+  });
+
+  /**
+   * Wrap one pinnable tool row with its pin button. The pin sits beside the
+   * row's own button, never inside it, so activation stays unambiguous and
+   * the section's delegated click handlers ignore it.
+   *
+   * @param {HTMLLIElement} row
+   * @returns {void}
+   */
+  function decorateToolRow(row) {
+    const item = row.querySelector(".menu-item");
+    const home = row.closest("ul.menu")?.id ?? "";
+    if (!item || !home) return;
+    row.dataset.home = home;
+    const pin = document.createElement("button");
+    pin.type = "button";
+    pin.className = "sc-pin";
+    pin.setAttribute("aria-pressed", "false");
+    pin.setAttribute(
+      "aria-label",
+      `Pin ${item.querySelector(".menu-item-text")?.textContent?.trim() ?? "tool"}`,
+    );
+    pin.append(icon("star"));
+    pin.addEventListener("click", () => {
+      const pinned = row.dataset.pinned === "true";
+      row.dataset.pinned = String(!pinned);
+      pin.setAttribute("aria-pressed", String(!pinned));
+      (pinned
+        ? /** @type {HTMLUListElement | null} */ (document.getElementById(row.dataset.home ?? ""))
+        : toolsPinnedList
+      )?.append(row);
+      refreshPinnedSection();
+      record(pinned ? "tool unpinned" : `tool pinned: ${item.querySelector(".menu-item-text")?.textContent?.trim()}`);
+    });
+    row.append(pin);
+  }
+
+  refreshPinnedSection();
+  for (const row of toolsMenu.querySelectorAll("li")) decorateToolRow(row);
 
   toolsMenu.addEventListener("click", (event) => {
     const tool = event.target.closest("[data-tool]")?.dataset?.tool;
@@ -4639,6 +4866,9 @@
     if ((key === "x" || key === "c") && node) {
       const item = calendar.getEventById(node.dataset.eventId ?? "");
       if (!item) return;
+      // The clipboard is a timed workflow (its payload travels as minutes);
+      // all-day bookings keep to the lane and the day-based context actions.
+      if (item.allDay === true) return;
       if (key === "x" && !isLocked(item)) {
         event.preventDefault();
         setClipboard({
