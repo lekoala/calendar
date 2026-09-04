@@ -46,7 +46,7 @@
     "format": "biome format --write src test scripts",
     "typecheck": "tsc -p jsconfig.json",
     "types": "tsc -p tsconfig.types.json",
-    "test": "bun test test/core",
+    "test": "bun test test/core test/sync",
     "test:syntax": "node --check src/calendar-view.js && node --check src/index.js && node --check src/define.js",
     "test:types": "tsc -p test/types/tsconfig.json",
     "test:browser": "playwright test test/browser --project chromium",

@@ -84,6 +84,10 @@ user drags event
 
 The application should be able to attach `revision`/`updatedAt` in `extendedProps` and reconcile its own authoritative payload. The calendar should not invent a domain conflict-resolution strategy.
 
+The client side of that reconciliation (optimistic `PATCH`, `revision`,
+`mutationId`, `409` handling, realtime echo deduplication) is specified in
+[the sync contract](SYNC_CONTRACT.md).
+
 ## Full refetch is valid
 
 Incremental updates are convenience/performance. For broad changes (schedule rules, bulk import, permissions) a full source refetch is an acceptable safe path.

@@ -163,7 +163,10 @@ transport.on("updated", (payload) => calendar.updateEvent(mapEvent(payload)));
 transport.on("deleted", ({ id }) => calendar.removeEvent(id));
 ```
 
-The core never knows the transport exists.
+The core never knows the transport exists. Payload shape, concurrency
+(`revision`), echo deduplication (`mutationId`) and conflict answers
+(`409`) are specified in [the sync contract](SYNC_CONTRACT.md); the demo
+`demo/sync-adapter.js` module provides pure helpers for them.
 
 ## View policy
 
