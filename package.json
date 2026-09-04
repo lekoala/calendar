@@ -4,6 +4,9 @@
   "description": "Framework-agnostic Temporal calendar and resource scheduler Web Component",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "packageManager": "bun@1.4.1",
   "customElements": "custom-elements.json",
   "keywords": ["calendar", "scheduler", "resource", "time-grid", "temporal", "web-component"],
