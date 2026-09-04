@@ -240,7 +240,11 @@
        the element already exposes through `calendar.date`. */
     .sc-mini {
       display: grid;
+      grid-template-columns: minmax(0, 1fr);
       gap: var(--space-10);
+      /* The default `auto` grid column tracks the selects' widest option
+         and pushes a scrollbar into the sidebar; constrain it instead. */
+      min-inline-size: 0;
     }
 
     .sc-mini-head {
@@ -356,10 +360,21 @@
       opacity: 0.9;
     }
 
+    .sc-mini-day[data-full="true"]::after {
+      content: "";
+      position: absolute;
+      inset-block-end: 2px;
+      inline-size: 4px;
+      block-size: 4px;
+      border-radius: var(--radius-full);
+      background: var(--danger);
+      opacity: 0.9;
+    }
+
     .sc-mini-legend {
       display: flex;
       align-items: center;
-      gap: 0.4em;
+      gap: 0.25em;
       margin: 0;
       color: var(--text-subtle);
       font-size: 10.5px;
@@ -367,6 +382,10 @@
 
     .sc-mini-legend .sc-dot {
       background: var(--success);
+    }
+
+    .sc-mini-legend .sc-dot.is-danger {
+      background: var(--danger);
     }
 
     .sc-searchbtn {
@@ -715,7 +734,7 @@
        ranges - are told apart by the classes it puts on them. */
     .actual-calendar .cv-background.sc-closed {
       border-inline-start: 0;
-      background: color-mix(in oklab, var(--surface-subtle), var(--text) 7%);
+      background: color-mix(in oklab, var(--surface), var(--text) 3%);
     }
 
     .actual-calendar .cv-background.sc-blocked {
@@ -1920,7 +1939,7 @@
                   id="activity-menu-item" data-tool="activity">
             <span class="menu-item-icon"><i class="ti ti-activity" aria-hidden="true"></i></span>
             <span class="menu-item-text">Activity log</span>
-            <span class="menu-item-end"><kbd class="key">A</kbd><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i><kbd class="key">A</kbd></span>
           </button>
         </li>
         <li>
@@ -2264,6 +2283,20 @@
       resourceId: "room-a",
       extendedProps: { kind: "deadline", seats: 6 },
     });
+    // One deterministic fully-booked day (anchor + 6): every room busy from
+    // opening to closing, so the mini-month can show its red "full" marker
+    // from the first load instead of waiting for a manual fill.
+    const fullDay = calendar.date.add({ days: 6 });
+    for (const room of ROOMS) {
+      store.push({
+        id: `seed-full-${room.id}`,
+        title: "Fully booked",
+        start: stamp(fullDay, POLICY.opensAt),
+        end: stamp(fullDay, POLICY.closesAt),
+        resourceId: room.id,
+        extendedProps: { kind: "maintenance", seats: 0 },
+      });
+    }
     // Stable target for search and realtime stand-ins.
     store.push({
       id: "live",
@@ -2584,6 +2617,7 @@
     return {
       day: new Intl.DateTimeFormat(locale, { weekday: "short" }),
       month: new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }),
+      monthName: new Intl.DateTimeFormat(locale, { month: "long" }),
       range: new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }),
       short: new Intl.DateTimeFormat(locale, { day: "numeric", month: "numeric" }),
       long: new Intl.DateTimeFormat(locale, {
@@ -3161,9 +3195,10 @@
     return ranges;
   }
 
-  /** Month names follow the shell locale; the list rebuilds when it changes. */
+  /** Month names follow the shell locale; the year has its own select, so
+   * the label is the month alone. The list rebuilds when the locale does. */
   function miniMonthNames() {
-    return Array.from({ length: 12 }, (_, index) => fmt.month.format(new Date(2026, index, 15, 12)));
+    return Array.from({ length: 12 }, (_, index) => fmt.monthName.format(new Date(2026, index, 15, 12)));
   }
 
   /** @param {any} month a Temporal.PlainDate inside the shown month */
@@ -3251,6 +3286,8 @@
         if (active) cell.dataset.activeweek = "true";
         const state = miniDayState(iso, date.dayOfWeek);
         if (state.closed) cell.dataset.closed = "true";
+        // Open but with no free interval anywhere: red "full" marker.
+        if (!state.closed && !state.hasAvailability) cell.dataset.full = "true";
         if (POLICY.viewer === "admin" ? state.hasAvailability : state.bookable) {
           cell.dataset.marked = "true";
         }
@@ -3269,8 +3306,14 @@
     miniLegend.replaceChildren(
       dot(),
       document.createTextNode(
-        POLICY.viewer === "admin" ? "Free time · dimmed days are closed" : "Bookable for you · dimmed days are not",
+        POLICY.viewer === "admin" ? " Free · " : " Bookable for you · ",
       ),
+      (() => {
+        const red = dot();
+        red.classList.add("is-danger");
+        return red;
+      })(),
+      document.createTextNode(" fully booked · dimmed: closed"),
     );
   }
 

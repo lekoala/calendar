@@ -226,6 +226,18 @@ test("month and year selects drive the mini grid without navigating", async ({ p
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
+  // The month label is the month alone: the year has its own select, and a
+  // narrow label keeps the mini section from overflowing the sidebar.
+  const monthText = await page.evaluate(() => {
+    const select = /** @type {any} */ (document.getElementById("mini-month"));
+    return select.options[select.selectedIndex]?.text ?? "";
+  });
+  expect(monthText).toBe("September");
+  const noOverflow = await page.evaluate(() => {
+    const sidebar = /** @type {HTMLElement} */ (document.querySelector(".sc-sidebar"));
+    return sidebar.scrollWidth <= sidebar.clientWidth;
+  });
+  expect(noOverflow).toBe(true);
   await page.selectOption("#mini-month", "10");
   await expect(page.locator('.sc-mini-day[data-date="2026-10-15"]')).toBeVisible();
   // Selecting shows another month; the main anchor only moves on day click.
@@ -303,7 +315,7 @@ test("the viewer toggle re-marks availability without touching navigation", asyn
   await openPanel(page);
   const adminMarks = await page.locator('.sc-mini-day[data-marked="true"]').count();
   expect(adminMarks).toBeGreaterThan(0);
-  await expect(page.locator("#mini-legend")).toContainText("Free time");
+  await expect(page.locator("#mini-legend")).toContainText("Free");
   await page.click("#tools-toggle");
   await page.click('#grid-menu [data-grid="viewer"]');
   await expect(page.locator("#mini-legend")).toContainText("Bookable for you");
@@ -345,9 +357,36 @@ test("occupancy removes the availability dot without closing the day", async ({ 
   );
   // `.events =` re-renders the core; the mini follows via calendar:render.
   await flushRender(page);
+  // The day stays open, but red "full" replaces the green dot: no free
+  // interval remains anywhere.
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).toHaveAttribute("data-full", "true");
   await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-marked", "true");
   await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-closed", "true");
   await expect(page.locator(`.sc-mini-day[data-date="${nextIso}"]`)).toHaveAttribute("data-marked", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${nextIso}"]`)).not.toHaveAttribute("data-full", "true");
+});
+
+test("a seeded fully-booked day shows red, and no day mixes markers", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  const fullIso = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return calendar.date.add({ days: 6 }).toString();
+  });
+  await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).toHaveAttribute("data-full", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).not.toHaveAttribute(
+    "data-marked",
+    "true",
+  );
+  await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).not.toHaveAttribute(
+    "data-closed",
+    "true",
+  );
+  // A green day is never simultaneously red.
+  await expect(page.locator('.sc-mini-day[data-marked="true"][data-full="true"]')).toHaveCount(0);
+  await expect(page.locator("#mini-legend .is-danger")).toBeVisible();
+  await expect(page.locator("#mini-legend")).toContainText("fully booked");
 });
 
 test("room and kind filters change what the core is given", async ({ page }) => {
