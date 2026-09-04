@@ -418,6 +418,110 @@ test("room and kind filters change what the core is given", async ({ page }) => 
   expect(await page.locator(".cv-event").count()).toBeLessThan(before);
 });
 
+test("the room master toggle reads indeterminate, and no room is no verdict", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  const isIndeterminate = () =>
+    page.evaluate(() => /** @type {HTMLInputElement} */ (document.getElementById("room-all")).indeterminate);
+
+  // All three rooms start active: the master is checked, not indeterminate.
+  await expect(page.locator("#room-all")).toBeChecked();
+  expect(await isIndeterminate()).toBe(false);
+
+  // One room off turns the master `indeterminate`; the demand stays 2/3.
+  await page.locator("#room-list input").nth(2).uncheck();
+  await flushRender(page);
+  await expect(page.locator("#room-summary")).toHaveText("2/3");
+  await expect.poll(isIndeterminate).toBe(true);
+
+  // No room at all: the mini-month must not read "none" as "full".
+  await page.locator("#room-list input").first().uncheck();
+  await page.locator("#room-list input").nth(1).uncheck();
+  await flushRender(page);
+  await expect(page.locator("#room-summary")).toHaveText("0/3");
+  await expect(page.locator('.sc-mini-day[data-full="true"]')).toHaveCount(0);
+  await expect(page.locator('.sc-mini-day[data-marked="true"]')).toHaveCount(0);
+  await expect(page.locator('.sc-mini-day[data-neutral="true"]')).toHaveCount(42);
+  await expect(page.locator(".sc-mini-day").first()).toHaveAttribute("aria-label", /no rooms selected$/);
+
+  // One click on the master restores the whole fixture.
+  await page.locator("#room-all").check();
+  await flushRender(page);
+  await expect(page.locator("#room-summary")).toHaveText("3/3");
+  await expect(page.locator("#room-all")).toBeChecked();
+});
+
+test("a nearly-full day shows amber before it tips to red", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  const iso = await page.evaluate(() =>
+    /** @type {any} */ (document.querySelector("calendar-view")).date.toString(),
+  );
+  // Every room 08:00-17:30 leaves half an hour: still bookable, but under
+  // the `nearFullFreeMinutes` policy, so amber instead of red.
+  await page.evaluate((day) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = ["room-a", "room-b", "room-c"].map((resourceId) => ({
+      id: `near-${resourceId.split("-")[1]}`,
+      start: `${day}T08:00:00+02:00[Europe/Brussels]`,
+      end: `${day}T17:30:00+02:00[Europe/Brussels]`,
+      resourceId,
+    }));
+  }, iso);
+  await flushRender(page);
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).toHaveAttribute("data-soon", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-full", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-closed", "true");
+  // The amber verdict is named and shown next to its legend swatch.
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).toHaveAttribute(
+    "aria-label",
+    /nearly full$/,
+  );
+  await expect(page.locator("#mini-legend .is-warning")).toBeVisible();
+  await expect(page.locator("#mini-legend")).toContainText("nearly full");
+  // A day fully covered in every room still outranks it: red is the
+  // exhausted verdict.
+  await page.evaluate((day) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = ["room-a", "room-b", "room-c"].map((resourceId) => ({
+      id: `full-${resourceId.split("-")[1]}`,
+      start: `${day}T08:00:00+02:00[Europe/Brussels]`,
+      end: `${day}T18:00:00+02:00[Europe/Brussels]`,
+      resourceId,
+    }));
+  }, iso);
+  await flushRender(page);
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).toHaveAttribute("data-full", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-soon", "true");
+});
+
+test("the mini month names its verdict in the accessible name", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  // The seeded fully-booked day (anchor + 6) reads red aloud.
+  const fullIso = await page.evaluate(() =>
+    /** @type {any} */ (document.querySelector("calendar-view")).date.add({ days: 6 }).toString(),
+  );
+  await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).toHaveAttribute(
+    "aria-label",
+    /fully booked$/,
+  );
+  // A closed Saturday is named closed.
+  await expect(page.locator('.sc-mini-day[data-closed="true"]').first()).toHaveAttribute(
+    "aria-label",
+    /closed$/,
+  );
+  // An open day is named free, and the anchor keeps its aria-current.
+  await expect(page.locator('.sc-mini-day[data-marked="true"]').first()).toHaveAttribute(
+    "aria-label",
+    /free$/,
+  );
+  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveAttribute("aria-current", "date");
+});
+
 test("the live strip reports the visible range", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();

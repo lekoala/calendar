@@ -161,7 +161,58 @@ Variants:
 
 Non-goals: drag-to-edge auto-navigation between weeks (timer + re-render under capture, conflicts with the vertical autoscroller); core-owned clipboard state or persistence; OS clipboard integration.
 
-## 12. Acceptance scenarios
+## 12. Resource closure and bulk rescheduling
+
+A resource becomes unavailable for a civil date while many concrete events
+already occupy it. The user needs to move all affected events to another date
+(often the following week), preserving each event's duration and relative
+time where possible, then resolve conflicts before anything is committed.
+
+This is not repeated single-event cut/paste: the application needs one
+selection, one preview and one cancellable plan for the affected events.
+
+Core stress:
+
+- identify events by resource and civil-date range;
+- keep an application-owned batch plan while navigating to a target date or
+  refetching the visible range;
+- validate every proposed occurrence against background ranges, resource
+  capabilities and event conflicts before commit;
+- preserve the relative time and duration of each event, unless the
+  application explicitly chooses a different policy;
+- avoid a partially rescheduled day when one target cannot be accepted.
+
+Nominal scenario (resource closed for one day):
+
+1. the application marks the resource/date as unavailable and identifies the
+   affected events;
+2. the user reviews a preview of the proposed moves, for example the same
+   wall-clock slots on the following week;
+3. the application navigates to the target range and checks all target slots;
+4. the user confirms the plan; the application commits the moves through the
+   normal event mutation contract and keeps a way to cancel or undo the
+   operation;
+5. if any target is refused, the plan remains available and no accepted move
+   is left without an explicit resolution.
+
+The current `batch()` API only coalesces rendering; it is not an atomic
+transaction. A future bulk mutation API would need an explicit preflight,
+commit and rollback contract. Until that is justified, the application owns
+the plan and can orchestrate `getEventOverlaps()`, `moveEvent()` and
+`revert()` per event.
+
+Variants:
+
+- move the events to the same resource on another date;
+- redistribute them across alternative resources;
+- move only events overlapping a newly added background range;
+- exclude or manually resolve events with no valid target.
+
+Non-goals: the core deciding why a resource is unavailable, persistence or
+transport orchestration, and silently moving events without an application
+confirmation step.
+
+## 13. Acceptance scenarios
 
 Concrete scripted checks the demo fixtures must pass before a release,
 with no domain code inside the engine. Each line names the use case that

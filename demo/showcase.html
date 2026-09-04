@@ -70,6 +70,23 @@
       font-size: 1.35em;
     }
 
+    /* The glyphs themselves carry their own vertical metrics, so a line
+       box is never the drawing: `line-height: 1` centres the box, not the
+       icon. The slot owns centering; the font glyph is a block so its
+       baseline does not add an extra inline alignment offset. */
+    .sc-shell .ti {
+      display: block;
+      flex: none;
+      inline-size: 1.15em;
+      block-size: 1.15em;
+      line-height: 1;
+      vertical-align: middle;
+    }
+
+    .sc-shell .ti::before {
+      display: block;
+    }
+
     /* Manual Light / Dark toggle: the default Actual theme is a
        light-dark() pair, so switching color-scheme is enough. */
     [data-theme="light"] {
@@ -270,6 +287,15 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* Native selects: `color-scheme` already drives the popup in dark mode,
+       and explicit token colours keep the field and its options legible the
+       moment the OS or browser cannot honour that hint. */
+    .sc-mini-head .sc-mini-select,
+    .sc-mini-head .sc-mini-select option {
+      color: var(--text);
+      background: var(--surface);
+    }
+
     .sc-mini-grid {
       display: grid;
       grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -371,21 +397,56 @@
       opacity: 0.9;
     }
 
+    .sc-mini-day[data-soon="true"]::after {
+      content: "";
+      position: absolute;
+      inset-block-end: 2px;
+      inline-size: 4px;
+      block-size: 4px;
+      border-radius: var(--radius-full);
+      background: var(--warning);
+      opacity: 0.9;
+    }
+
+    /* No room selected: the day is open but says nothing about
+       availability, instead of misreading "none" as "full". */
+    .sc-mini-day[data-neutral="true"] {
+      color: var(--text-subtle);
+    }
+
     .sc-mini-legend {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 0.25em;
+      column-gap: 0.8em;
+      row-gap: 0.25em;
       margin: 0;
       color: var(--text-subtle);
       font-size: 10.5px;
     }
 
+    /* Keep each marker and its label together. Anonymous text nodes in the
+       parent flex can wrap independently, which leaves a dot visually
+       detached from its label and breaks the final "closed" note. */
+    .sc-mini-legend-item {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 0.35em;
+      white-space: nowrap;
+    }
+
     .sc-mini-legend .sc-dot {
+      display: block;
       background: var(--success);
     }
 
     .sc-mini-legend .sc-dot.is-danger {
       background: var(--danger);
+    }
+
+    .sc-mini-legend .sc-dot.is-warning {
+      background: var(--warning);
     }
 
     .sc-searchbtn {
@@ -418,6 +479,14 @@
       border-radius: var(--radius-sm);
       font-size: var(--font-size-xs);
       cursor: pointer;
+    }
+
+    /* The master row toggles every room at once; the summary count says
+       how much of the fixture is active (`indeterminate` for the middle). */
+    .sc-check-all {
+      gap: var(--space-20);
+      margin-block-end: 2px;
+      font-weight: var(--font-weight-bold);
     }
 
     .sc-check:hover,
@@ -1192,6 +1261,24 @@
       color: var(--primary);
     }
 
+    /* Icon cell per menu row: a fixed 1.5rem square, with the glyph kept to
+       a 1em square inside it, so every row centres its icon on the same
+       mark instead of whatever the font advance happened to be. */
+    .sc-pop .menu-item .menu-item-icon {
+      display: grid;
+      flex: 0 0 1.5rem;
+      inline-size: 1.5rem;
+      block-size: 1.5rem;
+      place-items: center;
+      line-height: 0;
+    }
+
+    .sc-pop .menu-item .menu-item-icon > .ti {
+      flex: none;
+      inline-size: 1em;
+      block-size: 1em;
+    }
+
     .sc-pop [aria-checked="true"] .sc-tick {
       visibility: visible;
     }
@@ -1742,6 +1829,10 @@
           <i class="ti ti-door" aria-hidden="true"></i> Rooms
           <span class="sc-count-mini" id="room-summary"></span>
         </h2>
+        <label class="sc-check sc-check-all">
+          <input type="checkbox" id="room-all" class="check">
+          <span>All rooms</span>
+        </label>
         <ul class="sc-checks" id="room-list"></ul>
       </section>
 
@@ -2195,6 +2286,10 @@
     viewer: "admin",
     minAdvanceDays: 2,
     maxAdvanceDays: 60,
+    // A day is "nearly full" when it still has a free interval somewhere,
+    // but even the room with the most room left has less than an hour: the
+    // amber marker names busy-but-bookable, red means nothing left at all.
+    nearFullFreeMinutes: 60,
   };
 
   /**
@@ -3089,6 +3184,18 @@
     return node;
   }
 
+  /** @param {string} label @param {string} [tone] */
+  function legendItem(label, tone = "") {
+    const item = document.createElement("span");
+    item.className = "sc-mini-legend-item";
+    const marker = dot();
+    if (tone) marker.classList.add(tone);
+    const text = document.createElement("span");
+    text.textContent = label;
+    item.append(marker, text);
+    return item;
+  }
+
   // --- Mini month: a navigator, not a date-picker -------------------------
   // Every day stays clickable (navigation only); `closed` / markers describe
   // the application policy for that day. The grid reuses the core month
@@ -3146,6 +3253,11 @@
   function miniDayState(iso, weekday) {
     const window = { from: POLICY.opensAt, to: POLICY.closesAt };
     const rooms = [...activeRooms];
+    // No room selected is not a verdict: the day stays open and unmarked,
+    // because turning "none" into "full" would lie about availability.
+    if (rooms.length === 0) {
+      return { closed: false, hasAvailability: false, bookable: false, soonFull: false, neutral: true };
+    }
     const blocked = BLOCKED.filter(
       (range) => range.dayOfWeek === null || range.dayOfWeek === weekday,
     ).map((range) => ({ resourceId: range.resourceId, from: range.from, to: range.to }));
@@ -3160,16 +3272,21 @@
       rooms.length > 0 &&
       rooms.every((room) => freeIntervals(window, forRoom(room, blocked)).length === 0);
     const closed = weekday === 7 || POLICY.closedWeekdays.includes(weekday) || everyRoomBlocked;
-    const hasAvailability =
-      !closed &&
-      rooms.some(
-        (room) => freeIntervals(window, [...forRoom(room, blocked), ...forRoom(room, occupied)]).length > 0,
-      );
+    const freePerRoom = rooms.map(
+      (room) =>
+        freeIntervals(window, [...forRoom(room, blocked), ...forRoom(room, occupied)]).reduce(
+          (sum, interval) => sum + (interval.to - interval.from),
+          0,
+        ),
+    );
+    const maxFree = Math.max(...freePerRoom);
+    const hasAvailability = !closed && maxFree > 0;
+    const soonFull = hasAvailability && maxFree < POLICY.nearFullFreeMinutes;
     const ahead = daysBetween(todayIso(), iso);
     const inAdvanceWindow = ahead >= POLICY.minAdvanceDays && ahead <= POLICY.maxAdvanceDays;
     const bookable =
       hasAvailability && ahead >= 0 && (POLICY.viewer === "admin" || inAdvanceWindow);
-    return { closed, hasAvailability, bookable };
+    return { closed, hasAvailability, bookable, soonFull, neutral: false };
   }
 
   /**
@@ -3285,12 +3402,28 @@
         if (date.month !== month.month) cell.dataset.outsideMonth = "true";
         if (active) cell.dataset.activeweek = "true";
         const state = miniDayState(iso, date.dayOfWeek);
-        if (state.closed) cell.dataset.closed = "true";
-        // Open but with no free interval anywhere: red "full" marker.
-        if (!state.closed && !state.hasAvailability) cell.dataset.full = "true";
-        if (POLICY.viewer === "admin" ? state.hasAvailability : state.bookable) {
+        // A day carries exactly one verdict: closed, full, nearly full or
+        // available — never a mix, and never a verdict when no room is on.
+        if (state.neutral) {
+          cell.dataset.neutral = "true";
+        } else if (state.closed) {
+          cell.dataset.closed = "true";
+        } else if (!state.hasAvailability) {
+          cell.dataset.full = "true";
+        } else if (state.soonFull) {
+          cell.dataset.soon = "true";
+        } else if (POLICY.viewer === "admin" ? state.hasAvailability : state.bookable) {
           cell.dataset.marked = "true";
         }
+        // The marker status belongs in the accessible name, not only in a
+        // CSS `::after` dot: a screen reader must hear the verdict too.
+        let status = "";
+        if (state.neutral) status = "no rooms selected";
+        else if (state.closed) status = "closed";
+        else if (!state.hasAvailability) status = "fully booked";
+        else if (state.soonFull) status = "nearly full";
+        else if (POLICY.viewer === "admin" ? state.hasAvailability : state.bookable) status = "free";
+        if (status) cell.setAttribute("aria-label", `${fmt.long.format(asDate(iso))}, ${status}`);
         if (iso === today) cell.dataset.today = "true";
         if (iso === anchorIso) {
           cell.dataset.anchor = "true";
@@ -3304,16 +3437,9 @@
       }
     }
     miniLegend.replaceChildren(
-      dot(),
-      document.createTextNode(
-        POLICY.viewer === "admin" ? " Free · " : " Bookable for you · ",
-      ),
-      (() => {
-        const red = dot();
-        red.classList.add("is-danger");
-        return red;
-      })(),
-      document.createTextNode(" fully booked · dimmed: closed"),
+      legendItem(POLICY.viewer === "admin" ? "Free" : "Bookable for you"),
+      legendItem("nearly full", "is-warning"),
+      legendItem("fully booked · dimmed: closed", "is-danger"),
     );
   }
 
@@ -3345,9 +3471,24 @@
   // --- Room checklist ------------------------------------------------------
   const roomList = document.getElementById("room-list");
   const roomSummary = document.getElementById("room-summary");
+  const roomAll = document.getElementById("room-all");
+
+  // The master toggle flips every room at once: checked for all, unchecked
+  // for none, indeterminate for the middle — `<input type="checkbox">`
+  // carries `indeterminate` natively, no ARIA needed.
+  roomAll.addEventListener("change", () => {
+    for (const room of ROOMS) {
+      if (roomAll.checked) activeRooms.add(room.id);
+      else activeRooms.delete(room.id);
+    }
+    record(roomAll.checked ? "rooms → all" : "rooms → none");
+    applyFilters();
+  });
 
   function renderRooms() {
     roomSummary.textContent = `${activeRooms.size}/${ROOMS.length}`;
+    roomAll.checked = activeRooms.size === ROOMS.length;
+    roomAll.indeterminate = activeRooms.size > 0 && activeRooms.size < ROOMS.length;
     roomList.replaceChildren();
     for (const room of ROOMS) {
       const item = document.createElement("li");

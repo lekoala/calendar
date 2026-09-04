@@ -108,7 +108,19 @@ Exit condition: a coherent starting point.
 - resource grouping/hierarchy;
 - optional recurrence adapter;
 - framework adapters;
-- print/export helpers.
+- print/export helpers;
+- bulk rescheduling for a resource/date closure: application-owned planning
+  first, with a preflight/atomic multi-event mutation considered only after
+  the rollback contract is defined;
+- custom showcase select theme handling beyond the shipped first attempt
+  (`color-scheme: dark` on the theme switch plus explicit token colors on
+  `select`/`option`): an accessible custom listbox only if native popup
+  rendering stays inconsistent across browsers.
+
+Showcase shell polish landed in 0.x, all application-side (application
+chrome, not core work): a room master checkbox with `indeterminate`, a
+neutral mini-month state when no resource is active, a policy-threshold
+"nearly full" marker and per-day accessible names for the mini-month.
 
 Deliberately never planned: virtualization, Gantt, resource
 timeline/tree-grid.
