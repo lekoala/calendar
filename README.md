@@ -1,8 +1,6 @@
-# @lekoala/calendar — prototype
+# @lekoala/calendar
 
 A lightweight, framework-agnostic calendar and resource scheduling Web Component built around **Temporal**, normal DOM, and a small public API.
-
-This repository is intentionally a **starter**: the docs and contracts are more complete than the JavaScript. The goal is to make the first implementation decisions explicit before the engine grows.
 
 ```html
 <link rel="stylesheet" href="./src/calendar.css">
@@ -65,7 +63,7 @@ See [docs/FOUNDATIONS.md](docs/FOUNDATIONS.md) for the full contract.
 
 ## Working API shape
 
-The prototype exposes the intended seams even where implementation is incomplete:
+Everything below is implemented and exercised by the browser suites:
 
 ```js
 calendar.configure({
@@ -98,8 +96,19 @@ calendar.addEventListener('calendar:select', (event) => {
 });
 
 calendar.addEventListener('calendar:eventmove', (event) => {
-  // Persist, then commit/revert when implemented.
+  // Persist, then call detail.revert() to undo the optimistic move.
 });
+```
+
+Civil date helpers (mini-calendars, custom headers) come from one `dates`
+object, reachable through ESM and through the element static for
+classic-script (e.g. `file://`) consumers:
+
+```js
+import { dates } from '@lekoala/calendar';
+const weeks = dates.getMonthWeeks('2026-09-03', { firstDay: 1 });
+
+// classic script: const { dates } = customElements.get('calendar-view');
 ```
 
 ## Views
@@ -136,7 +145,7 @@ Then open `http://127.0.0.1:4173/demo/`.
 
 ## Development
 
-The project follows the same working model as `@lekoala/combobox`: explicit custom-element registration, source ESM, Light DOM, committed generated artifacts, browser tests for real interaction, and an `AGENTS.md` that protects the architectural invariants.
+The project is self-contained: explicit custom-element registration, source ESM, Light DOM, committed generated artifacts, browser tests for real interaction, and an `AGENTS.md` that protects the architectural invariants.
 
 ```bash
 npm install
@@ -221,22 +230,31 @@ distribution 3 instead. Either way, the grid's calculated geometry
 (`top`/`height` style attributes) already assumes style attributes are
 allowed.
 
-## What is intentionally incomplete
+## What is intentionally outside the core
 
-The current JavaScript proves only the shell and basic rendering geometry. TODOs remain for:
+The 0.1 core is feature-complete for its scope; applications own everything
+around it:
 
-- overlap layout;
-- drag / resize;
-- autoscroll;
-- range selection;
-- hover-slot preview;
-- month/list renderers (see Views);
-- keyboard navigation;
-- rich render hooks;
-- source caching and request reconciliation;
-- accessibility hardening.
+- **Transport and persistence**: no REST language, auth, WebSocket/SSE
+  client or backend mapping — see the [sync contract](docs/SYNC_CONTRACT.md)
+  for the client side of optimistic updates, `revision`, `mutationId` and
+  `409` conflicts.
+- **Recurrence expansion**, search UI, forms/modals, business workflows
+  (booking policy, notifications) and realtime transport are application
+  concerns built on the documented seams.
 
-The intended behavior and test matrix are documented before implementation in [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/TESTING.md](docs/TESTING.md).
+Known structural debt heading into 0.2, tracked in
+[docs/ROADMAP.md](docs/ROADMAP.md):
+
+- grid rendering is full replacement per mutation (keyed DOM reconciliation
+  is the intended direction);
+- pointer interactions live in the renderer rather than a consolidated
+  pointer engine;
+- density policies per view (all-day lane, slot-row policy) are planned,
+  not built.
+
+The contract and test matrix are documented in
+[docs/ROADMAP.md](docs/ROADMAP.md) and [docs/TESTING.md](docs/TESTING.md).
 
 ## License
 

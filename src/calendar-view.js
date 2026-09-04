@@ -115,7 +115,6 @@ export class CalendarViewElement extends HTMLElement {
 
   disconnectedCallback() {
     this.#abortController?.abort();
-    // TODO: pointer engine/window listener teardown.
   }
 
   attributeChangedCallback() {
@@ -510,6 +509,9 @@ export class CalendarViewElement extends HTMLElement {
     this.#renderQueued = true;
     requestAnimationFrame(() => {
       this.#renderQueued = false;
+      // A state change made while detached is covered by the next
+      // `connectedCallback`, so no work survives a disconnect.
+      if (!this.isConnected) return;
       this.#render();
     });
   }
@@ -680,7 +682,7 @@ export class CalendarViewElement extends HTMLElement {
       }),
     );
 
-    // TODO: use keyed/incremental reconciliation rather than full replacement.
-    // TODO: route click/select/drag/resize through a dedicated pointer engine.
+    // Rendering is full replacement by design in 0.x; keyed reconciliation
+    // and a consolidated pointer engine are roadmap debt (docs/ROADMAP.md).
   }
 }

@@ -323,7 +323,11 @@ test("the viewer toggle re-marks availability without touching navigation", asyn
   // Bookable implies available, so the external set can only shrink.
   expect(externalMarks).toBeLessThanOrEqual(adminMarks);
   // Navigation is viewer-independent: an outside-month day still jumps.
+  // Below 64rem the Escape that closed the tools menu also closes the
+  // side panel popover, so reopen it on the way there.
   await page.keyboard.press("Escape");
+  await closePanel(page);
+  await openPanel(page);
   await page.click('.sc-mini-day[data-date="2026-08-31"]');
   await flushRender(page);
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-08-31");
@@ -529,6 +533,9 @@ test("a non-bookable range refuses the drop it is drawn over", async ({ page }) 
 test("bookable hours paint green with an amber late desk", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
+  // The shell opens on a single day below 640px; pin the 3-day resource
+  // view so the band counts are portable across viewports.
+  await setView(page, "resourceThreeDays");
   // Two open days (Thu/Fri) across three rooms; Saturday stays fully closed.
   await expect(page.locator(".cv-background.sc-open")).toHaveCount(6);
   // room-b Thursday 18:00-20:00 at 1.5px/min from a 07:00 slot start.

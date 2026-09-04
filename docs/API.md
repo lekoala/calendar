@@ -1,6 +1,8 @@
-# API draft
+# API
 
-Everything in this document is **0.x draft**. The purpose is to make seams explicit before implementation.
+The seams below are implemented and covered by the test suites. Anything
+still unstable is additive: a 0.x minor may add options, not silently
+change existing behaviour.
 
 ## Registration
 

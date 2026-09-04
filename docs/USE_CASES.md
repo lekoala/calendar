@@ -11,7 +11,9 @@ Core stress:
 - efficient `timeGrid`;
 - no resource header overhead;
 - custom event rendering;
+- overlap layout for dense sets (several events sharing a column);
 - keyboard/pointer selection;
+- empty-slot hover preview;
 - current-time indicator;
 - async range loading.
 
@@ -64,6 +66,14 @@ The application owns:
 
 The core must not assume that all resources are loaded/displayed.
 
+Density behaviour is contract, not decoration:
+
+- horizontal scrolling stays predictable at a minimum column width;
+  resources and days are never hidden automatically;
+- no virtualization: dense visible sets are rendered in full, and the
+  documented UX limit is where the grid stops being readable, never where
+  it stops being fast.
+
 ## 5. Background schedules
 
 An application paints non-event intervals behind the grid:
@@ -72,7 +82,8 @@ An application paints non-event intervals behind the grid:
 - maintenance;
 - availability;
 - blocked periods;
-- capacity windows.
+- capacity windows;
+- resource-scoped ranges in a resource grid.
 
 The core only knows background geometry and optional metadata/class hooks.
 
@@ -94,7 +105,10 @@ calendar.updateEvent(event)
 calendar.removeEvent(id)
 ```
 
-The viewport/date/scroll should remain stable.
+The viewport/date/scroll should remain stable, while a user is scrolled
+mid-day. Rapidly switching dates or resource sets must never let an older
+response render: sources abort stale loads and the core ignores late
+completions (see DATA_AND_REALTIME.md).
 
 ## 8. Search → reveal
 
@@ -142,7 +156,57 @@ Nominal scenario (cut/paste across weeks):
 Variants:
 
 - copy/paste duplicates (`Ctrl+C`, "Copy", then paste creates a new id);
-- sidebar parking: an application-owned lane holding parked/cut events, Drop-out of the grid (planned `calendar:eventdropout`, M9b) feeds it; paste reuses the same commit path;
+- sidebar parking: an application-owned lane holding parked/cut events, Drop-out of the grid (a future explicit `calendar:eventdropout` intent) feeds it; paste reuses the same commit path;
 - cancellation: `Esc`, a new cut/copy replacing the clipboard, or a successful paste.
 
 Non-goals: drag-to-edge auto-navigation between weeks (timer + re-render under capture, conflicts with the vertical autoscroller); core-owned clipboard state or persistence; OS clipboard integration.
+
+## 12. Acceptance scenarios
+
+Concrete scripted checks the demo fixtures must pass before a release,
+with no domain code inside the engine. Each line names the use case that
+defines the behaviour; `demo/resources.html` and `demo/showcase.html`
+carry the fixtures.
+
+### Solo (scenario A)
+
+- one agenda, 3-day time grid, ~30 events with several overlaps (§1);
+- background ranges (§5) and the current-time indicator (§1), custom event DOM (§1);
+- hover an empty slot and range-select (§1);
+- drag an event in time/day and resize start/end (§1);
+- open an application-owned modal from an event click (§6);
+- apply an incremental remote update without moving scroll/date (§7).
+
+### Resources (scenario B)
+
+- 2 resources × 3 days with resource → date headers (§2);
+- resource-specific backgrounds (§5);
+- drag an event from resource A to B (§2);
+- one read-only resource (§2);
+- range selection returns the resource id (§2).
+
+### Larger teams / density (scenario C)
+
+- 1×7, 2×3, 6×1, 6×3 and 12×1 fixtures (§4);
+- horizontal scrolling predictable at a minimum column width; resources
+  and days never hidden automatically; no virtualization (§4);
+- note where the view becomes UX-limited rather than technically slow.
+
+### Async races (scenario D)
+
+Rapidly switch date and resource sets with deliberately delayed source
+responses; only the newest state may render (§7, DATA_AND_REALTIME.md).
+
+### Realtime (scenario E)
+
+Simulate add/update/remove every few seconds while the user is scrolled
+mid-day; no navigation or scroll reset (§7).
+
+## Stop conditions
+
+Do not keep layering patches if the architecture requires a full grid
+re-render on every pointer move, domain-specific concepts to express
+generic interactions, duplicate solo/resource interaction engines,
+unbounded document/window listeners, or resource drag implemented as
+application-specific special cases. These mirror the invariants in
+`AGENTS.md`; if they appear, fix the core boundary before adding features.

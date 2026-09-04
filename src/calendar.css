@@ -268,8 +268,13 @@
   .calendar-view *,
   .calendar-view *::before,
   .calendar-view *::after {
+    /* Author styles must not reanimate motion inside the component:
+       `!important` is what makes the accessibility preference win. */
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion must override author animations */
     animation: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion must override author transitions */
     transition: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion must force instant scroll */
     scroll-behavior: auto !important;
   }
 }
@@ -446,4 +451,5 @@
   white-space: nowrap;
 }
 
-/* TODO: selection/hover/drop overlays and density policies by data-view. */
+/* Selection/hover/drop overlays are implemented above; density policies
+   per `data-view` (all-day lane, slot-row policy) are roadmap M9c. */

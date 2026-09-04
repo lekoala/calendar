@@ -8,10 +8,10 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.1
       - run: bun install --frozen-lockfile
       - run: bun run verify
 
@@ -22,10 +22,10 @@ jobs:
       matrix:
         browser: [chromium, firefox, webkit]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.1
       - run: bun install --frozen-lockfile
       - name: Install Playwright browser
         run: bunx playwright install --with-deps ${{ matrix.browser }}

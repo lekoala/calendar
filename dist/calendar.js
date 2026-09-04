@@ -1,4 +1,4 @@
-/*! @lekoala/calendar v0.0.0-prototype - https://github.com/lekoala/calendar */
+/*! @lekoala/calendar v0.1.0 - https://github.com/lekoala/calendar */
 (() => {
   // node_modules/temporal-polyfill/chunks/root.js
   var NativeTemporal = globalThis.Temporal;
@@ -5495,6 +5495,8 @@
       this.#renderQueued = true;
       requestAnimationFrame(() => {
         this.#renderQueued = false;
+        if (!this.isConnected)
+          return;
         this.#render();
       });
     }

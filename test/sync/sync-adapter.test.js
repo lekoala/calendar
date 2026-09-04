@@ -101,6 +101,7 @@ test("decideOnConflict offers reload and reapply on a real divergence", () => {
  * @returns {{ calls: string[], batch: (fn: () => void) => void, addEvent: () => void, updateEvent: () => void, removeEvent: () => void }}
  */
 function fakeCalendar() {
+  /** @type {string[]} */
   const calls = [];
   return {
     calls,

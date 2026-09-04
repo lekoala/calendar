@@ -1,10 +1,10 @@
 {
   "name": "@lekoala/calendar",
-  "version": "0.0.0-prototype",
+  "version": "0.1.0",
   "description": "Framework-agnostic Temporal calendar and resource scheduler Web Component",
   "type": "module",
   "license": "MIT",
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.1",
   "customElements": "custom-elements.json",
   "keywords": ["calendar", "scheduler", "resource", "time-grid", "temporal", "web-component"],
   "files": ["dist", "src", "custom-elements.json", "LICENSE", "README.md"],

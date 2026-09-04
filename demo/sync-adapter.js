@@ -51,7 +51,7 @@ export function buildPatch({ event, current, origin, clientId, mutationId, baseR
  * Echoes carry the `mutationId` of a commit this client sent; anything else
  * (including third-party updates) must be applied.
  *
- * @param {{ mutationId?: unknown }} message inbound realtime message
+ * @param {{ mutationId?: unknown, revision?: unknown }} message inbound realtime message
  * @param {Iterable<string>} recentMutationIds `mutationId`s of commits sent by this client
  * @returns {boolean} true when the message must be ignored
  */
@@ -101,11 +101,21 @@ export function decideOnConflict({ local, remote }) {
 }
 
 /**
+ * Calendar mutation API subset used by realtime adapters.
+ *
+ * @typedef {object} CalendarMutations
+ * @property {(event: unknown) => void} addEvent
+ * @property {(event: unknown) => void} updateEvent
+ * @property {(id: string | number) => void} removeEvent
+ * @property {(fn: () => void) => void} batch
+ */
+
+/**
  * Apply one inbound realtime message through the calendar mutation API.
  * Unknown message types report `false` so the caller can log them instead of
  * crashing the stream. Remote updates inside one message batch together.
  *
- * @param {object} calendar subset of the calendar API (`addEvent`, `updateEvent`, `removeEvent`, `batch`)
+ * @param {CalendarMutations} calendar subset of the calendar mutation API
  * @param {{ type: string, event?: { id: string }, id?: string | number }} message
  * @returns {boolean} true when a mutation ran
  */
@@ -119,7 +129,8 @@ export function applyRemoteUpdate(calendar, message) {
     return true;
   }
   if (message.type === "deleted" && message.id != null) {
-    calendar.batch(() => calendar.removeEvent(message.id));
+    const id = message.id;
+    calendar.batch(() => calendar.removeEvent(id));
     return true;
   }
   return false;

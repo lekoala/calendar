@@ -211,7 +211,7 @@ If code/algorithms are later reused from an MIT project (for example EventCalend
 - Avoid compatibility aliases before 1.0 unless an actual consumer needs them.
 - Prefer explicit state transitions to broad mutation observers.
 - Do not optimize for virtualization until profiling of a realistic visible set demands it.
-- Keep generated artifacts out of the first prototype. Once packaging is stabilized, add a `sync`/`verify` workflow like `@lekoala/combobox` rather than hand-editing dist files.
+- Keep generated artifacts out of the first prototype. Once packaging is stabilized, add a `sync`/`verify` workflow (regenerate `dist`, types and `custom-elements.json`; gate on generated drift and the package contract) rather than hand-editing dist files.
 
 ## Development gates
 

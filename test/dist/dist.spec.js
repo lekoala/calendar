@@ -50,9 +50,10 @@ test("standalone build registers, styles and injects its CSS once", async ({ pag
     });
   });
   await expect(page.locator("#lekoala-calendar-style")).toHaveCount(1);
-  const upgraded = await page.evaluate(
-    () => document.querySelector("calendar-view") instanceof customElements.get("calendar-view"),
-  );
+  const upgraded = await page.evaluate(() => {
+    const Ctor = customElements.get("calendar-view");
+    return Ctor != null && document.querySelector("calendar-view") instanceof Ctor;
+  });
   expect(upgraded).toBe(true);
   await expect(page.locator(".cv-event")).toHaveCount(3);
 });
