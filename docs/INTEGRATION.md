@@ -119,41 +119,61 @@ core keeps shipping only geometry it computes itself. CSS anchor
 positioning is the eventual platform answer and is deliberately not the
 one used yet: it is above our browser floor.
 
-## Clipboard (cut/copy/paste)
+## Clipboard and the move workbench
 
-Inter-week moves are an application-owned clipboard on top of core
-primitives (use case 11 in [USE_CASES.md](USE_CASES.md#11-moving-an-event-outside-the-visible-window-cutcopypaste)).
-The core owns no clipboard state. Recommended shape:
+Move and copy split cleanly (use case 12 in
+[USE_CASES.md](USE_CASES.md#12-resource-closure-and-bulk-rescheduling)):
+
+- **Move** rides an application-owned **workbench** — a persistent queue of
+  events waiting to be placed, with one *armed* item. `Cut` / "park" /
+  resource-day / whole-day fills only add + arm; paste, drag and click
+  consume the armed item. The demo `demo/workbench.js` is the pure state
+  holder (`items[]` + `activeId`, one `change` beat per mutation), and the
+  showcase sidebar renders off that beat — never off `calendar:render`.
+- **Copy** stays a plain clipboard (a duplicated booking is not a waiting
+  move): snapshot, `eventContent`/banner while it holds, `addEvent()` on
+  paste.
+
+The core owns neither. Recommended shape:
 
 ```js
-let clipboard = null; // { mode: "cut" | "copy", id, durationMs } | null
-
-// Cut: snapshot, do NOT remove yet — the event stays in place until paste.
-clipboard = { mode: "cut", id: item.id, durationMs: endMs - startMs };
-
-// Paste at an empty-slot intent (detail carries snapped date/time/resource):
+// Move: arm in the workbench (the event stays in place until placed).
+workbench.add(item);
+workbench.activate(item.id);
+// … navigate …
+// Place at an empty-slot intent (detail carries snapped date/time/resource):
 const conflicts = calendar.getEventOverlaps({ start, end });
 if (conflicts.length > 0) return refuse("Overlaps an existing booking");
-calendar.moveEvent(clipboard.id, { start, end, resourceId }); // or addEvent() for copy
-clipboard = null;
+const moved = calendar.moveEvent(workbench.active.id, { start, end, resourceId });
+if (moved) workbench.complete(item.id); // remove + arm the next pending
+
+// Copy: classic clipboard, duplicated on paste.
+calendar.addEvent({ ...item, id: newId, start, end });
 ```
 
 Robustness rules the showcase demonstrates:
 
-- a cut event stays rendered until the paste commits, so `refetchEvents`,
-  abort/stale guards and navigation cannot lose it; mark it visually through
-  `eventContent` (`element.dataset.cut = "true"` + an application class) and
-  a persistent banner, because the event node itself is recreated on every
-  render while the banner is not;
+- a parked event stays rendered until its placement succeeds, so
+  `refetchEvents`, abort/stale guards and navigation cannot lose it; the
+  workbench queue is the guarantee nobody disappears, and queued grid nodes
+  are marked through a post-render pass (`data-parked="true"` re-applied on
+  `calendar:render`) rather than by the node surviving;
+- nothing leaves the queue without a successful `moveEvent` (a refused or
+  failed placement keeps the item and the queue); items already placed are
+  canonical, so the next `getEventOverlaps()` sees them for free — there is
+  no "planned vs canonical" solver;
 - paste targets are proposed from `calendar:eventcontextmenu` on empty slots
   (which already carries the snapped date/time/resourceId), offering
-  "Paste here (duration kept)" with `end = start + durationMs`, disabled with
-  a reason when the policy refuses;
-- `Esc` cancels, a new cut/copy replaces the clipboard, a failed paste keeps
-  it, a successful paste clears it; `Ctrl+X/C/V` mirror the menu items where
-  a paste target exists (empty slots are not tab stops, so `Ctrl+V` alone has
-  no target — it reuses the last empty-slot intent or an explicit banner
-  action).
+  "Paste (armed item) here" with the item's own duration, disabled with a
+  reason when the policy refuses;
+- `Esc` disarms the armed item (never empties the queue), a successful
+  placement advances to the next pending one, "Empty" clears the queue;
+  `Ctrl+X/C/V` mirror the menu items where a paste target exists (empty
+  slots are not tab stops, so `Ctrl+V` alone has no target — it reuses the
+  last empty-slot intent).
+- external drag onto a slot is the same placement: the core's future
+  `calendar:externaldrop` seam delivers an anchor the application feeds to
+  the exact same `getEventOverlaps() → moveEvent()` path.
 
 ## Realtime
 

@@ -318,6 +318,37 @@ calendar.resizeEvent(id, { start, end })
 
 The server/application remains source of truth. Applications may attach an opaque `extendedProps.revision` to reconcile optimistic updates with realtime echoes.
 
+## External placement (drag from application-owned sources)
+
+An application can turn any element into a drag source whose drop the
+calendar resolves to a grid/lane anchor (USE_CASES §12 — dragging a sidebar
+workbench item onto the grid):
+
+```js
+calendar.addExternalDrop(el, payload, {
+  duration,   // preview length in minutes (timed slots)
+  allDay,     // force the all-day lane
+  title,      // preview label
+  validate,   // (target) => boolean | reason-string | null
+});
+calendar.removeExternalDrop(el);
+```
+
+Rules:
+
+- `payload` is opaque: the calendar never reads it, only carries it through
+  `calendar:externaldrop`;
+- while dragging over the grid the core draws a ghost with the real
+  duration and marks it `cv-invalid` (+ `data-reason`) when the target is
+  structurally refused (out of the grid, outside `slotMin`/`slotMax`,
+  `droppable: false`) or refused by the application's `validate`;
+- the core never computes overlaps for you: `validate` runs on your
+  calendar's own state via `calendar.getEventOverlaps(target)`;
+- the drop dispatches `calendar:externaldrop` with only the anchor; a
+  non-validatable target suppresses the drop silently;
+- the drop is HTML5-DnD only, so touch/keyboard use the paste path installed
+  by the application (e.g. the move workbench pastes the armed item).
+
 ## DOM events
 
 All interaction events are `bubbles: true` and `composed: true`. Intents an application can refuse are also `cancelable: true`; observations (`calendar:loading`, `calendar:render`) are not.
@@ -335,6 +366,27 @@ Namespaced working names:
 - `calendar:select`
 - `calendar:eventmove`
 - `calendar:eventresize`
+- `calendar:externaldrop`
+
+`calendar:externaldrop` is the placement intent of an application-owned drag
+source (external placement, see below): `cancelable`, `bubbles`, `composed`.
+
+```js
+detail: {
+  payload,              // opaque to the calendar
+  date,                 // winner civil date (PlainDate)
+  time,                 // ZonedDateTime when timed; absent for all-day
+  resourceId,           // target resource, or null
+  allDay,               // true when dropped on the all-day lane
+  nativeEvent,
+}
+```
+
+The core delivers the anchor and never interprets `payload`; the application
+decides what "place this here" means (create, move, batch offset…) through
+its own `getEventOverlaps()`/`moveEvent()` path. `preventDefault()` on the
+dispatch signals "refused", though a busy application may equally ignore
+targets before reading them.
 
 `calendar:loading` brackets every async source run with `detail.loading`, alongside the `aria-busy` attribute the element already sets. Only the newest request settles the state, so an aborted or superseded run never reports `false` while a newer one is still in flight:
 

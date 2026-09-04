@@ -50,6 +50,8 @@ import { createAutoscroller } from "./autoscroll.js";
  *   current: { start: unknown, end: unknown, resourceId: string | null },
  *   nativeEvent: Event | null,
  * }) => import("../core/model.js").NormalizedEvent | null} commitEventResize
+ * @property {() => { payload: unknown, meta: import("../calendar-view.js").ExternalDropMeta } | null} getExternalDrag
+ * @property {() => void} clearExternalDrag
  */
 
 /**
@@ -1228,8 +1230,23 @@ export function renderTimeGrid({
           // A fired long-press owns the gesture: no commit, and the residual
           // click stays suppressed for its own capture-phase handler.
           if (longPressConsumed) return;
-          if (!wasMoved || !range) return;
-          // A non-droppable target reverts silently: no dispatch, no state change.
+          if (!wasMoved) return;
+          // Released outside every column: the event leaves the grid — that
+          // is a parking intent the application may feed its workbench
+          // ("drag out of the calendar"). The commit below only runs when
+          // the release itself is over a column.
+          if (!gridHit(upEvent.clientX, upEvent.clientY)) {
+            root.dispatchEvent(
+              new CustomEvent("calendar:eventdropout", {
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+                detail: { event, eventId: event.id, nativeEvent: upEvent },
+              }),
+            );
+            return;
+          }
+          if (!range) return;
           if (!range.droppable) return;
           suppressClick = true;
           // The mirror shows the dragged slice, but the commit shifts the
@@ -1453,6 +1470,206 @@ export function renderTimeGrid({
     bodies.push({ column, body });
     root.append(day);
   }
+
+  // --- External placement (drag from an application source) ----------------
+  // The core knows geometry, never policy: it resolves the structural target
+  // from the pointer, draws a ghost with the real duration, and hands the
+  // anchor to the application on drop. `meta.validate` may forbid the target.
+  /** @type {{ kind: "grid" | "lane", node: HTMLElement } | null} */
+  let externalGhost = null;
+
+  /** @returns {void} */
+  function removeExternalGhost() {
+    externalGhost?.node.remove();
+    externalGhost = null;
+  }
+
+  /**
+   * Structural + application-policy validity of one external target. Only
+   * incontestable geometry is judged by the core; `meta.validate` adds the
+   * application's own refusal (`false` or a reason string).
+   *
+   * @param {Temporal.PlainDate} date
+   * @param {Temporal.ZonedDateTime | null} time
+   * @param {string | null} resourceId
+   * @param {boolean} allDay
+   * @param {boolean} droppable
+   * @returns {{ ok: boolean, reason: string | null }}
+   */
+  function externalTargetValidity(date, time, resourceId, allDay, droppable) {
+    if (!droppable) return { ok: false, reason: null };
+    const external = host.getExternalDrag();
+    const result = external?.meta.validate?.({ date, time, resourceId, allDay });
+    if (result === false) return { ok: false, reason: null };
+    if (typeof result === "string") return { ok: false, reason: result };
+    return { ok: true, reason: null };
+  }
+
+  /**
+   * Resolve an external placement from pointer coordinates.
+   *
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {{
+   *   kind: "grid",
+   *   index: number,
+   *   start: number,
+   *   end: number,
+   *   time: Temporal.ZonedDateTime,
+   *   target: { date: Temporal.PlainDate, time: Temporal.ZonedDateTime, resourceId: string | null, allDay: boolean },
+   *   ok: boolean,
+   *   reason: string | null,
+   * } | {
+   *   kind: "lane",
+   *   index: number,
+   *   target: { date: Temporal.PlainDate, time: null, resourceId: string | null, allDay: boolean },
+   *   ok: boolean,
+   *   reason: string | null,
+   * } | null}
+   */
+  function resolveExternal(clientX, clientY) {
+    const external = host.getExternalDrag();
+    if (!external) return null;
+    const meta = external.meta;
+    if (meta.allDay === true || (columnIndexAtX(clientX) >= 0 && isOverLane(clientY))) {
+      const index = columnIndexAtX(clientX);
+      if (index < 0) return null;
+      const column = columns[index];
+      const resourceId = column.resource?.id ?? null;
+      const validity = externalTargetValidity(
+        column.date,
+        null,
+        resourceId,
+        true,
+        column.resource?.droppable !== false,
+      );
+      return {
+        kind: "lane",
+        index,
+        target: { date: column.date, time: null, resourceId, allDay: true },
+        ok: validity.ok,
+        reason: validity.reason,
+      };
+    }
+    const hit = gridHit(clientX, clientY);
+    if (!hit) return null;
+    const rawDuration = meta.duration ?? options.defaultTimedEventDuration ?? { minutes: 30 };
+    const duration = durationMinutes(
+      typeof rawDuration === "number" ? { minutes: rawDuration } : rawDuration,
+    );
+    if (duration > endMinutes - startMinutes) return null;
+    const start = Math.max(
+      startMinutes,
+      Math.min(snapMinutes(hit.minutes, snapStep, "floor"), endMinutes - duration),
+    );
+    if (start < startMinutes) return null;
+    const end = start + duration;
+    const column = columns[hit.column];
+    const time = zonedDateTimeAt(column.date, start, timeZone);
+    const resourceId = column.resource?.id ?? null;
+    const validity = externalTargetValidity(
+      column.date,
+      time,
+      resourceId,
+      false,
+      column.resource?.droppable !== false,
+    );
+    return {
+      kind: "grid",
+      index: hit.column,
+      start,
+      end,
+      time,
+      target: { date: column.date, time, resourceId, allDay: false },
+      ok: validity.ok,
+      reason: validity.reason,
+    };
+  }
+
+  /** @param {number} clientY */
+  function isOverLane(clientY) {
+    const rect = lane.getBoundingClientRect();
+    return rect.height > 0 && clientY >= rect.top && clientY <= rect.bottom;
+  }
+
+  /**
+   * Paint (or clear) the placement ghost. Structural or policy invalidity
+   * marks it `cv-invalid` instead of hiding the target.
+   *
+   * @param {ReturnType<typeof resolveExternal>} placement
+   * @returns {void}
+   */
+  function paintExternalGhost(placement) {
+    removeExternalGhost();
+    const external = host.getExternalDrag();
+    if (!placement) return;
+    let node;
+    if (placement.kind === "grid") {
+      node = document.createElement("div");
+      node.className = "cv-external-ghost";
+      node.setAttribute("aria-hidden", "true");
+      node.style.top = `${(placement.start - startMinutes) * pxPerMinute}px`;
+      node.style.height = `${(placement.end - placement.start) * pxPerMinute}px`;
+      if (external?.meta.title) {
+        const label = document.createElement("span");
+        label.className = "cv-external-ghost-label";
+        label.textContent = external.meta.title;
+        node.append(label);
+      }
+      bodies[placement.index].body.append(node);
+    } else {
+      node = document.createElement("div");
+      node.className = "cv-external-ghost cv-external-ghost-lane";
+      node.setAttribute("aria-hidden", "true");
+      node.style.gridColumn = `${placement.index + 2} / ${placement.index + 3}`;
+      node.style.gridRow = "1 / -1";
+      if (external?.meta.title) node.textContent = external.meta.title;
+      lane.append(node);
+    }
+    if (!placement.ok) {
+      node.classList.add("cv-invalid");
+      if (placement.reason) node.dataset.reason = placement.reason;
+    }
+    externalGhost = { kind: placement.kind, node };
+  }
+
+  root.addEventListener("dragover", (event) => {
+    if (!host.getExternalDrag()) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    paintExternalGhost(resolveExternal(event.clientX, event.clientY));
+  });
+
+  root.addEventListener("dragleave", (event) => {
+    if (!host.getExternalDrag()) return;
+    const related = event.relatedTarget;
+    if (related instanceof Node && root.contains(related)) return;
+    removeExternalGhost();
+  });
+
+  root.addEventListener("drop", (event) => {
+    const external = host.getExternalDrag();
+    if (!external) return;
+    event.preventDefault();
+    const placement = resolveExternal(event.clientX, event.clientY);
+    removeExternalGhost();
+    if (!placement?.ok) return;
+    root.dispatchEvent(
+      new CustomEvent("calendar:externaldrop", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        detail: {
+          payload: external.payload,
+          date: placement.target.date,
+          ...(placement.kind === "grid"
+            ? { time: placement.target.time, resourceId: placement.target.resourceId }
+            : { resourceId: placement.target.resourceId, allDay: true }),
+          nativeEvent: event,
+        },
+      }),
+    );
+  });
 
   fragment.append(root);
   return fragment;

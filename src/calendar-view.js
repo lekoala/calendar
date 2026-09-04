@@ -56,6 +56,23 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {(info: object) => unknown} [moreLinkContent]
  */
 
+/**
+ * Presentation metadata for an external drop (`addExternalDrop`). The core
+ * uses it to draw a placement preview with the real duration; business
+ * policy (overlaps, working hours, capabilities) stays in `validate`.
+ *
+ * @typedef {object} ExternalDropMeta
+ * @property {Temporal.Duration | { minutes: number } | number} [duration] preview length in the time grid (defaults to `defaultTimedEventDuration`)
+ * @property {boolean} [allDay] force the all-day lane as the target
+ * @property {string} [title] preview label
+ * @property {(target: {
+ *   date: Temporal.PlainDate,
+ *   time: Temporal.ZonedDateTime | null,
+ *   resourceId: string | null,
+ *   allDay: boolean,
+ * }) => boolean | string | null | undefined} [validate] application policy on the target; a string is the refusal reason
+ */
+
 const DEFAULTS = {
   view: "week",
   timeZone: "Europe/Brussels",
@@ -98,6 +115,19 @@ export class CalendarViewElement extends HTMLElement {
   #resources = [];
   /** @type {Array<import("./core/model.js").NormalizedBackground>} */
   #backgrounds = [];
+  /**
+   * Registered external drop sources (element -> drag helpers + payload/meta).
+   *
+   * @type {Map<HTMLElement, {
+   *   payload: unknown,
+   *   meta: ExternalDropMeta,
+   *   onStart: (event: DragEvent) => void,
+   *   onEnd: () => void,
+   * }>}
+   */
+  #externalDrops = new Map();
+  /** The external drag in flight, read by the rendered grid to draw the preview. @type {{ payload: unknown, meta: ExternalDropMeta } | null} */
+  #dragExternal = null;
   /** @type {CalendarConfig} */
   #config = {};
   /** @type {AbortController | null} */
@@ -439,6 +469,55 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Register an application-owned element as an external drop source
+   * (USE_CASES §12, "external placement"). The element becomes
+   * `draggable`; while it is dragged over the rendered grid, the core draws
+   * a placement preview from `meta` and, on a real drop, dispatches
+   * `calendar:externaldrop` with the opaque `payload` and the resolved
+   * target anchor. The calendar never interprets the payload.
+   *
+   * @param {HTMLElement} element
+   * @param {unknown} payload opaque to the calendar
+   * @param {ExternalDropMeta} [meta]
+   * @returns {this}
+   */
+  addExternalDrop(element, payload, meta = {}) {
+    if (this.#externalDrops.has(element)) return this;
+    element.draggable = true;
+    const entry = { payload, meta };
+    /** @param {DragEvent} event @returns {void} */
+    const onStart = (event) => {
+      this.#dragExternal = entry;
+      // Informative only: `dataTransfer` cannot carry the opaque payload
+      // once it leaves the page, the in-memory `#dragExternal` does.
+      event.dataTransfer?.setData("text/plain", String(payload ?? ""));
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
+    };
+    const onEnd = () => {
+      this.#dragExternal = null;
+    };
+    element.addEventListener("dragstart", onStart);
+    element.addEventListener("dragend", onEnd);
+    this.#externalDrops.set(element, { ...entry, onStart, onEnd });
+    return this;
+  }
+
+  /**
+   * @param {HTMLElement} element
+   * @returns {boolean} true when a source was removed
+   */
+  removeExternalDrop(element) {
+    const entry = this.#externalDrops.get(element);
+    if (!entry) return false;
+    element.removeEventListener("dragstart", entry.onStart);
+    element.removeEventListener("dragend", entry.onEnd);
+    element.draggable = false;
+    this.#externalDrops.delete(element);
+    if (this.#dragExternal?.payload === entry.payload) this.#dragExternal = null;
+    return true;
+  }
+
+  /**
    * @template T
    * @param {() => T} callback
    * @returns {T}
@@ -669,6 +748,10 @@ export class CalendarViewElement extends HTMLElement {
             refocusEvent: (id) => this.#refocusEvent(id),
             commitEventMove: (input) => this.#commitEventMove(input),
             commitEventResize: (input) => this.#commitEventResize(input),
+            getExternalDrag: () => this.#dragExternal,
+            clearExternalDrag: () => {
+              this.#dragExternal = null;
+            },
           },
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,

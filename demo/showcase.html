@@ -489,6 +489,68 @@
       font-weight: var(--font-weight-bold);
     }
 
+    /* Move workbench rows: the persistent queue of bookings to place.
+       Rows are the same "check" shape as rooms, with the armed item
+       highlighted instead of checked. */
+    .sc-workbench {
+      display: grid;
+      gap: 2px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .sc-workbench button {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-20);
+      inline-size: 100%;
+      padding: var(--space-10) var(--space-20);
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: var(--font-size-xs);
+      text-align: start;
+      cursor: pointer;
+    }
+
+    .sc-workbench button:hover {
+      background: var(--hover-overlay);
+    }
+
+    .sc-workbench button[aria-current="true"] {
+      background: color-mix(in oklab, var(--primary), transparent 88%);
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+
+    .sc-workbench strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-workbench small {
+      color: var(--text-subtle);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sc-workbench-actions {
+      margin-block-start: var(--space-10);
+    }
+
+    .sc-workbench-hint {
+      margin: 0;
+      color: var(--text-subtle);
+      font-size: 10px;
+    }
+
+    .actual-calendar .cv-allday-event[data-parked="true"] {
+      opacity: 0.55;
+    }
+
     .sc-check:hover,
     .sc-legend button:hover {
       background: var(--hover-overlay);
@@ -964,14 +1026,14 @@
       cursor: default;
     }
 
-    /* Cut state: the event stays in place until the paste commits (so a
-       refetch or a week navigation cannot lose it), and the card says so:
-       dashed outline, pulled-back tone, and a "to paste" tag. The banner
-       under the toolbar carries the same state in words. */
-    .actual-calendar .cv-event[data-cut="true"] {
+    /* Parked state: queued events keep their place in the grid until a
+       successful placement removes them from the workbench. The card reads
+       as waiting — muted tone plus a dashed outline. */
+    .actual-calendar .cv-event[data-parked="true"] {
       opacity: 0.55;
       outline: 2px dashed var(--primary);
       outline-offset: -2px;
+      filter: saturate(0.6);
     }
 
     .sc-clipboard {
@@ -1827,7 +1889,7 @@
     }
 
     @media (forced-colors: active) {
-      .actual-calendar .cv-event[data-cut="true"] {
+      .actual-calendar .cv-event[data-parked="true"] {
         outline-color: Highlight;
       }
     }
@@ -1904,6 +1966,22 @@
           <span>All rooms</span>
         </label>
         <ul class="sc-checks" id="room-list"></ul>
+      </section>
+
+      <!-- Move workbench: the persistent queue of bookings waiting to be
+           placed elsewhere (cut / park / bulk fill all converge here). Its
+           own `change` beat drives this panel; the calendar never decides
+           when the queue has changed. -->
+      <section class="sc-group" id="workbench-panel" hidden>
+        <h2 class="sc-group-title">
+          <i class="ti ti-arrows-shuffle" aria-hidden="true"></i> To place
+          <span class="sc-count-mini" id="workbench-count"></span>
+        </h2>
+        <ul class="sc-workbench" id="workbench-list"></ul>
+        <div class="join sc-workbench-actions">
+          <button type="button" class="btn sm neutral ghost" id="workbench-clear">Empty</button>
+          <p class="sc-workbench-hint">Cut or paste to arm · Esc disarms</p>
+        </div>
       </section>
 
       <section class="sc-group">
@@ -2119,6 +2197,12 @@
           </button>
         </li>
         <li>
+          <button type="button" class="menu-item" data-tool="reschedule-day">
+            <span class="menu-item-icon"><i class="ti ti-arrows-shuffle" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Replanify the current day</span>
+          </button>
+        </li>
+        <li>
           <button type="button" class="menu-item" data-tool="shortcuts">
             <span class="menu-item-icon"><i class="ti ti-keyboard" aria-hidden="true"></i></span>
             <span class="menu-item-text">Keyboard shortcuts</span>
@@ -2278,7 +2362,10 @@
     </div>
   </dialog>
 
-<script type="module">
+<!-- The workbench is classic-safe too: inlining via plain `src` works over
+     file:// (module fetches are CORS-blocked there) and sets the global. -->
+  <script src="./workbench.js"></script>
+  <script type="module">
   // Placement and the search combobox are application dependencies, never
   // runtime dependencies of the core. The classic-script demos stay free of
   // both so they keep working over `file://`.
@@ -2839,21 +2926,240 @@
     return node;
   }
 
-  // --- Clipboard (cut/copy/paste across weeks) -------------------------------
-  // Inter-week moves cannot be pointer drags: the target week is not
-  // rendered. The application owns a clipboard (`cut` keeps the event in
-  // place until the paste commits, so refetches and navigation cannot lose
-  // it; `copy` duplicates on paste), and the core owns the commit through
-  // the same `moveEvent` / optimistic `revert()` contract as drags.
-  // See USE_CASES §11 and INTEGRATION "Clipboard" for the contract.
-  /** @type {{ mode: "cut" | "copy", id: string, title: string, durationMin: number } | null} */
-  let clipboard = null;
+  // --- Move workbench + copy clipboard --------------------------------------
+  // Moving across weeks cannot be a pointer drag: the target week is not
+  // rendered. Cut / park / bulk fill all converge on the workbench, and the
+  // sidebar IS the visible state of "what still waits to be placed" (the
+  // old cut banner is gone). The workbench emits its own `change` beat; the
+  // calendar only repaints the "parked" look of queued events on render.
+  const workbench = new globalThis.MoveWorkbench();
+  const workbenchPanel = document.getElementById("workbench-panel");
+  const workbenchList = document.getElementById("workbench-list");
+  const workbenchCount = document.getElementById("workbench-count");
+
+  /** Civil date plus `N` days, back to a `YYYY-MM-DD` string. @param {string} iso @param {number} days */
+  function addDays(iso, days) {
+    const [year, month, day] = iso.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+  }
+
+  /**
+   * Application policy on one workbench placement target — shared by the
+   * drag ghost (`meta.validate`) and the commit on drop/paste. Overlap
+   * checks stay application-owned: the core never decides that itself.
+   *
+   * @param {string} eventId
+   * @param {{ date: string, minutes: number | null, resourceId: string | null, allDay: boolean }} target
+   * @returns {string | null} refusal reason, or null when the target is fine
+   */
+  function workbenchTargetReason(eventId, target) {
+    const item = calendar.getEventById(eventId);
+    if (!item) return "The booking is gone.";
+    const allDay = item.allDay === true;
+    let start;
+    let end;
+    if (allDay) {
+      const spanDays = /** @type {any} */ (item.end).since(item.start).days;
+      start = target.date;
+      end = addDays(target.date, spanDays);
+    } else {
+      const duration = Math.max(
+        15,
+        wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start)),
+      );
+      start = `${target.date}T${clock(target.minutes ?? POLICY.opensAt)}:00+02:00[${ZONE}]`;
+      end = `${target.date}T${clock((target.minutes ?? POLICY.opensAt) + duration)}:00+02:00[${ZONE}]`;
+    }
+    const reason = violation({ start, end, resourceId: target.resourceId });
+    if (reason) return reason;
+    const conflicts = calendar
+      .getEventOverlaps({ start, end }, { resourceIds: target.resourceId ? [target.resourceId] : [] })
+      .filter((entry) => String(entry.id) !== eventId);
+    if (conflicts.length > 0) {
+      return `“${conflicts[0].title ?? "Booking"}” already occupies that slot.`;
+    }
+    return null;
+  }
+
+  /**
+   * Place one workbench item at a target (drag drop or paste): validate like
+   * the ghost, then commit through the normal optimistic move. Successes
+   * leave the queue and arm the next pending item; refusals keep the item.
+   *
+   * @param {string} eventId
+   * @param {string} date civil `YYYY-MM-DD`
+   * @param {number | null} minutes wall-clock minutes when timed, null for all-day
+   * @param {string | null} resourceId
+   * @returns {void}
+   */
+  function placeWorkbenchItem(eventId, date, minutes, resourceId) {
+    const item = calendar.getEventById(eventId);
+    if (!item) {
+      workbench.remove(eventId);
+      return;
+    }
+    const allDay = item.allDay === true;
+    const target = { date, minutes, resourceId, allDay };
+    const reason = workbenchTargetReason(eventId, target);
+    if (reason) {
+      record(`placement refused: ${reason}`);
+      toast(reason);
+      workbench.activate(eventId);
+      return;
+    }
+    const moved = calendar.moveEvent(eventId, {
+      start: allDay ? date : `${date}T${clock(minutes ?? POLICY.opensAt)}:00+02:00[${ZONE}]`,
+      end: allDay
+        ? addDays(date, /** @type {any} */ (item.end).since(item.start).days)
+        : `${date}T${clock((minutes ?? POLICY.opensAt) + Math.max(15, wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start))))}:00+02:00[${ZONE}]`,
+      resourceId,
+    });
+    if (!moved) return; // guard() already explained and `revert()` kept it
+    const title = String(item.title ?? "Booking");
+    workbench.complete(eventId);
+    record(`placed ${eventId} → ${allDay ? date : `${date} ${clock(minutes ?? POLICY.opensAt)}`}`);
+    if (workbench.size === 0) {
+      toast("All queued bookings placed.", "success");
+    } else {
+      toast(`Moved “${title}” — ${workbench.size} left in the queue.`, "success");
+    }
+  }
+
+  /** Progressively built workbench rows currently registered as drop sources. @type {HTMLElement[]} */
+  let externalRows = [];
+
+  function renderWorkbench() {
+    const items = workbench.items;
+    workbenchPanel.hidden = items.length === 0;
+    workbenchCount.textContent = items.length === 0 ? "" : String(items.length);
+    // Rows are rebuilt on every change, so old registrations must go first.
+    for (const element of externalRows) calendar.removeExternalDrop(element);
+    externalRows = [];
+    workbenchList.replaceChildren();
+    for (const item of items) {
+      const row = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.eventId = item.eventId;
+      if (workbench.activeId === item.eventId) button.setAttribute("aria-current", "true");
+      const title = document.createElement("strong");
+      title.textContent = String(item.original?.title ?? "Booking");
+      const meta = document.createElement("small");
+      const origin = item.original ?? {};
+      const originStart = String(origin.start ?? "");
+      const originResource = origin.resourceId
+        ? ` · ${roomTitle(String(origin.resourceId))}`
+        : "";
+      meta.textContent = `${originStart.length > 10 ? wallClock(originStart) : "all day"}${originResource}`;
+      button.append(title, meta);
+      button.addEventListener("click", () => {
+        if (workbench.activeId === item.eventId) workbench.activate(null);
+        else workbench.activate(item.eventId);
+      });
+      row.append(button);
+      workbenchList.append(row);
+
+      // Dragging a row onto the grid is the same placement as paste: the
+      // core delivers an anchor, the application runs its own policy.
+      const originAllDay = origin.allDay === true;
+      calendar.addExternalDrop(
+        button,
+        { kind: "reschedule", eventId: item.eventId },
+        {
+          duration: originAllDay ? undefined : Math.max(15, wallMinutesOf(String(origin.end ?? "")) - wallMinutesOf(originStart)),
+          allDay: originAllDay,
+          title: String(origin.title ?? "Booking"),
+          validate: (target) =>
+            workbenchTargetReason(item.eventId, {
+              date: target.date.toString(),
+              minutes: target.allDay ? null : wallMinutesOf(String(target.time)),
+              resourceId: target.resourceId,
+              allDay: target.allDay,
+            }) ?? true,
+        },
+      );
+      externalRows.push(button);
+    }
+  }
+
+  // Drag from the sidebar row onto the grid commits through the same path.
+  calendar.addEventListener("calendar:externaldrop", (event) => {
+    const detail = event.detail;
+    const payload = detail.payload;
+    if (payload?.kind !== "reschedule") return;
+    event.preventDefault();
+    placeWorkbenchItem(
+      String(payload.eventId),
+      String(detail.date),
+      detail.allDay === true ? null : wallMinutesOf(String(detail.time)),
+      detail.resourceId ?? null,
+    );
+  });
+
+  // Dragging an event out of the calendar parks it — the mirror existence of
+  // the external drop, feeding the same queue.
+  calendar.addEventListener("calendar:eventdropout", (event) => {
+    event.preventDefault();
+    const item = /** @type {any} */ (event.detail?.event);
+    if (item && !isLocked(item)) {
+      parkEvent(item);
+      toast(`“${String(item.title ?? "Booking")}” parked — find it a new slot.`, "warning");
+    }
+  });
+
+  workbench.addEventListener("change", () => {
+    renderWorkbench();
+    // Painted in place: queued events keep their position in the grid but
+    // immediately read as waiting, no calendar re-render needed.
+    syncWorkbenchMarkers();
+  });
+  document.getElementById("workbench-clear").addEventListener("click", () => {
+    workbench.clear();
+    record("workbench emptied");
+  });
+
+  /** @param {any} item */
+  function parkEvent(item) {
+    const queued = workbench.add(item);
+    workbench.activate(String(item.id));
+    record(queued ? `parked: ${item.id}` : `armed: ${item.id}`);
+    hideTip();
+  }
+
+  /** Add every current booking of one civil day to the workbench. @param {string} iso */
+  function parkDay(iso) {
+    const inDay = calendar.events.filter(
+      (event) => String(event.start).slice(0, 10) === iso.slice(0, 10),
+    );
+    const added = workbench.addMany(inDay);
+    record(`workbench +${added} from ${iso}`);
+  }
+
+  /**
+   * Re-apply the "parked" look after any calendar render: queued events keep
+   * their place in the grid but read as waiting. `data-parked="true"` so the
+   * attribute reads as a flag, not an empty string.
+   */
+  function syncWorkbenchMarkers() {
+    for (const node of calendar.querySelectorAll("[data-event-id]")) {
+      const id = node.dataset.eventId ?? "";
+      if (id !== "" && workbench.has(id)) node.setAttribute("data-parked", "true");
+      else node.removeAttribute("data-parked");
+    }
+  }
+
+  calendar.addEventListener("calendar:render", syncWorkbenchMarkers);
+
+  // Copy stays a plain clipboard (a duplicated booking is not "waiting to be
+  // placed"), so it never pollutes the workbench queue.
+  /** @type {{ id: string, title: string, durationMin: number } | null} */
+  let copyClipboard = null;
   /** Last empty-slot intent, so `Ctrl+V` has a target. @type {{ date: string, minutes: number, resourceId: string | null } | null} */
   let lastSlot = null;
   const clipboardBar = document.getElementById("clipboard-bar");
 
   function renderClipboard() {
-    if (!clipboard) {
+    if (!copyClipboard) {
       clipboardBar.hidden = true;
       clipboardBar.replaceChildren();
       return;
@@ -2861,101 +3167,66 @@
     clipboardBar.hidden = false;
     clipboardBar.replaceChildren();
     const text = document.createElement("span");
-    text.textContent = clipboard.mode === "cut"
-      ? `“${clipboard.title}” is cut — navigate to the target week, then paste it into a slot.`
-      : `Copying “${clipboard.title}” — paste it into a slot to duplicate.`;
+    text.textContent = `Copying “${copyClipboard.title}” — paste it into a slot to duplicate.`;
     const actions = document.createElement("span");
     actions.className = "sc-clipboard-actions";
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.className = "btn sm neutral ghost";
     cancel.textContent = "Cancel (Esc)";
-    cancel.addEventListener("click", () => clearClipboard("cancelled from the banner"));
+    cancel.addEventListener("click", () => clearCopyClipboard("cancelled from the banner"));
     actions.append(cancel);
-    clipboardBar.append(icon(clipboard.mode === "cut" ? "scissors" : "copy"), text, actions);
+    clipboardBar.append(icon("copy"), text, actions);
   }
 
-  /** @param {{ mode: "cut" | "copy", id: string, title: string, durationMin: number }} entry */
-  function setClipboard(entry) {
-    clipboard = entry;
-    // The mark is painted by `eventContent`, so the grid must render again
-    // even though no event data changed.
-    calendar.configure({});
+  /** @param {{ id: string, title: string, durationMin: number }} entry */
+  function setCopyClipboard(entry) {
+    copyClipboard = entry;
     renderClipboard();
-    record(`${entry.mode}: ${entry.id} ready to paste`);
+    record(`copy: ${entry.id} ready to paste`);
   }
 
   /** @param {string} [reason] */
-  function clearClipboard(reason = "cancelled") {
-    if (!clipboard) return;
-    const id = clipboard.id;
-    clipboard = null;
-    calendar.configure({});
+  function clearCopyClipboard(reason = "cancelled") {
+    if (!copyClipboard) return;
+    copyClipboard = null;
     renderClipboard();
-    record(`clipboard ${reason}: ${id}`);
+    record(`copy clipboard ${reason}`);
   }
 
   /**
-   * Commit the clipboard at an empty-slot target. Failures keep the
-   * clipboard and explain why; only a committed paste clears it.
+   * Commit a copy at an empty-slot target. Failures keep the clipboard and
+   * explain why; only a committed paste clears it.
    *
    * @param {{ date: string, minutes: number, resourceId: string | null }} slot
    */
-  function pasteClipboard(slot) {
-    if (!clipboard) return;
-    const item = calendar.getEventById(clipboard.id);
-    if (!item && clipboard.mode === "cut") {
-      toast("The cut booking is gone — the clipboard was cleared.", "warning");
-      clearClipboard("lost its event");
-      return;
-    }
+  function pasteCopy(slot) {
+    if (!copyClipboard) return;
+    const item = calendar.getEventById(copyClipboard.id);
     const start = `${slot.date}T${clock(slot.minutes)}:00+02:00[${ZONE}]`;
-    const end = `${slot.date}T${clock(slot.minutes + clipboard.durationMin)}:00+02:00[${ZONE}]`;
+    const end = `${slot.date}T${clock(slot.minutes + copyClipboard.durationMin)}:00+02:00[${ZONE}]`;
     const reason = violation({ start, end, resourceId: slot.resourceId });
     if (reason) {
       record(`paste refused: ${reason}`);
       toast(reason);
       return;
     }
-    // Conflict-aware paste: the same `getEventOverlaps` seam the core
-    // exposes, excluding the cut event itself so a move never collides
-    // with its own origin.
-    const conflicts = calendar
-      .getEventOverlaps({ start, end }, { resourceIds: slot.resourceId ? [slot.resourceId] : [] })
-      .filter((entry) => entry.id !== clipboard.id);
-    if (conflicts.length > 0) {
-      const message = `“${conflicts[0].title ?? "Booking"}” already occupies that slot.`;
-      record(`paste refused: ${message}`);
-      toast(message);
-      return;
-    }
-    if (clipboard.mode === "cut") {
-      const moved = calendar.moveEvent(clipboard.id, { start, end, resourceId: slot.resourceId });
-      if (!moved) {
-        toast("That booking cannot be moved there.");
-        return;
-      }
-      // `guard()` on `calendar:eventmove` syncs the store and the chrome;
-      // reaching here means it was accepted.
-      record(`pasted ${clipboard.id} → ${slot.date} ${clock(slot.minutes)}`);
-    } else {
-      const id = `copy-${Date.now()}`;
-      const source = store.find((entry) => entry.id === clipboard.id);
-      const created = {
-        id,
-        title: `${clipboard.title} (copy)`,
-        start,
-        end,
-        ...(slot.resourceId ? { resourceId: slot.resourceId } : {}),
-        extendedProps: { ...(source?.extendedProps ?? item?.extendedProps ?? {}) },
-      };
-      store.push(created);
-      markFresh(id);
-      calendar.addEvent(created);
-      record(`pasted a copy of ${clipboard.id} → ${id}`);
-    }
+    const id = `copy-${Date.now()}`;
+    const source = store.find((entry) => entry.id === copyClipboard?.id);
+    const created = {
+      id,
+      title: `${copyClipboard.title} (copy)`,
+      start,
+      end,
+      ...(slot.resourceId ? { resourceId: slot.resourceId } : {}),
+      extendedProps: { ...(source?.extendedProps ?? item?.extendedProps ?? {}) },
+    };
+    store.push(created);
+    markFresh(id);
+    calendar.addEvent(created);
+    record(`pasted a copy of ${copyClipboard.id} → ${id}`);
     refreshChrome();
-    clearClipboard("pasted");
+    clearCopyClipboard("pasted");
   }
 
   calendar.configure({
@@ -2974,9 +3245,9 @@
       const locked = POLICY.lockedKinds.includes(kind);
       if (locked) element.dataset.locked = "true";
       if (fresh.has(event.id)) element.dataset.fresh = "true";
-      // Cut state is application-owned: the event stays rendered until the
-      // paste commits, and the card says it is waiting to be pasted.
-      if (clipboard?.mode === "cut" && event.id === clipboard.id) element.dataset.cut = "true";
+      // Parked state is applied by `syncWorkbenchMarkers()` after the
+      // render; the card itself never duplicates the queue's knowledge of
+      // what is waiting.
 
       const start = String(event.start);
       const end = String(event.end);
@@ -3985,7 +4256,7 @@
 
   document.getElementById("detail-delete").addEventListener("click", () => {
     if (detailId && calendar.removeEvent(detailId)) {
-      if (clipboard?.id === detailId) clearClipboard("lost its event");
+      if (copyClipboard?.id === detailId) clearCopyClipboard("lost its event");
       store = store.filter((item) => item.id !== detailId);
       record(`removed: ${detailId}`);
       refreshChrome();
@@ -4077,21 +4348,15 @@
     if (item) {
       const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
       const allDay = item.allDay === true;
-      // Wall-clock duration travels with the clipboard; the paste target
-      // supplies the new start. Multi-day spans keep their wall length,
-      // while all-day bookings are civil and keep out of the timed clipboard.
+      // Wall-clock duration travels with the copy clipboard; the paste target
+      // supplies the new start. All-day bookings are civil and keep out of
+      // the timed copy clipboard, but any kind of event can be parked.
       const durationMin = allDay
         ? 0
         : Math.max(
             15,
             wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start)),
           );
-      const clipEntry = (mode) => ({
-        mode,
-        id: String(item.id),
-        title: String(item.title ?? "Booking"),
-        durationMin,
-      });
       openContextMenu([
         { label: "Open booking", icon: "arrow-up-right", run: () => openDetail(item) },
         allDay
@@ -4100,10 +4365,19 @@
         {
           label: "Cut",
           icon: "scissors",
-          disabled: locked || allDay,
-          run: () => setClipboard(clipEntry("cut")),
+          disabled: locked,
+          run: () => parkEvent(item),
         },
-        { label: "Copy", icon: "copy", disabled: allDay, run: () => setClipboard(clipEntry("copy")) },
+        {
+          label: "Copy",
+          icon: "copy",
+          disabled: allDay,
+          run: () => setCopyClipboard({
+            id: String(item.id),
+            title: String(item.title ?? "Booking"),
+            durationMin,
+          }),
+        },
         { label: "Duplicate", icon: "copy-plus", run: () => duplicate(item) },
         {
           label: "Delete",
@@ -4111,7 +4385,8 @@
           danger: true,
           disabled: locked,
           run: () => {
-            if (clipboard?.id === String(item.id)) clearClipboard("lost its event");
+            if (copyClipboard?.id === String(item.id)) clearCopyClipboard("lost its event");
+            workbench.remove(String(item.id));
             if (!calendar.removeEvent(item.id)) return;
             store = store.filter((entry) => entry.id !== item.id);
             record(`removed via menu: ${item.id}`);
@@ -4132,22 +4407,64 @@
     const resourceId = detail.resourceId ?? null;
     lastSlot = { date, minutes, resourceId };
     const slotActions = [];
-    if (clipboard) {
+    // Paste places the armed workbench item into this slot — the keyboard
+    // twin of dragging the sidebar row onto the grid. Both run the same
+    // `workbenchTargetReason` policy and `moveEvent` commit.
+    const activeItem = workbench.active;
+    if (activeItem) {
+      const activeReason = workbenchTargetReason(String(activeItem.eventId), {
+        date,
+        minutes,
+        resourceId,
+        allDay: activeItem.original?.allDay === true,
+      });
+      slotActions.push({
+        label: `Paste “${String(activeItem.original?.title ?? "Booking")}” here`,
+        icon: "arrows-shuffle",
+        disabled: activeReason !== null,
+        run: () => placeWorkbenchItem(String(activeItem.eventId), date, minutes, resourceId),
+      });
+    }
+    if (copyClipboard) {
       const pasteStart = `${date}T${clock(minutes)}:00+02:00[${ZONE}]`;
-      const pasteEnd = `${date}T${clock(minutes + clipboard.durationMin)}:00+02:00[${ZONE}]`;
+      const pasteEnd = `${date}T${clock(minutes + copyClipboard.durationMin)}:00+02:00[${ZONE}]`;
       const pasteReason = violation({ start: pasteStart, end: pasteEnd, resourceId }) ??
         (calendar
           .getEventOverlaps({ start: pasteStart, end: pasteEnd }, { resourceIds: resourceId ? [resourceId] : [] })
-          .some((entry) => entry.id !== clipboard.id)
+          .some((entry) => entry.id !== copyClipboard?.id)
           ? "That slot is already occupied."
           : null);
       slotActions.push({
-        label: clipboard.mode === "cut"
-          ? `Paste “${clipboard.title}” here`
-          : `Paste a copy of “${clipboard.title}” here`,
+        label: `Paste a copy of “${copyClipboard.title}” here`,
         icon: "clipboard",
         disabled: pasteReason !== null,
-        run: () => pasteClipboard({ date, minutes, resourceId }),
+        run: () => pasteCopy({ date, minutes, resourceId }),
+      });
+    }
+    // A slot inside an existing blocked range feeds the queue with the
+    // bookings that overlap it — the "room/bay is closed" entry point.
+    const blockedHere = blockedRangesOn(resourceId, date).filter(
+      (range) => minutes < range.to && minutes + POLICY.maxMinutes > range.from,
+    );
+    if (blockedHere.length > 0) {
+      slotActions.push({
+        label: "Replanify bookings affected by this block",
+        icon: "ban",
+        run: () => {
+          const inBlock = calendar.events.filter((event) => {
+            if (resourceId !== null && event.resourceId !== resourceId) return false;
+            return blockedHere.some((range) => {
+              const from = `${date}T${clock(range.from)}:00+02:00[${ZONE}]`;
+              const to = `${date}T${clock(range.to)}:00+02:00[${ZONE}]`;
+              return calendar
+                .getEventOverlaps({ start: from, end: to }, { resourceIds: resourceId ? [resourceId] : [] })
+                .some((entry) => String(entry.id) === String(event.id));
+            });
+          });
+          const added = workbench.addMany(inBlock);
+          record(`workbench +${added} overlapping blocked range (${date})`);
+          if (added === 0) toast("No bookings overlap that block.", "warning");
+        },
       });
     }
     openContextMenu([
@@ -4481,6 +4798,10 @@
       calendar.today();
       calendar.scrollToTime(nowStamp().slice(11));
       record("revealed now");
+    } else if (tool === "reschedule-day") {
+      // Queue every booking of the visible anchor day; placement comes later
+      // (drag or paste). The workbench keeps them all safe meanwhile.
+      parkDay(String(calendar.date));
     } else if (tool === "shortcuts") {
       toolsMenu.hidePopover();
       shortcutsDialog.showModal();
@@ -4818,9 +5139,10 @@
     [["←", "→"], "previous / next range"],
     [["1", "…", "7"], "switch view"],
     [["/"], "search loaded bookings"],
-    [["Ctrl+X", "Ctrl+C"], "cut / copy the focused booking"],
-    [["Ctrl+V"], "paste into the last right-clicked slot"],
-    [["Esc"], "cancel the clipboard"],
+    [["Ctrl+X"], "park the focused booking (workbench)"],
+    [["Ctrl+C"], "copy the focused booking"],
+    [["Ctrl+V"], "paste the copy into the last right-clicked slot"],
+    [["Esc"], "disarm the workbench / clear the copy"],
     [["A"], "activity log"],
     [["F"], "focus mode (hide the side panel)"],
     [["?"], "this dialog"],
@@ -4848,12 +5170,15 @@
     shortcutsDialog.showModal();
   });
 
-  // Clipboard keys. Cut/copy act on the focused event card; paste reuses
-  // the last empty-slot intent (right-click a slot first). Typing in a
-  // field keeps the OS behavior: the shell never hijacks text editing.
+  // Workbench and clipboard keys. Cut parks the focused event (add + arm it in
+  // the workbench); copy duplicates through the copy clipboard; paste uses the
+  // last empty-slot intent (right-click a slot first). Escape disarms the
+  // active item and clears any pending copy. Typing in a field keeps the OS
+  // behavior: the shell never hijacks text editing.
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && clipboard && !event.defaultPrevented) {
-      clearClipboard("cancelled with Esc");
+    if (event.key === "Escape" && !event.defaultPrevented) {
+      if (workbench.activeId) workbench.activate(null);
+      clearCopyClipboard("cancelled with Esc");
       return;
     }
     if (!event.ctrlKey && !event.metaKey) return;
@@ -4866,21 +5191,14 @@
     if ((key === "x" || key === "c") && node) {
       const item = calendar.getEventById(node.dataset.eventId ?? "");
       if (!item) return;
-      // The clipboard is a timed workflow (its payload travels as minutes);
-      // all-day bookings keep to the lane and the day-based context actions.
-      if (item.allDay === true) return;
       if (key === "x" && !isLocked(item)) {
         event.preventDefault();
-        setClipboard({
-          mode: "cut",
-          id: String(item.id),
-          title: String(item.title ?? "Booking"),
-          durationMin: Math.max(15, wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start))),
-        });
-      } else if (key === "c") {
+        parkEvent(item);
+      } else if (key === "c" && item.allDay !== true) {
+        // Copy is a timed workflow (payload travels as minutes); all-day
+        // bookings keep to the lane and the day-based context actions.
         event.preventDefault();
-        setClipboard({
-          mode: "copy",
+        setCopyClipboard({
           id: String(item.id),
           title: String(item.title ?? "Booking"),
           durationMin: Math.max(15, wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start))),
@@ -4888,9 +5206,17 @@
       }
       return;
     }
-    if (key === "v" && clipboard && lastSlot) {
-      event.preventDefault();
-      pasteClipboard(lastSlot);
+    if (key === "v" && lastSlot) {
+      // The armed workbench item wins: paste = place it. A copy clipboard is
+      // the fallback when nothing is armed.
+      const armed = workbench.active;
+      if (armed) {
+        event.preventDefault();
+        placeWorkbenchItem(String(armed.eventId), lastSlot.date, lastSlot.minutes, lastSlot.resourceId);
+      } else if (copyClipboard) {
+        event.preventDefault();
+        pasteCopy(lastSlot);
+      }
     }
   });
 

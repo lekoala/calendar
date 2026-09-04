@@ -153,60 +153,88 @@ Core stress:
 - `getEventOverlaps(range, …)` to validate the paste target before proposing it;
 - `moveEvent(id, { start, end, resourceId })` (move) or `addEvent()` with a new id (duplicate) to commit, through the same optimistic `preventDefault()` / `revert()` contract as pointer drags.
 
-Nominal scenario (cut/paste across weeks):
+Nominal scenario (cut/park across weeks):
 
-1. on the event: context menu → "Cut" (or `Ctrl+X`); the shell marks the event as cut and shows a persistent banner ("Event ready to paste — navigate, then Paste here / Cancel (Esc)");
-2. the user navigates (`prev` / `next` / `gotoDate`, mini month, view switch) — the clipboard survives re-renders and source refetches because the event itself stays in place until the paste commits;
-3. on an empty slot of the target week: context menu → "Paste here (duration kept)"; the shell proposes `start = snapped slot, end = start + original duration` and refuses with a reason when the target is not `droppable`/`selectable` or a policy (conflict, blocked range) rejects it;
-4. success clears the clipboard; failure keeps it and explains why.
+1. `Cut`/`Ctrl+X` (or "Mettre de côté") **adds the event to the move
+   workbench and arms it** — the shell shows the persistent sidebar queue,
+   and the event stays in place, marked as parked, until a placement
+   succeeds (the banner under the toolbar is gone; the sidebar is the
+   state);
+2. the user navigates (`prev` / `next` / `gotoDate`, mini month, view
+   switch) — the workbench survives re-renders and source refetches because
+   it is application state, rendered off its own `change` beat;
+3. on an empty slot of the target week: context menu → paste places the
+   **armed item** (never an implicit "first"); the shell proposes
+   `start = snapped slot, end = start + original duration` and refuses with
+   a reason when the target is not `droppable`/`selectable` or a policy
+   (conflict, blocked range) rejects it;
+4. a successful placement removes the item and arms the next pending one; a
+   failure keeps it in the queue and explains why.
 
 Variants:
 
-- copy/paste duplicates (`Ctrl+C`, "Copy", then paste creates a new id);
-- sidebar parking: an application-owned lane holding parked/cut events, Drop-out of the grid (a future explicit `calendar:eventdropout` intent) feeds it; paste reuses the same commit path;
-- cancellation: `Esc`, a new cut/copy replacing the clipboard, or a successful paste.
+- copy/paste duplicates (`Ctrl+C`, "Copy", then paste creates a new id) —
+  copy stays a plain clipboard, never the move queue;
+- bulk fill: "Replanify the resource's day" or "this day" queues all
+  affected events; each is then placed individually (drag or paste), which
+  is exactly the §12 workflow;
+- sidebar parking: `Cut`/park and the drag-out gesture feed the same queue —
+  releasing an event drag outside the grid dispatches
+  `calendar:eventdropout`, and the shell parks the event;
+- cancellation: `Esc` disarms the active item (never empties the queue),
+  "Empty" clears it, a successful placement advances to the next one.
 
-Non-goals: drag-to-edge auto-navigation between weeks (timer + re-render under capture, conflicts with the vertical autoscroller); core-owned clipboard state or persistence; OS clipboard integration.
+Non-goals: drag-to-edge auto-navigation between weeks (timer + re-render under capture, conflicts with the vertical autoscroller); core-owned clipboard/workbench state or persistence; OS clipboard integration; silent disappearance of any queued event (nothing leaves the queue without a real `moveEvent`).
 
 ## 12. Resource closure and bulk rescheduling
 
 A resource becomes unavailable for a civil date while many concrete events
-already occupy it. The user needs to move all affected events to another date
-(often the following week), preserving each event's duration and relative
-time where possible, then resolve conflicts before anything is committed.
+already occupy it. The user needs to move all affected events to another
+date (often the following week), preserving each event's duration and
+relative time where possible.
 
-This is not repeated single-event cut/paste: the application needs one
-selection, one preview and one cancellable plan for the affected events.
+The batch is a **work queue, not a group move**: adding N events to the
+queue only means "these N are mine to place", and each one is then placed
+individually (drag or paste). Partial progress is the normal working state —
+a secretary resolves one booking, then the next — so the real invariant is
+not atomicity but:
+
+> **nothing leaves the queue without a placement that actually succeeded.**
 
 Core stress:
 
-- identify events by resource and civil-date range;
-- keep an application-owned batch plan while navigating to a target date or
-  refetching the visible range;
-- validate every proposed occurrence against background ranges, resource
-  capabilities and event conflicts before commit;
+- identify events by resource and civil-date range (application-owned);
+- keep an application-owned queue (the workbench) while navigating to a
+  target date or refetching the visible range;
+- validate each proposed slot against background ranges, resource
+  capabilities and event conflicts before commit (`getEventOverlaps`,
+  excluding the event itself; already-placed moves are canonical, so the
+  query sees them for free);
 - preserve the relative time and duration of each event, unless the
   application explicitly chooses a different policy;
-- avoid a partially rescheduled day when one target cannot be accepted.
+- each placement commits through the normal optimistic contract
+  (`moveEvent` + `revert()`), and a refused/failed placement keeps the item
+  in the queue with a reason.
 
 Nominal scenario (resource closed for one day):
 
-1. the application marks the resource/date as unavailable and identifies the
-   affected events;
-2. the user reviews a preview of the proposed moves, for example the same
-   wall-clock slots on the following week;
-3. the application navigates to the target range and checks all target slots;
-4. the user confirms the plan; the application commits the moves through the
-   normal event mutation contract and keeps a way to cancel or undo the
-   operation;
-5. if any target is refused, the plan remains available and no accepted move
-   is left without an explicit resolution.
+1. the application marks the resource/date as unavailable and queues the
+   affected events (one action, many items in the workbench);
+2. the secretary navigates to the target week — the queue survives;
+3. each item is placed individually: drag from the sidebar (or paste the
+   armed item) onto a slot; the shadow shows the real duration, snapping
+   and validity, and the drop validates before committing;
+4. a placed item leaves the queue; the next pending one is armed; if any
+   placement is refused, the item stays and the queue explains why;
+5. when the queue is empty, the application may offer a final summary (for
+   example notifying the affected people) — a *notification* batch, never a
+   move batch.
 
 The current `batch()` API only coalesces rendering; it is not an atomic
-transaction. A future bulk mutation API would need an explicit preflight,
-commit and rollback contract. Until that is justified, the application owns
-the plan and can orchestrate `getEventOverlaps()`, `moveEvent()` and
-`revert()` per event.
+transaction. That is fine for this workflow: the application owns the queue
+and each placement is a completed action. A future bulk mutation API would
+need an explicit preflight, commit and rollback contract; nothing so far
+justifies it.
 
 Variants:
 
@@ -216,8 +244,8 @@ Variants:
 - exclude or manually resolve events with no valid target.
 
 Non-goals: the core deciding why a resource is unavailable, persistence or
-transport orchestration, and silently moving events without an application
-confirmation step.
+transport orchestration, atomic batch moves, and silently removing a queued
+event whose placement failed.
 
 ## 13. Acceptance scenarios
 

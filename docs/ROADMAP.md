@@ -21,6 +21,17 @@ Shipped in 0.1:
   click/context-menu/day-drag/Shift-arrows moves; `allDaySlot` toggles the
   lane; civil overlap queries; DST by consecutive civil midnights. Day-edge
   resize, lane creation and timed↔all-day conversion remain deferred.
+- **External placement** — `addExternalDrop(el, payload, { duration, allDay,
+  title, validate })` / `removeExternalDrop`; a real-duration ghost with
+  structural validity plus application policy (`validate` returns a reason);
+  `calendar:externaldrop` delivers only the anchor (`{ payload, date, time?,
+  resourceId, allDay }`), never the payload's meaning. The move workbench
+  (§12) consumes it with `getEventOverlaps()` and `moveEvent()`. HTML5 DnD
+  desktop path; touch/keyboard use paste-on-the-armed-item.
+- **Drag-out parking** — an internal event drag released outside every
+  column dispatches `calendar:eventdropout` (`{ eventId, event, nativeEvent }`),
+  so the app can feed its workbench with the "drag out of the calendar"
+  gesture; "park from the menu/Cut" remains the deterministic path.
 - **Distribution** — pure ESM entries (no registration side effect), opt-in
   `define`, classic IIFE + minified twin, zero-config standalone build, CSS,
   generated `dist/types` and `custom-elements.json`; `sync`/`verify` gates.
@@ -33,8 +44,6 @@ Deliberately deferred (revisit only with a concrete use case):
 - a consolidated pointer engine;
 - density policies per view: slot-row policy, `datesAboveResources`;
 - source-range caching;
-- external drag & drop and dropzones (`calendar:externaldrop` /
-  `calendar:eventdropout`);
 - a `--calendar-axis-size` custom property and a resource-row sticky-offset
   seam — both hardcoded today and worked around in the showcase.
 

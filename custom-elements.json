@@ -142,6 +142,15 @@
             },
             {
               "kind": "method",
+              "name": "addExternalDrop",
+              "description": "Register an application-owned element as an external drop source (USE_CASES §12, \"external placement\")."
+            },
+            {
+              "kind": "method",
+              "name": "removeExternalDrop"
+            },
+            {
+              "kind": "method",
               "name": "batch"
             },
             {
@@ -160,10 +169,16 @@
               "name": "calendar:eventcontextmenu"
             },
             {
+              "name": "calendar:eventdropout"
+            },
+            {
               "name": "calendar:eventmove"
             },
             {
               "name": "calendar:eventresize"
+            },
+            {
+              "name": "calendar:externaldrop"
             },
             {
               "name": "calendar:loaderror"

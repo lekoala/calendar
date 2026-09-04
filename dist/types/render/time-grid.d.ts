@@ -32,6 +32,11 @@ export type TimeGridHost = {
         };
         nativeEvent: Event | null;
     }) => import("../core/model.js").NormalizedEvent | null;
+    getExternalDrag: () => {
+        payload: unknown;
+        meta: import("../calendar-view.js").ExternalDropMeta;
+    } | null;
+    clearExternalDrag: () => void;
 };
 export type TimeGridColumn = {
     date: Temporal.PlainDate;
@@ -96,6 +101,8 @@ export type ActiveSelection = {
  *   current: { start: unknown, end: unknown, resourceId: string | null },
  *   nativeEvent: Event | null,
  * }) => import("../core/model.js").NormalizedEvent | null} commitEventResize
+ * @property {() => { payload: unknown, meta: import("../calendar-view.js").ExternalDropMeta } | null} getExternalDrag
+ * @property {() => void} clearExternalDrag
  */
 /**
  * @typedef {object} TimeGridColumn

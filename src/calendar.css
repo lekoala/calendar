@@ -458,6 +458,52 @@
   outline-offset: -2px;
 }
 
+/* Preview of an external placement (app-owned drag source): shows the real
+   duration in the day column, or a civil bar in the all-day lane. Never
+   interactive, and structural/policy invalidity turns it red. */
+.cv-external-ghost {
+  position: absolute;
+  inset-inline: 2px;
+  z-index: 5;
+  border: 2px dashed color-mix(in srgb, var(--calendar-accent) 75%, transparent);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--calendar-accent) 16%, transparent);
+  pointer-events: none;
+}
+
+.cv-external-ghost-label {
+  position: absolute;
+  inset-block-start: 0.1rem;
+  inset-inline-start: 0.35rem;
+  max-inline-size: calc(100% - 0.7rem);
+  overflow: hidden;
+  color: var(--calendar-muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv-external-ghost.cv-invalid {
+  border-color: #dc2626;
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+}
+
+.cv-external-ghost-lane {
+  position: static;
+  inset-inline: auto;
+  margin: 1px 2px;
+}
+
+@media (forced-colors: active) {
+  .cv-external-ghost {
+    border-color: Highlight;
+  }
+
+  .cv-external-ghost.cv-invalid {
+    border-color: LinkText;
+  }
+}
+
 .cv-resize-handle {
   position: absolute;
   inset-inline: 0;

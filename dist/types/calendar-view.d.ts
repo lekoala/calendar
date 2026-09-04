@@ -52,6 +52,31 @@ export type CalendarConfig = {
     slotLabelContent?: (info: object) => unknown;
     moreLinkContent?: (info: object) => unknown;
 };
+export type ExternalDropMeta = {
+    /**
+     * preview length in the time grid (defaults to `defaultTimedEventDuration`)
+     */
+    duration?: Temporal.Duration | {
+        minutes: number;
+    } | number;
+    /**
+     * force the all-day lane as the target
+     */
+    allDay?: boolean;
+    /**
+     * preview label
+     */
+    title?: string;
+    /**
+     * application policy on the target; a string is the refusal reason
+     */
+    validate?: (target: {
+        date: Temporal.PlainDate;
+        time: Temporal.ZonedDateTime | null;
+        resourceId: string | null;
+        allDay: boolean;
+    }) => boolean | string | null | undefined;
+};
 /**
  * Civil date helpers shared with the main grid, exposed for external
  * navigators (mini-calendars, custom headers). One object with two access
@@ -208,6 +233,25 @@ export declare class CalendarViewElement extends HTMLElement {
      * @returns {boolean}
      */
     removeEvent(id: string | number): boolean;
+    /**
+     * Register an application-owned element as an external drop source
+     * (USE_CASES §12, "external placement"). The element becomes
+     * `draggable`; while it is dragged over the rendered grid, the core draws
+     * a placement preview from `meta` and, on a real drop, dispatches
+     * `calendar:externaldrop` with the opaque `payload` and the resolved
+     * target anchor. The calendar never interprets the payload.
+     *
+     * @param {HTMLElement} element
+     * @param {unknown} payload opaque to the calendar
+     * @param {ExternalDropMeta} [meta]
+     * @returns {this}
+     */
+    addExternalDrop(element: HTMLElement, payload: unknown, meta?: ExternalDropMeta): this;
+    /**
+     * @param {HTMLElement} element
+     * @returns {boolean} true when a source was removed
+     */
+    removeExternalDrop(element: HTMLElement): boolean;
     /**
      * @template T
      * @param {() => T} callback

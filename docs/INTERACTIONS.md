@@ -71,6 +71,28 @@ Dragging a slice of a multi-day event shifts the whole event: the day delta betw
 
 All-day bars drag with the same state machine but day-snapped: the mirror rides the lane's column tracks within one resource block, and the commit shifts both `Temporal.PlainDate` boundaries by the difference in columns, preserving the civil span. Shift + arrows move a bar by one day; day-edge resizing and timed↔all-day conversion are deferred.
 
+## 4b. External placement (drag out of application chrome)
+
+Application-owned draggables (a sidebar workbench item, a "new block" chip)
+register with `addExternalDrop(el, payload, { duration, allDay, title, validate })`. The core turns the pointer into an anchor:
+
+```text
+pointer → hit → snap → resource → rect (real duration) → structural validity → validate(target) → ghost
+```
+
+The ghost is a `cv-invalid`-capable overlay with the actual geometry; the
+core judges only structural facts (droppable, slot bounds, timed/all-day
+coherence) and lets `validate` add application policy (overlaps, working
+hours, resource capability). On drop, `calendar:externaldrop` carries
+`{ payload, date, time?, resourceId, allDay, nativeEvent }` — nothing else.
+The application then runs the same `getEventOverlaps() → moveEvent()`
+path as paste; a refused target (structural or `validate`) suppresses the
+drop itself.
+
+HTML5 DnD is a desktop gesture: touch and keyboard go through the same
+placement via the paste/armed-item path instead of simulating drag. The
+grid draws nothing new until a registered source actually starts dragging.
+
 A viewport autoscroller advances the scroll while the pointer rests near the scroller edge. It is a separate helper, not part of layout math.
 
 Event nodes use `touch-action: pan-x pan-y` so a touch gesture starting on an event can still scroll the grid; a scroll takeover fires `pointercancel`, which the drag/resize paths already treat as an abort without commit. Resize handles keep `touch-action: none` for precision. Touch range selection remains a later milestone.
