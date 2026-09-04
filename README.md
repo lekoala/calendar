@@ -173,13 +173,53 @@ The package ships:
 - pure ESM entry points (`src/`, no registration side effect);
 - an opt-in `<calendar-view>` registration entry (`src/define.js`);
 - a classic self-registering build (`dist/calendar.js`, minified twin);
+- a zero-config standalone build (`dist/calendar.standalone.min.js`, minified only);
 - CSS (`src/calendar.css`, `dist/calendar.css`, minified twins);
 - generated TypeScript declarations (`dist/types/`);
 - `custom-elements.json`.
 
 There are no runtime source maps in 0.x. Declaration maps are kept for TypeScript editor navigation.
 
-The source ESM is exercised directly by the unit and browser suites; `demo/dist.html` and `test/dist` exercise the generated classic build.
+The source ESM is exercised directly by the unit and browser suites; `demo/dist.html` and `test/dist` exercise the generated classic build, `demo/dist-standalone.html` the standalone build.
+
+### Distributions
+
+Four usages, from most to least control:
+
+```js
+// 1. Pure ESM API (bundler apps, no side effects)
+import { CalendarViewElement, defineCalendarView } from "@lekoala/calendar";
+```
+
+```js
+// 2. Explicit registration (bundler apps, one line)
+import "@lekoala/calendar/define";
+```
+
+```html
+<!-- 3. Classic script + separate CSS (CDN or static hosting, CSP-friendly) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/calendar/dist/calendar.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@lekoala/calendar/dist/calendar.min.js"></script>
+```
+
+```html
+<!-- 4. Standalone: auto-register + auto-style, nothing else to load -->
+<script src="https://cdn.jsdelivr.net/npm/@lekoala/calendar/dist/calendar.standalone.min.js"></script>
+```
+
+The standalone is the same classic bundle with the component stylesheet
+inlined: on load it registers `<calendar-view>` and injects the CSS once as
+`#lekoala-calendar-style`. It never replaces the separate distribution —
+bundler apps and strict-CSP deployments keep the predictable split files.
+
+Content-Security-Policy note: the standalone creates a `<style>` element at
+runtime, so `style-src` must allow it (`unsafe-inline`, or a nonce matching
+the script's own nonce, which the bundle propagates to the injected style —
+only when that same nonce is allowlisted by `style-src`, not just
+`script-src`). Deployments that forbid all injected styles should use
+distribution 3 instead. Either way, the grid's calculated geometry
+(`top`/`height` style attributes) already assumes style attributes are
+allowed.
 
 ## What is intentionally incomplete
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — standalone distribution
+
+- New zero-config `dist/calendar.standalone.min.js` (minified only): the classic IIFE plus the component stylesheet inlined, registering `<calendar-view>` and injecting the CSS once as `#lekoala-calendar-style`. Build-only entry `scripts/standalone.js` imports the CSS as text and `../src/define.js`, keeping `src/define.js` the single registration entry; the separate `dist/calendar.js` + `dist/calendar.css` distribution stays canonical for bundler and strict-CSP uses.
+- `package.json`: `"./standalone"` export (plus the `./dist/…` mirror per repo convention) and `sideEffects`; `scripts/check-package.js` requires the new artifact. CSP documented in `README.md` (script nonce propagates to the injected style; use the split files when injected styles are forbidden).
+- `demo/dist-standalone.html` (script-only, nonce-tagged) and `test/dist` coverage: registration, computed style from injected CSS, nonce copy, no duplicate `<style>` on reload, no leaked globals.
+
 ## Unreleased — M9a read surface + neighbor snapping
 
 - `calendar.getEventOverlaps(range, { resourceIds, includeBackgrounds, filter })` answers conflicts and column contents from canonical state, in paint order, compared by absolute instant over half-open ranges (`src/core/overlaps.js`, also exported as `queryOverlaps`/`rangesOverlap`). `resourceIds = []` means no filter; resource-less backgrounds are global; `filter({ kind, event, background })` narrows without reading class arrays. Overlapping simultaneous events stay an application policy (allow/block/cap via `preventDefault()`), not a core option.

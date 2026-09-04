@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendar prototype — standalone smoke</title>
+  <script nonce="standalone-test" src="../dist/calendar.standalone.min.js"></script>
+  <style>
+    body { margin: 0; padding: 2rem; background: #eef1f6; font-family: system-ui, sans-serif; }
+    main { max-width: 1200px; margin: auto; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Standalone smoke</h1>
+  <p>
+    This page loads only the generated zero-config build
+    (<code>../dist/calendar.standalone.min.js</code>, no <code>&lt;link&gt;</code>):
+    the script registers <code>&lt;calendar-view&gt;</code> and injects the
+    component stylesheet itself. Run <code>bun run sync</code> before opening it.
+  </p>
+  <calendar-view view="threeDays" date="2026-09-03"></calendar-view>
+</main>
+<script>
+  const calendar = document.querySelector("calendar-view");
+  calendar.events = [
+    { id: "a", title: "Design review", start: "2026-09-03T09:00:00+02:00[Europe/Brussels]", end: "2026-09-03T10:00:00+02:00[Europe/Brussels]" },
+    { id: "b", title: "Planning", start: "2026-09-04T13:20:00+02:00[Europe/Brussels]", end: "2026-09-04T14:00:00+02:00[Europe/Brussels]" },
+    { id: "c", title: "Overlap review", start: "2026-09-03T09:30:00+02:00[Europe/Brussels]", end: "2026-09-03T10:30:00+02:00[Europe/Brussels]" }
+  ];
+</script>
+</body>
+</html>

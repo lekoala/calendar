@@ -5,9 +5,14 @@
  * - dist/calendar.min.js  classic iife bundle, minified
  * - dist/calendar.css     component stylesheet, unminified
  * - dist/calendar.min.css component stylesheet, minified
+ * - dist/calendar.standalone.min.js  zero-config iife: auto-register plus
+ *   the stylesheet injected as a `<style>` element (minified only; the
+ *   unminified classic build already covers debugging)
  *
  * The classic build is produced from the single side-effect entry
  * src/define.js, so dist never touches customElements beyond registration.
+ * The standalone build uses the build-only entry scripts/standalone.js,
+ * which imports src/define.js after inlining the CSS as text.
  * The Temporal ponyfill is bundled inline so the classic build works over
  * file:// without an import map.
  */
@@ -25,8 +30,9 @@ mkdirSync("dist", { recursive: true });
  * @param {string} entry
  * @param {string} outfile
  * @param {boolean} minify
+ * @param {Record<string, string>} [loader] Bun bundler loaders (e.g. `{ ".css": "text" }`)
  */
-async function bundle(entry, outfile, minify) {
+async function bundle(entry, outfile, minify, loader) {
   const result = await BunApi.build({
     entrypoints: [entry],
     outdir: "dist",
@@ -34,6 +40,7 @@ async function bundle(entry, outfile, minify) {
     target: "browser",
     format: "iife",
     minify,
+    ...(loader ? { loader } : {}),
   });
   if (!result.success) {
     for (const log of result.logs) console.error(log);
@@ -47,6 +54,7 @@ async function bundle(entry, outfile, minify) {
 
 await bundle("src/define.js", "calendar.js", false);
 await bundle("src/define.js", "calendar.min.js", true);
+await bundle("scripts/standalone.js", "calendar.standalone.min.js", true, { ".css": "text" });
 
 copyFileSync("src/calendar.css", "dist/calendar.css");
 
@@ -61,4 +69,6 @@ if (!cssResult.success) {
   process.exit(1);
 }
 
-console.log("built dist/calendar.js, dist/calendar.min.js, dist/calendar.css, dist/calendar.min.css");
+console.log(
+  "built dist/calendar.js, dist/calendar.min.js, dist/calendar.standalone.min.js, dist/calendar.css, dist/calendar.min.css",
+);

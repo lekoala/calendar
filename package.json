@@ -11,6 +11,7 @@
   "sideEffects": [
     "./dist/calendar.js",
     "./dist/calendar.min.js",
+    "./dist/calendar.standalone.min.js",
     "./dist/calendar.css",
     "./dist/calendar.min.css",
     "./src/calendar.css",
@@ -25,9 +26,11 @@
       "types": "./dist/types/define.d.ts",
       "import": "./src/define.js"
     },
+    "./standalone": "./dist/calendar.standalone.min.js",
     "./calendar.css": "./src/calendar.css",
     "./dist/calendar.js": "./dist/calendar.js",
     "./dist/calendar.min.js": "./dist/calendar.min.js",
+    "./dist/calendar.standalone.min.js": "./dist/calendar.standalone.min.js",
     "./dist/calendar.css": "./dist/calendar.css",
     "./dist/calendar.min.css": "./dist/calendar.min.css"
   },

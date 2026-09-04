@@ -37,6 +37,7 @@ const errors = [];
 const mustInclude = [
   "dist/calendar.js",
   "dist/calendar.min.js",
+  "dist/calendar.standalone.min.js",
   "dist/calendar.css",
   "dist/calendar.min.css",
   "dist/types/index.d.ts",
