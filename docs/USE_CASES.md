@@ -115,3 +115,34 @@ Editing "this occurrence / future / series" remains an application workflow.
 ## 10. Operational list
 
 Some workflows are better as a list than a time grid. `list` should render the same canonical events with custom content hooks rather than forcing every workflow into the grid.
+
+## 11. Moving an event outside the visible window (cut/copy/paste)
+
+A user needs to move (or duplicate) an event from one week to another, or to
+a resource/date combination that is not on screen. A direct pointer drag
+cannot do this in a windowed grid: the target column is not rendered, and
+navigating mid-drag breaks pointer capture. The workflow is therefore always
+two-phased, with the application owning the clipboard and the core owning the
+commit.
+
+Core stress:
+
+- `getEventById(id)` to snapshot the event;
+- `gotoDate()` / `prev()` / `next()` to navigate while the clipboard holds it;
+- `getEventOverlaps(range, …)` to validate the paste target before proposing it;
+- `moveEvent(id, { start, end, resourceId })` (move) or `addEvent()` with a new id (duplicate) to commit, through the same optimistic `preventDefault()` / `revert()` contract as pointer drags.
+
+Nominal scenario (cut/paste across weeks):
+
+1. on the event: context menu → "Cut" (or `Ctrl+X`); the shell marks the event as cut and shows a persistent banner ("Event ready to paste — navigate, then Paste here / Cancel (Esc)");
+2. the user navigates (`prev` / `next` / `gotoDate`, mini month, view switch) — the clipboard survives re-renders and source refetches because the event itself stays in place until the paste commits;
+3. on an empty slot of the target week: context menu → "Paste here (duration kept)"; the shell proposes `start = snapped slot, end = start + original duration` and refuses with a reason when the target is not `droppable`/`selectable` or a policy (conflict, blocked range) rejects it;
+4. success clears the clipboard; failure keeps it and explains why.
+
+Variants:
+
+- copy/paste duplicates (`Ctrl+C`, "Copy", then paste creates a new id);
+- sidebar parking: an application-owned lane holding parked/cut events, Drop-out of the grid (planned `calendar:eventdropout`, M9b) feeds it; paste reuses the same commit path;
+- cancellation: `Esc`, a new cut/copy replacing the clipboard, or a successful paste.
+
+Non-goals: drag-to-edge auto-navigation between weeks (timer + re-render under capture, conflicts with the vertical autoscroller); core-owned clipboard state or persistence; OS clipboard integration.

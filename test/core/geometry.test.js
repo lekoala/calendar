@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { eventGeometry, minutesToPixels, pixelsToMinutes, snapMinutes } from "../../src/core/geometry.js";
+import {
+  defaultSnapThreshold,
+  eventGeometry,
+  findSnapTarget,
+  minutesToPixels,
+  pixelsToMinutes,
+  snapMinutes,
+} from "../../src/core/geometry.js";
 
 test("minutes and pixels are inverse operations", () => {
   assert.equal(minutesToPixels(20, 2.5), 50);
@@ -28,4 +35,24 @@ test("event geometry maps time to top and height", () => {
     eventGeometry({ startMinutes: 540, endMinutes: 560, dayStartMinutes: 480, pxPerMinute: 2.6, gap: 2 }),
     { top: 156, height: 50 },
   );
+});
+
+test("defaultSnapThreshold is half a step capped at 5 minutes", () => {
+  assert.equal(defaultSnapThreshold(15), 5);
+  assert.equal(defaultSnapThreshold(20), 5);
+  assert.equal(defaultSnapThreshold(6), 3);
+  assert.throws(() => defaultSnapThreshold(0), TypeError);
+});
+
+test("findSnapTarget attracts to the nearest edge within threshold", () => {
+  // 20-minute slots, predecessor ending at 10:10 (610): pointer at 10:12
+  // snaps to 610 instead of flooring to 600.
+  assert.equal(findSnapTarget(612, [600, 610], 5), 610);
+  assert.equal(findSnapTarget(607, [600, 610], 5), 610);
+  // Beyond the threshold the grid snap applies (null = no magnet).
+  assert.equal(findSnapTarget(616, [600, 610], 5), null);
+  assert.equal(findSnapTarget(612, [], 5), null);
+  assert.equal(findSnapTarget(612, [610], 0), null);
+  // Nearest edge wins on ties by distance.
+  assert.equal(findSnapTarget(605, [600, 610], 5), 600);
 });

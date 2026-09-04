@@ -8,7 +8,7 @@ import {
   minutesFromMidnight,
   zonedDateTimeAt,
 } from "../core/dates.js";
-import { eventGeometry, snapMinutes } from "../core/geometry.js";
+import { defaultSnapThreshold, eventGeometry, findSnapTarget, snapMinutes } from "../core/geometry.js";
 import { hitTest } from "../core/hit.js";
 import { DEFAULT_LABELS } from "../core/labels.js";
 import { layoutEvents } from "../core/layout.js";
@@ -155,6 +155,11 @@ export function renderTimeGrid({
   const timeZone = options.timeZone ?? "UTC";
   const snapStep = durationMinutes(options.snapDuration ?? { minutes: 15 });
   const defaultDuration = durationMinutes(options.defaultTimedEventDuration ?? { minutes: 30 });
+  // Neighbor snapping (magnetism): a moving edge within half a snap step
+  // (capped at 5 minutes) of another boundary in the same column uses that
+  // boundary instead of the grid snap. Compared against the raw pointer
+  // position so near-misses still attract.
+  const snapThreshold = defaultSnapThreshold(snapStep);
   const totalHeight = (endMinutes - startMinutes) * pxPerMinute;
   axis.style.height = `${totalHeight}px`;
 
@@ -348,6 +353,44 @@ export function renderTimeGrid({
 
   /** @type {Array<{ column: TimeGridColumn, body: HTMLDivElement }>} */
   const bodies = [];
+  // Per-column slice boundaries feeding neighbor snapping. Parallel to
+  // `columns`/`bodies`; filled during the column loop, consumed by pointer
+  // handlers that all run after the loop finished.
+  /** @type {Array<{ events: Array<{ event: import("../core/model.js").NormalizedEvent, start: number, end: number }>, backgrounds: Array<{ start: number, end: number }> }>} */
+  const columnSlices = [];
+
+  /**
+   * Neighbor boundaries of one column, optionally excluding a dragged or
+   * resized event's own edges so the gesture does not stick to its origin.
+   *
+   * @param {number} index
+   * @param {string | null} [excludeId]
+   * @returns {number[]}
+   */
+  function columnEdges(index, excludeId = null) {
+    const slices = columnSlices[index];
+    if (!slices) return [];
+    const edges = [];
+    for (const item of slices.events) {
+      if (excludeId != null && item.event.id === excludeId) continue;
+      edges.push(item.start, item.end);
+    }
+    for (const slice of slices.backgrounds) edges.push(slice.start, slice.end);
+    return edges;
+  }
+
+  /**
+   * Raw pointer position with neighbor magnetism, falling back to the grid
+   * snap when nothing is close enough.
+   *
+   * @param {number} raw minutes from midnight at the pointer
+   * @param {"round" | "floor" | "ceil"} mode grid snap fallback
+   * @param {number[]} edges neighbor boundaries
+   * @returns {number}
+   */
+  function magnetOrSnap(raw, mode, edges) {
+    return findSnapTarget(raw, edges, snapThreshold) ?? snapMinutes(raw, snapStep, mode);
+  }
 
   /**
    * Grid-wide hit test across every rendered day column. Used by event drag
@@ -371,7 +414,8 @@ export function renderTimeGrid({
     });
   }
 
-  for (const column of columns) {
+  for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
+    const column = columns[columnIndex];
     const day = document.createElement("section");
     day.className = "cv-day";
     day.dataset.date = column.date.toString();
@@ -405,10 +449,13 @@ export function renderTimeGrid({
 
     const sliceOptions = { timeZone, slotMin: startMinutes, slotMax: endMinutes };
 
+    /** @type {Array<{ start: number, end: number }>} */
+    const backgroundSlices = [];
     for (const background of backgrounds) {
       if (!backgroundAppliesToColumn(background, column)) continue;
       const slice = sliceTimedEventForDay(background, column.date, sliceOptions);
       if (!slice) continue;
+      backgroundSlices.push(slice);
       const geometry = eventGeometry({
         startMinutes: slice.start,
         endMinutes: slice.end,
@@ -430,6 +477,7 @@ export function renderTimeGrid({
       if (!slice) continue;
       dayEvents.push({ event, start: slice.start, end: slice.end });
     }
+    columnSlices.push({ events: dayEvents, backgrounds: backgroundSlices });
 
     for (const item of layoutEvents(dayEvents)) {
       const { event } = item;
@@ -691,12 +739,13 @@ export function renderTimeGrid({
           if (!moved) return;
           const hit = columnHit(column, body, moveEvent.clientX, moveEvent.clientY);
           if (!hit) return;
+          const edges = columnEdges(columnIndex, event.id);
           let start = item.start;
           let end = item.end;
           if (edge === "end") {
-            end = Math.max(snapMinutes(hit.minutes, snapStep, "ceil"), start + snapStep);
+            end = Math.max(magnetOrSnap(hit.minutes, "ceil", edges), start + snapStep);
           } else {
-            start = Math.min(snapMinutes(hit.minutes, snapStep, "floor"), end - snapStep);
+            start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
           }
           pending = { start, end };
           node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
@@ -790,11 +839,12 @@ export function renderTimeGrid({
           autoscroll?.update(moveEvent.clientY);
           const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
           if (!hit) return;
+          const raw = hit.minutes - grabOffset;
+          const target = bodies[hit.column];
           const start = Math.min(
-            Math.max(snapMinutes(hit.minutes - grabOffset, snapStep, "floor"), startMinutes),
+            Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes),
             endMinutes - duration,
           );
-          const target = bodies[hit.column];
           const droppable = target.column.resource?.droppable !== false;
           pending = { start, end: start + duration, column: target.column, droppable };
           if (mirror.parentNode !== target.body) target.body.append(mirror);
@@ -907,7 +957,7 @@ export function renderTimeGrid({
         ghostChip.className = "cv-select-chip";
         ghost.append(ghostChip);
         body.append(ghost);
-        const anchor = snapMinutes(hit.minutes, snapStep, "floor");
+        const anchor = magnetOrSnap(hit.minutes, "floor", columnEdges(columnIndex));
         selecting = {
           anchor,
           downX: nativeEvent.clientX,
@@ -926,9 +976,10 @@ export function renderTimeGrid({
         if (!selecting.moved) return;
         const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
         if (!hit) return;
-        const start = snapMinutes(Math.min(selecting.anchor, hit.minutes), snapStep, "floor");
+        const edges = columnEdges(columnIndex);
+        const start = magnetOrSnap(Math.min(selecting.anchor, hit.minutes), "floor", edges);
         const end = Math.max(
-          snapMinutes(Math.max(selecting.anchor, hit.minutes), snapStep, "ceil"),
+          magnetOrSnap(Math.max(selecting.anchor, hit.minutes), "ceil", edges),
           start + snapStep,
         );
         selecting.start = start;

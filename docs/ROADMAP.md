@@ -145,7 +145,7 @@ Exit condition, met: an application can render a busy state, style events
 uniformly across views, react to a finished render, and choose which
 weekdays exist, without reaching into internals.
 
-## Milestone 9 — application-feeder seams (0.x)
+## Milestone 9a — read surface + day bounds (0.x, in progress)
 
 Gaps found by reading a real FullCalendar business consumer (agenda +
 scheduler with external drag, cut/paste, per-resource schedules, background
@@ -153,8 +153,7 @@ labels, websocket updates) and mapping every behavior onto a core seam. The
 consumer exercised each planned contract and still fell back to DOM scraping
 (`data-num`/`data-time` attributes, `findCoveredElements`, per-row slat
 stretching, bounding-box hit scans), which a Light-DOM webcomponent should
-make unnecessary. The milestone closes the reachability holes; it does not
-change the architecture.
+make unnecessary.
 
 Public read surface — an application must answer "does my new range conflict
 with an existing event?" before proposing creation, and "which events sit in
@@ -162,12 +161,24 @@ this column?" for click-to-end snapping and reveal. One primitive over the
 same canonical state, never over render internals:
 
 ```js
-calendar.getEventOverlaps(range, { resourceIds = [], includeBackgrounds = false })
-// -> events (and backgrounds) overlapping `range`, in paint order, or []
+calendar.getEventOverlaps(range, { resourceIds = [], includeBackgrounds = false, filter })
+ // -> events (and backgrounds) overlapping `range`, in paint order, or []
 ```
 
-plus a `filter` option so an application asks "is there an unavailability
-here" without reading class arrays itself.
+`range` is `{ start, end }` (each a `Temporal.ZonedDateTime` or ISO string);
+comparison is by absolute instant. `resourceIds = []` means no resource
+filter; a non-empty list keeps only entries belonging to those resources,
+with resource-less backgrounds treated as global (they match any list).
+`filter(entry)` — `entry = { kind: "event" | "background", event?, background? }` —
+lets an application ask "is there an unavailability here" without reading
+class arrays itself.
+
+Neighbor snapping — pointer drag, resize and range selection snap to the
+grid (`snapDuration`), but a moving edge within
+`min(snapStep / 2, 5 minutes)` of a neighboring event/background boundary in
+the same column magnetizes to that boundary instead, so a 10-minute event
+follows its predecessor without a gap on 20-minute slots. Keyboard moves
+stay on exact `snapDuration` steps and never magnetize.
 
 Day boundaries — `configure({ slotMin, slotMax })` (`Temporal.PlainTime`,
 with `24:00` accepted as end-of-day) bounds the grid the way the consumer's
@@ -183,29 +194,50 @@ Start-only events — `{ start }` without `end` creates with
 `duration`/`defaultTimedEventDuration`; the external-drop and paste input
 shapes the consumer computed by hand.
 
-External drag & drop and dropzones — two sides of one seam:
+Exit condition: conflict-aware creation, click-to-end snapping and labelled
+backgrounds rebuild on exported seams without relying on internal DOM
+shape, coordinated `getBoundingClientRect` scans, or private members.
+
+## Milestone 9b — external drag & drop and dropzones (0.x, planned)
+
+Two sides of one seam, on top of M9a:
 
 - application-owned draggables (external listings) that create an event on
   drop, carrying `{ title, start?, duration, resourceId, extendedProps }`,
   and honored by the same `movable`/`droppable` checks as internal drags;
 - application-owned drop targets that receive events dragged out of the grid
-  (parked/cut events), covering the consumer's cut/paste workflow. The core
-  reports both through `calendar:drop` / `calendar:dropzone` intents; the
-  application owns the target UX and persistence.
+  (parked/cut events), covering the consumer's cut/paste workflow. A Pointer
+  drag that ends outside every day column currently resolves to no hit and
+  is dropped silently; M9b adds an explicit exit intent so the application
+  can distinguish "abandoned" from "parked".
 
-Density:
+Tentative intent names (to be frozen on implementation):
+`calendar:externaldrop` for entry, `calendar:eventdropout` for exit; the
+application owns the target UX and persistence in both directions.
 
-- all-day lane — `configure({ allDaySlot })` — moved up from post-0.x;
+The recommended inter-week move workflow is NOT a cross-week drag
+(impossible in a windowed grid: the target is not rendered and navigation
+breaks pointer capture). It is an application-owned cut/copy/paste clipboard
+driven from the context menu — see [USE_CASES.md](USE_CASES.md#11-moving-an-event-outside-the-visible-window-cutcopypaste) and
+[INTEGRATION.md](INTEGRATION.md#clipboard-cutcopypaste) — with sidebar
+parking as an optional second surface on the same `moveEvent` seam.
+
+Exit condition: external listings and park targets integrate without DOM
+shape coupling.
+
+## Milestone 9c — density (0.x, planned)
+
+Promoted from post-0.x once M9a/M9b land:
+
+- all-day lane — `configure({ allDaySlot })`;
 - slot row policy as a real option (`pxPerMinute` or `fit` to the available
-  height) instead of stretching rendered rows from outside.
+  height) instead of stretching rendered rows from outside. `fit` still needs
+  a definition: available height divided by the slot amplitude, recomputed on
+  resize, without breaking scroll preservation;
+- resource headers: `datesAboveResources` arrangement.
 
-Resource headers: `datesAboveResources` arrangement — moved up from
-post-0.x.
-
-Exit condition: the documented consumer workflows (external drag, cut/paste,
-conflict-aware creation, all-day tasks, per-resource schedules, labelled
-backgrounds) rebuild on exported seams without relying on internal DOM
-shape, coordinated `getBoundingClientRect` scans, or private members.
+Exit condition: the documented consumer density workflows rebuild on
+exported seams.
 
 ## Demo coverage debt, cleared
 

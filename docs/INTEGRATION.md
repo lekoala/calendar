@@ -119,6 +119,42 @@ core keeps shipping only geometry it computes itself. CSS anchor
 positioning is the eventual platform answer and is deliberately not the
 one used yet: it is above our browser floor.
 
+## Clipboard (cut/copy/paste)
+
+Inter-week moves are an application-owned clipboard on top of core
+primitives (use case 11 in [USE_CASES.md](USE_CASES.md#11-moving-an-event-outside-the-visible-window-cutcopypaste)).
+The core owns no clipboard state. Recommended shape:
+
+```js
+let clipboard = null; // { mode: "cut" | "copy", id, durationMs } | null
+
+// Cut: snapshot, do NOT remove yet — the event stays in place until paste.
+clipboard = { mode: "cut", id: item.id, durationMs: endMs - startMs };
+
+// Paste at an empty-slot intent (detail carries snapped date/time/resource):
+const conflicts = calendar.getEventOverlaps({ start, end });
+if (conflicts.length > 0) return refuse("Overlaps an existing booking");
+calendar.moveEvent(clipboard.id, { start, end, resourceId }); // or addEvent() for copy
+clipboard = null;
+```
+
+Robustness rules the showcase demonstrates:
+
+- a cut event stays rendered until the paste commits, so `refetchEvents`,
+  abort/stale guards and navigation cannot lose it; mark it visually through
+  `eventContent` (`element.dataset.cut = "true"` + an application class) and
+  a persistent banner, because the event node itself is recreated on every
+  render while the banner is not;
+- paste targets are proposed from `calendar:eventcontextmenu` on empty slots
+  (which already carries the snapped date/time/resourceId), offering
+  "Paste here (duration kept)" with `end = start + durationMs`, disabled with
+  a reason when the policy refuses;
+- `Esc` cancels, a new cut/copy replaces the clipboard, a failed paste keeps
+  it, a successful paste clears it; `Ctrl+X/C/V` mirror the menu items where
+  a paste target exists (empty slots are not tab stops, so `Ctrl+V` alone has
+  no target — it reuses the last empty-slot intent or an explicit banner
+  action).
+
 ## Realtime
 
 ```js

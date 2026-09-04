@@ -831,6 +831,37 @@
       cursor: default;
     }
 
+    /* Cut state: the event stays in place until the paste commits (so a
+       refetch or a week navigation cannot lose it), and the card says so:
+       dashed outline, pulled-back tone, and a "to paste" tag. The banner
+       under the toolbar carries the same state in words. */
+    .actual-calendar .cv-event[data-cut="true"] {
+      opacity: 0.55;
+      outline: 2px dashed var(--primary);
+      outline-offset: -2px;
+    }
+
+    .sc-clipboard {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.75rem;
+      border-block-end: 1px solid var(--edge, var(--calendar-line));
+      background: color-mix(in oklab, var(--primary), transparent 88%);
+      font-size: var(--font-size-xs);
+    }
+
+    .sc-clipboard[hidden] {
+      display: none;
+    }
+
+    .sc-clipboard .sc-clipboard-actions {
+      display: flex;
+      gap: 0.35rem;
+      margin-inline-start: auto;
+    }
+
     /* Aura on a fresh booking. Actual registers `--aura-angle` and the
        `aura-rotate` keyframes for its own `.aura`, so the same animation
        drives a sweep inside the card, plus one ring that pings outwards.
@@ -1535,6 +1566,12 @@
         outline-offset: -3px;
       }
     }
+
+    @media (forced-colors: active) {
+      .actual-calendar .cv-event[data-cut="true"] {
+        outline-color: Highlight;
+      }
+    }
   </style>
   <script src="../dist/calendar.js"></script>
 </head>
@@ -1659,6 +1696,8 @@
       </div>
 
       <output class="sc-cockpit" id="cockpit"></output>
+
+      <div class="sc-clipboard" id="clipboard-bar" role="status" hidden></div>
 
       <calendar-view class="actual-calendar" view="resourceThreeDays" date="2026-09-03"
                      slot-min="07:00" slot-max="20:00"></calendar-view>
@@ -2406,6 +2445,125 @@
     return node;
   }
 
+  // --- Clipboard (cut/copy/paste across weeks) -------------------------------
+  // Inter-week moves cannot be pointer drags: the target week is not
+  // rendered. The application owns a clipboard (`cut` keeps the event in
+  // place until the paste commits, so refetches and navigation cannot lose
+  // it; `copy` duplicates on paste), and the core owns the commit through
+  // the same `moveEvent` / optimistic `revert()` contract as drags.
+  // See USE_CASES §11 and INTEGRATION "Clipboard" for the contract.
+  /** @type {{ mode: "cut" | "copy", id: string, title: string, durationMin: number } | null} */
+  let clipboard = null;
+  /** Last empty-slot intent, so `Ctrl+V` has a target. @type {{ date: string, minutes: number, resourceId: string | null } | null} */
+  let lastSlot = null;
+  const clipboardBar = document.getElementById("clipboard-bar");
+
+  function renderClipboard() {
+    if (!clipboard) {
+      clipboardBar.hidden = true;
+      clipboardBar.replaceChildren();
+      return;
+    }
+    clipboardBar.hidden = false;
+    clipboardBar.replaceChildren();
+    const text = document.createElement("span");
+    text.textContent = clipboard.mode === "cut"
+      ? `“${clipboard.title}” is cut — navigate to the target week, then paste it into a slot.`
+      : `Copying “${clipboard.title}” — paste it into a slot to duplicate.`;
+    const actions = document.createElement("span");
+    actions.className = "sc-clipboard-actions";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "btn sm neutral ghost";
+    cancel.textContent = "Cancel (Esc)";
+    cancel.addEventListener("click", () => clearClipboard("cancelled from the banner"));
+    actions.append(cancel);
+    clipboardBar.append(icon(clipboard.mode === "cut" ? "scissors" : "copy"), text, actions);
+  }
+
+  /** @param {{ mode: "cut" | "copy", id: string, title: string, durationMin: number }} entry */
+  function setClipboard(entry) {
+    clipboard = entry;
+    // The mark is painted by `eventContent`, so the grid must render again
+    // even though no event data changed.
+    calendar.configure({});
+    renderClipboard();
+    record(`${entry.mode}: ${entry.id} ready to paste`);
+  }
+
+  /** @param {string} [reason] */
+  function clearClipboard(reason = "cancelled") {
+    if (!clipboard) return;
+    const id = clipboard.id;
+    clipboard = null;
+    calendar.configure({});
+    renderClipboard();
+    record(`clipboard ${reason}: ${id}`);
+  }
+
+  /**
+   * Commit the clipboard at an empty-slot target. Failures keep the
+   * clipboard and explain why; only a committed paste clears it.
+   *
+   * @param {{ date: string, minutes: number, resourceId: string | null }} slot
+   */
+  function pasteClipboard(slot) {
+    if (!clipboard) return;
+    const item = calendar.getEventById(clipboard.id);
+    if (!item && clipboard.mode === "cut") {
+      toast("The cut booking is gone — the clipboard was cleared.", "warning");
+      clearClipboard("lost its event");
+      return;
+    }
+    const start = `${slot.date}T${clock(slot.minutes)}:00+02:00[${ZONE}]`;
+    const end = `${slot.date}T${clock(slot.minutes + clipboard.durationMin)}:00+02:00[${ZONE}]`;
+    const reason = violation({ start, end, resourceId: slot.resourceId });
+    if (reason) {
+      record(`paste refused: ${reason}`);
+      toast(reason);
+      return;
+    }
+    // Conflict-aware paste: the same `getEventOverlaps` seam the core
+    // exposes, excluding the cut event itself so a move never collides
+    // with its own origin.
+    const conflicts = calendar
+      .getEventOverlaps({ start, end }, { resourceIds: slot.resourceId ? [slot.resourceId] : [] })
+      .filter((entry) => entry.id !== clipboard.id);
+    if (conflicts.length > 0) {
+      const message = `“${conflicts[0].title ?? "Booking"}” already occupies that slot.`;
+      record(`paste refused: ${message}`);
+      toast(message);
+      return;
+    }
+    if (clipboard.mode === "cut") {
+      const moved = calendar.moveEvent(clipboard.id, { start, end, resourceId: slot.resourceId });
+      if (!moved) {
+        toast("That booking cannot be moved there.");
+        return;
+      }
+      // `guard()` on `calendar:eventmove` syncs the store and the chrome;
+      // reaching here means it was accepted.
+      record(`pasted ${clipboard.id} → ${slot.date} ${clock(slot.minutes)}`);
+    } else {
+      const id = `copy-${Date.now()}`;
+      const source = store.find((entry) => entry.id === clipboard.id);
+      const created = {
+        id,
+        title: `${clipboard.title} (copy)`,
+        start,
+        end,
+        ...(slot.resourceId ? { resourceId: slot.resourceId } : {}),
+        extendedProps: { ...(source?.extendedProps ?? item?.extendedProps ?? {}) },
+      };
+      store.push(created);
+      markFresh(id);
+      calendar.addEvent(created);
+      record(`pasted a copy of ${clipboard.id} → ${id}`);
+    }
+    refreshChrome();
+    clearClipboard("pasted");
+  }
+
   calendar.configure({
     pxPerMinute: 1.5,
     // This shell does not take Sunday bookings, and it pins the week to
@@ -2422,6 +2580,9 @@
       const locked = POLICY.lockedKinds.includes(kind);
       if (locked) element.dataset.locked = "true";
       if (fresh.has(event.id)) element.dataset.fresh = "true";
+      // Cut state is application-owned: the event stays rendered until the
+      // paste commits, and the card says it is waiting to be pasted.
+      if (clipboard?.mode === "cut" && event.id === clipboard.id) element.dataset.cut = "true";
 
       const start = String(event.start);
       const end = String(event.end);
@@ -3156,6 +3317,7 @@
 
   document.getElementById("detail-delete").addEventListener("click", () => {
     if (detailId && calendar.removeEvent(detailId)) {
+      if (clipboard?.id === detailId) clearClipboard("lost its event");
       store = store.filter((item) => item.id !== detailId);
       record(`removed: ${detailId}`);
       refreshChrome();
@@ -3246,16 +3408,36 @@
 
     if (item) {
       const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
+      // Wall-clock duration travels with the clipboard; the paste target
+      // supplies the new start. Multi-day spans keep their wall length.
+      const durationMin = Math.max(
+        15,
+        wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start)),
+      );
+      const clipEntry = (mode) => ({
+        mode,
+        id: String(item.id),
+        title: String(item.title ?? "Booking"),
+        durationMin,
+      });
       openContextMenu([
         { label: "Open booking", icon: "arrow-up-right", run: () => openDetail(item) },
         { label: "Move +1h", icon: "clock-play", disabled: locked, run: () => shiftById(String(item.id)) },
-        { label: "Duplicate", icon: "copy", run: () => duplicate(item) },
+        {
+          label: "Cut",
+          icon: "scissors",
+          disabled: locked,
+          run: () => setClipboard(clipEntry("cut")),
+        },
+        { label: "Copy", icon: "copy", run: () => setClipboard(clipEntry("copy")) },
+        { label: "Duplicate", icon: "copy-plus", run: () => duplicate(item) },
         {
           label: "Delete",
           icon: "trash",
           danger: true,
           disabled: locked,
           run: () => {
+            if (clipboard?.id === String(item.id)) clearClipboard("lost its event");
             if (!calendar.removeEvent(item.id)) return;
             store = store.filter((entry) => entry.id !== item.id);
             record(`removed via menu: ${item.id}`);
@@ -3270,9 +3452,32 @@
     // Empty slot: `time` is already slot-snapped, so the menu can propose a
     // real range instead of telling the user to drag.
     const date = String(detail.date);
-    const minutes = detail.time ? wallMinutesOf(`0000-00-00T${String(detail.time)}`) : POLICY.opensAt;
+    // `detail.time` is a zoned ISO string, so wall minutes read straight
+    // off positions 11-16 (`wallClock` relies on the same layout).
+    const minutes = detail.time ? wallMinutesOf(String(detail.time)) : POLICY.opensAt;
     const resourceId = detail.resourceId ?? null;
+    lastSlot = { date, minutes, resourceId };
+    const slotActions = [];
+    if (clipboard) {
+      const pasteStart = `${date}T${clock(minutes)}:00+02:00[${ZONE}]`;
+      const pasteEnd = `${date}T${clock(minutes + clipboard.durationMin)}:00+02:00[${ZONE}]`;
+      const pasteReason = violation({ start: pasteStart, end: pasteEnd, resourceId }) ??
+        (calendar
+          .getEventOverlaps({ start: pasteStart, end: pasteEnd }, { resourceIds: resourceId ? [resourceId] : [] })
+          .some((entry) => entry.id !== clipboard.id)
+          ? "That slot is already occupied."
+          : null);
+      slotActions.push({
+        label: clipboard.mode === "cut"
+          ? `Paste “${clipboard.title}” here`
+          : `Paste a copy of “${clipboard.title}” here`,
+        icon: "clipboard",
+        disabled: pasteReason !== null,
+        run: () => pasteClipboard({ date, minutes, resourceId }),
+      });
+    }
     openContextMenu([
+      ...slotActions,
       {
         label: "Book 30 minutes here",
         icon: "calendar-plus",
@@ -3839,6 +4044,9 @@
     [["←", "→"], "previous / next range"],
     [["1", "…", "7"], "switch view"],
     [["/"], "search loaded bookings"],
+    [["Ctrl+X", "Ctrl+C"], "cut / copy the focused booking"],
+    [["Ctrl+V"], "paste into the last right-clicked slot"],
+    [["Esc"], "cancel the clipboard"],
     [["A"], "activity log"],
     [["F"], "focus mode (hide the side panel)"],
     [["?"], "this dialog"],
@@ -3864,6 +4072,49 @@
   document.getElementById("shortcuts-open").addEventListener("click", () => {
     if (sidebar.matches(":popover-open")) sidebar.hidePopover();
     shortcutsDialog.showModal();
+  });
+
+  // Clipboard keys. Cut/copy act on the focused event card; paste reuses
+  // the last empty-slot intent (right-click a slot first). Typing in a
+  // field keeps the OS behavior: the shell never hijacks text editing.
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && clipboard && !event.defaultPrevented) {
+      clearClipboard("cancelled with Esc");
+      return;
+    }
+    if (!event.ctrlKey && !event.metaKey) return;
+    const target = event.target;
+    const typing = target instanceof HTMLElement &&
+      (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
+    if (typing) return;
+    const key = event.key.toLowerCase();
+    const node = target instanceof HTMLElement ? target.closest("[data-event-id]") : null;
+    if ((key === "x" || key === "c") && node) {
+      const item = calendar.getEventById(node.dataset.eventId ?? "");
+      if (!item) return;
+      if (key === "x" && !isLocked(item)) {
+        event.preventDefault();
+        setClipboard({
+          mode: "cut",
+          id: String(item.id),
+          title: String(item.title ?? "Booking"),
+          durationMin: Math.max(15, wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start))),
+        });
+      } else if (key === "c") {
+        event.preventDefault();
+        setClipboard({
+          mode: "copy",
+          id: String(item.id),
+          title: String(item.title ?? "Booking"),
+          durationMin: Math.max(15, wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start))),
+        });
+      }
+      return;
+    }
+    if (key === "v" && clipboard && lastSlot) {
+      event.preventDefault();
+      pasteClipboard(lastSlot);
+    }
   });
 
   document.addEventListener("keydown", (event) => {

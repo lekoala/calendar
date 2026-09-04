@@ -110,6 +110,11 @@
             },
             {
               "kind": "method",
+              "name": "getEventOverlaps",
+              "description": "Public read surface over canonical state: events (and optionally backgrounds) overlapping `{ start, end }`, in paint order, or `[]`."
+            },
+            {
+              "kind": "method",
               "name": "moveEvent",
               "description": "Non-pointer equivalent of dragging an event."
             },

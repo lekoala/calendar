@@ -509,3 +509,74 @@ test("moveEvent and resizeEvent commands share the pointer contract", async ({ p
   expect(resized).toBe(true);
   await expect.poll(() => readResizes(page)).toHaveLength(1);
 });
+
+test("getEventOverlaps answers conflicts from canonical state", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  const hits = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return calendar
+      .getEventOverlaps({
+        start: "2026-09-03T09:45:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T10:15:00+02:00[Europe/Brussels]",
+      })
+      .map((/** @type {any} */ entry) => entry.id);
+  });
+  // Events a (09:00-10:00) and c (09:30-10:30) overlap the range; b is the
+  // next day. Adjacent-only ranges report nothing.
+  expect(hits).toEqual(["a", "c"]);
+  const adjacent = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return calendar.getEventOverlaps({
+      start: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T10:30:00+02:00[Europe/Brussels]",
+    }).length;
+  });
+  expect(adjacent).toBe(1);
+  const empty = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return calendar.getEventOverlaps({
+      start: "2026-09-03T10:30:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T11:00:00+02:00[Europe/Brussels]",
+    });
+  });
+  expect(empty).toEqual([]);
+});
+
+test("a dragged event magnetizes to a neighboring boundary", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await trackMoves(page);
+  // A predecessor ending off-grid (10:10, not a 15-minute step): dropping
+  // the second event at a raw 10:08 must snap to 10:10, not floor to 10:00.
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = [
+      {
+        id: "snap-a",
+        title: "First",
+        start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T10:10:00+02:00[Europe/Brussels]",
+      },
+      {
+        id: "snap-b",
+        title: "Second",
+        start: "2026-09-03T11:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T11:40:00+02:00[Europe/Brussels]",
+      },
+    ];
+    calendar.backgrounds = [];
+  });
+  await flushRender(page);
+  const box = await eventBox(page, "snap-b");
+  // Press at the event center (11:20, clear of both resize handles, grab
+  // offset 20 minutes) and move so the raw start lands near 10:08: two
+  // minutes off the 10:10 edge, eight past the 10:00 grid step, so only
+  // magnetism explains a 10:10 landing.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 52 * 1.8, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => readMoves(page)).toHaveLength(1);
+  const [move] = await readMoves(page);
+  expect(move.start).toContain("T10:10:00+02:00");
+  expect(move.end).toContain("T10:50:00+02:00");
+});

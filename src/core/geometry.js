@@ -33,6 +33,50 @@ export function snapMinutes(minutes, step, mode = "round") {
 }
 
 /**
+ * Default neighbor-snapping threshold: half a snap step, capped at 5 minutes
+ * so coarse grids do not attract across large distances.
+ *
+ * @param {number} snapStep snap step in minutes
+ * @returns {number}
+ */
+export function defaultSnapThreshold(snapStep) {
+  if (!Number.isFinite(snapStep) || snapStep <= 0) {
+    throw new TypeError("snapStep must be > 0");
+  }
+  return Math.min(snapStep / 2, 5);
+}
+
+/**
+ * Neighbor snapping (magnetism): return the nearest boundary in `edges`
+ * within `threshold` minutes of the raw pointer position, or `null` when
+ * nothing is close enough and the grid snap should apply instead.
+ *
+ * Comparison is intentionally made on the raw position, not on the already
+ * grid-snapped value, so near-misses still attract: e.g. with 20-minute
+ * slots and a predecessor ending at 10:10, a pointer at 10:12 snaps to
+ * 10:10 rather than flooring to 10:00.
+ *
+ * @param {number} minutes raw position in minutes from midnight
+ * @param {number[]} edges neighboring boundaries in minutes from midnight
+ * @param {number} threshold attraction distance in minutes
+ * @returns {number | null}
+ */
+export function findSnapTarget(minutes, edges, threshold) {
+  if (!Number.isFinite(minutes) || !Number.isFinite(threshold) || threshold <= 0) return null;
+  let best = null;
+  let bestDistance = Infinity;
+  for (const edge of edges) {
+    if (!Number.isFinite(edge)) continue;
+    const distance = Math.abs(minutes - edge);
+    if (distance <= threshold && distance < bestDistance) {
+      best = edge;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
  * @param {number} minutes
  * @param {number} pxPerMinute
  * @returns {number}

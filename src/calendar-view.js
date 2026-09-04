@@ -17,6 +17,7 @@ import {
   normalizeEvent,
   normalizeResource,
 } from "./core/model.js";
+import { queryOverlaps } from "./core/overlaps.js";
 import { renderList } from "./render/list.js";
 import { renderMonthGrid } from "./render/month-grid.js";
 import { renderTimeGrid } from "./render/time-grid.js";
@@ -223,6 +224,31 @@ export class CalendarViewElement extends HTMLElement {
    */
   getEventById(id) {
     return this.#events.find((event) => event.id === String(id)) ?? null;
+  }
+
+  /**
+   * Public read surface over canonical state: events (and optionally
+   * backgrounds) overlapping `{ start, end }`, in paint order, or `[]`.
+   * Comparison is by absolute instant over half-open ranges; `resourceIds`
+   * scopes by resource (`[]` means no filter, resource-less backgrounds are
+   * global and match any scope); `filter({ kind, event, background })`
+   * narrows further without reading class arrays.
+   *
+   * @param {{ start: unknown, end: unknown }} range
+   * @param {{ resourceIds?: string[], includeBackgrounds?: boolean, filter?: (entry: { kind: "event" | "background", event?: import("./core/model.js").NormalizedEvent, background?: import("./core/model.js").NormalizedBackground }) => boolean }} [options]
+   * @returns {Array<import("./core/model.js").NormalizedEvent | import("./core/model.js").NormalizedBackground>}
+   */
+  getEventOverlaps(range, options = {}) {
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    return queryOverlaps({
+      events: this.#events,
+      backgrounds: this.#backgrounds,
+      range,
+      timeZone,
+      resourceIds: options.resourceIds ?? [],
+      includeBackgrounds: options.includeBackgrounds ?? false,
+      filter: options.filter,
+    });
   }
 
   /**

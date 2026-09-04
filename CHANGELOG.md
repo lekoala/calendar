@@ -1,14 +1,26 @@
 # Changelog
 
-## Unreleased — roadmap: M9 application-feeder seams
+## Unreleased — M9a read surface + neighbor snapping
 
-- New Milestone 9 in `docs/ROADMAP.md` closes the reachability holes found
-  by mapping a real FullCalendar business consumer onto the core seams: a
-  public read surface (`getEventOverlaps`), `slotMin`/`slotMax` day
-  boundaries, background content/stacking, start-only events, external
-  drag & drop + dropzones, and the all-day lane / slot-row policy /
-  `datesAboveResources` density and header options promoted from post-0.x.
-  Planning change only: no source, tests or generated artifacts touched.
+- `calendar.getEventOverlaps(range, { resourceIds, includeBackgrounds, filter })` answers conflicts and column contents from canonical state, in paint order, compared by absolute instant over half-open ranges (`src/core/overlaps.js`, also exported as `queryOverlaps`/`rangesOverlap`). `resourceIds = []` means no filter; resource-less backgrounds are global; `filter({ kind, event, background })` narrows without reading class arrays. Overlapping simultaneous events stay an application policy (allow/block/cap via `preventDefault()`), not a core option.
+- Neighbor snapping (magnetism) in the time grid: a dragged, resized or selected edge within `min(snapStep / 2, 5 minutes)` of another event/background boundary in the same column uses that boundary instead of the grid snap (`findSnapTarget`/`defaultSnapThreshold` in `src/core/geometry.js`; raw pointer position compared, own edges excluded, keyboard steps unchanged).
+- Tests: `test/core/overlaps.test.js` (5 cases), `test/core/geometry.test.js` (+3), `test/browser/basic.spec.js` (overlap query incl. adjacency, pointer drag magnetizing 10:07 → 10:10).
+- `docs/API.md`, `docs/INTERACTIONS.md`, `docs/ROADMAP.md` (M9 split into M9a/b/c), `docs/USE_CASES.md` (§11 inter-week moves), `docs/INTEGRATION.md` (clipboard pattern) updated; `dist/` and `custom-elements.json` regenerated.
+
+## Unreleased — showcase: cut/copy/paste clipboard
+
+- Inter-week moves go through an application-owned clipboard, not a cross-week drag: event menu gains Cut (locked kinds excluded) and Copy, empty-slot menus gain "Paste here" with the wall duration kept, plus `Ctrl+X/C/V` on focused cards and `Esc`/banner cancel. Cut keeps the event rendered until the paste commits (refetch/navigation-safe) with a `data-cut` mark and a persistent `#clipboard-bar` banner; paste validates through `violation()` and `getEventOverlaps` (self excluded) and keeps the clipboard on refusal. Deleting a cut event clears the clipboard.
+- Fix: the empty-slot menu read `detail.time` through a `0000-00-00T` prefix that produced `NaN` wall minutes, so every proposed range was invalid once a real `Temporal.ZonedDateTime` arrived; minutes now read straight off the ISO string.
+- `test/browser/showcase.spec.js`: cut mark + banner + `Esc`, and cut → `gotoDate` to an unseeded week → paste into a free slot.
+
+- Milestone 9 is split into M9a (read surface + day bounds, in progress:
+  `getEventOverlaps` with `filter`, neighbor snapping, `slotMin`/`slotMax`,
+  background content/stacking, start-only events), M9b (external drag & drop
+  + dropzones: `calendar:externaldrop` / `calendar:eventdropout` intents, and
+  the cut/copy/paste inter-week workflow as an application-owned clipboard
+  documented in `USE_CASES.md` §11 and `INTEGRATION.md`), and M9c (density:
+  all-day lane, slot-row policy, `datesAboveResources`). Planning change, plus
+  the M9a core seams below: no generated artifacts touched yet.
 
 ## Unreleased — locale and labels
 

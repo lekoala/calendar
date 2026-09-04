@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -526,4 +527,56 @@ test("the side panel is a popover below 64rem and a column above it", async ({ p
   // Escape and light dismiss come from the platform, not from the shell.
   await page.keyboard.press("Escape");
   await expect(page.locator("#sidebar")).toBeHidden();
+});
+
+test("cut marks the event and raises a banner until Escape", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  const node = page.locator('.cv-event[data-kind="planning"]').first();
+  const id = await node.getAttribute("data-event-id");
+  await node.click({ button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
+  // The event stays in place, visibly cut, with a persistent banner: the
+  // clipboard must survive navigation and re-renders.
+  await expect(page.locator("#clipboard-bar")).toBeVisible();
+  await expect(page.locator("#clipboard-bar")).toContainText("is cut");
+  await expect(page.locator(`.cv-event[data-event-id="${id}"][data-cut="true"]`)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#clipboard-bar")).toBeHidden();
+  await expect(page.locator(`.cv-event[data-event-id="${id}"][data-cut="true"]`)).toHaveCount(0);
+});
+
+test("cut, navigate to another week, paste into a free slot", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  const node = page.locator('.cv-event[data-kind="planning"]').first();
+  const id = await node.getAttribute("data-event-id");
+  await node.click({ button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
+  await expect(page.locator("#clipboard-bar")).toBeVisible();
+
+  // 2026-10-06 is a Tuesday past the six seeded weeks: no conflicts, no
+  // blocked ranges, so the paste validates cleanly.
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).gotoDate("2026-10-06");
+  });
+  await flushRender(page);
+  // The banner (and the cut mark) survived the navigation.
+  await expect(page.locator("#clipboard-bar")).toBeVisible();
+  const body = await page.locator(".cv-day-body").first().boundingBox();
+  assert(body, "expected a day body to paste into");
+  // 187 minutes sits inside the 10:00 snap step (07:00 slot start): exact
+  // boundaries let sub-pixel cross-API slop flip the asserted step.
+  await page.mouse.click(body.x + body.width / 2, body.y + 187 * 1.5, { button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  await page.locator("#context-menu").getByRole("menuitem", { name: /Paste/ }).click();
+  // A committed paste clears the clipboard and moves the booking.
+  await expect(page.locator("#clipboard-bar")).toBeHidden();
+  const start = await page.evaluate(
+    (eventId) => /** @type {any} */ (document.querySelector("calendar-view")).getEventById(eventId).start,
+    id,
+  );
+  expect(String(start)).toContain("2026-10-06T10:00");
 });

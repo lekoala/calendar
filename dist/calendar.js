@@ -4054,6 +4054,58 @@
     return true;
   }
 
+  // src/core/overlaps.js
+  function rangesOverlap(aStartMs, aEndMs, bStartMs, bEndMs) {
+    return aStartMs < bEndMs && bStartMs < aEndMs;
+  }
+  function queryOverlaps({
+    events = [],
+    backgrounds = [],
+    range,
+    timeZone = "UTC",
+    resourceIds = [],
+    includeBackgrounds = false,
+    filter
+  }) {
+    if (!range || range.start == null || range.end == null) {
+      throw new TypeError("getEventOverlaps requires { start, end }");
+    }
+    const startMs = toZonedDateTime(range.start, timeZone).epochMilliseconds;
+    const endMs = toZonedDateTime(range.end, timeZone).epochMilliseconds;
+    if (!(endMs > startMs))
+      return [];
+    const scoped = Array.from(resourceIds ?? []);
+    const hits = [];
+    for (const event of events) {
+      if (scoped.length > 0 && !scoped.includes(event.resourceId))
+        continue;
+      const eventStart = toZonedDateTime(event.start, timeZone).epochMilliseconds;
+      const eventEnd = toZonedDateTime(event.end, timeZone).epochMilliseconds;
+      if (!rangesOverlap(startMs, endMs, eventStart, eventEnd))
+        continue;
+      const entry = { kind: "event", event };
+      if (filter && !filter(entry))
+        continue;
+      hits.push(event);
+    }
+    if (includeBackgrounds) {
+      for (const background of backgrounds) {
+        if (scoped.length > 0 && background.resourceId != null && !scoped.includes(background.resourceId)) {
+          continue;
+        }
+        const backgroundStart = toZonedDateTime(background.start, timeZone).epochMilliseconds;
+        const backgroundEnd = toZonedDateTime(background.end, timeZone).epochMilliseconds;
+        if (!rangesOverlap(startMs, endMs, backgroundStart, backgroundEnd))
+          continue;
+        const entry = { kind: "background", background };
+        if (filter && !filter(entry))
+          continue;
+        hits.push(background);
+      }
+    }
+    return hits;
+  }
+
   // src/render/list.js
   function renderList({ dates, events, options, eventContent, dayHeaderContent }) {
     const timeZone = options.timeZone ?? "UTC";
@@ -4228,6 +4280,28 @@
     const ratio = minutes / step;
     const snapped = mode === "floor" ? Math.floor(ratio + epsilon) : mode === "ceil" ? Math.ceil(ratio - epsilon) : Math.round(ratio);
     return snapped * step;
+  }
+  function defaultSnapThreshold(snapStep) {
+    if (!Number.isFinite(snapStep) || snapStep <= 0) {
+      throw new TypeError("snapStep must be > 0");
+    }
+    return Math.min(snapStep / 2, 5);
+  }
+  function findSnapTarget(minutes, edges, threshold) {
+    if (!Number.isFinite(minutes) || !Number.isFinite(threshold) || threshold <= 0)
+      return null;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const edge of edges) {
+      if (!Number.isFinite(edge))
+        continue;
+      const distance = Math.abs(minutes - edge);
+      if (distance <= threshold && distance < bestDistance) {
+        best = edge;
+        bestDistance = distance;
+      }
+    }
+    return best;
   }
   function minutesToPixels(minutes, pxPerMinute) {
     return minutes * pxPerMinute;
@@ -4405,6 +4479,7 @@
     const timeZone = options.timeZone ?? "UTC";
     const snapStep = durationMinutes(options.snapDuration ?? { minutes: 15 });
     const defaultDuration = durationMinutes(options.defaultTimedEventDuration ?? { minutes: 30 });
+    const snapThreshold = defaultSnapThreshold(snapStep);
     const totalHeight = (endMinutes - startMinutes) * pxPerMinute;
     axis.style.height = `${totalHeight}px`;
     let selecting = null;
@@ -4523,6 +4598,24 @@
       return fragment;
     }
     const bodies = [];
+    const columnSlices = [];
+    function columnEdges(index, excludeId = null) {
+      const slices = columnSlices[index];
+      if (!slices)
+        return [];
+      const edges = [];
+      for (const item of slices.events) {
+        if (excludeId != null && item.event.id === excludeId)
+          continue;
+        edges.push(item.start, item.end);
+      }
+      for (const slice of slices.backgrounds)
+        edges.push(slice.start, slice.end);
+      return edges;
+    }
+    function magnetOrSnap(raw, mode, edges) {
+      return findSnapTarget(raw, edges, snapThreshold) ?? snapMinutes(raw, snapStep, mode);
+    }
     function gridHit(clientX, clientY) {
       return hitTest({
         x: clientX,
@@ -4537,7 +4630,8 @@
         pxPerMinute
       });
     }
-    for (const column of columns) {
+    for (let columnIndex = 0;columnIndex < columns.length; columnIndex += 1) {
+      const column = columns[columnIndex];
       const day = document.createElement("section");
       day.className = "cv-day";
       day.dataset.date = column.date.toString();
@@ -4567,12 +4661,14 @@
         body.append(line);
       }
       const sliceOptions = { timeZone, slotMin: startMinutes, slotMax: endMinutes };
+      const backgroundSlices = [];
       for (const background of backgrounds) {
         if (!backgroundAppliesToColumn(background, column))
           continue;
         const slice = sliceTimedEventForDay(background, column.date, sliceOptions);
         if (!slice)
           continue;
+        backgroundSlices.push(slice);
         const geometry = eventGeometry({
           startMinutes: slice.start,
           endMinutes: slice.end,
@@ -4595,6 +4691,7 @@
           continue;
         dayEvents.push({ event, start: slice.start, end: slice.end });
       }
+      columnSlices.push({ events: dayEvents, backgrounds: backgroundSlices });
       for (const item of layoutEvents(dayEvents)) {
         let onEventKeyDown = function(keyboardEvent) {
           if (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
@@ -4723,12 +4820,13 @@
             const hit = columnHit(column, body, moveEvent.clientX, moveEvent.clientY);
             if (!hit)
               return;
+            const edges = columnEdges(columnIndex, event.id);
             let start = item.start;
             let end = item.end;
             if (edge === "end") {
-              end = Math.max(snapMinutes(hit.minutes, snapStep, "ceil"), start + snapStep);
+              end = Math.max(magnetOrSnap(hit.minutes, "ceil", edges), start + snapStep);
             } else {
-              start = Math.min(snapMinutes(hit.minutes, snapStep, "floor"), end - snapStep);
+              start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
             }
             pending = { start, end };
             node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
@@ -4809,8 +4907,9 @@
             const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
             if (!hit)
               return;
-            const start = Math.min(Math.max(snapMinutes(hit.minutes - grabOffset, snapStep, "floor"), startMinutes), endMinutes - duration);
+            const raw = hit.minutes - grabOffset;
             const target = bodies[hit.column];
+            const start = Math.min(Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes), endMinutes - duration);
             const droppable = target.column.resource?.droppable !== false;
             pending = { start, end: start + duration, column: target.column, droppable };
             if (mirror.parentNode !== target.body)
@@ -4982,7 +5081,7 @@
           ghostChip.className = "cv-select-chip";
           ghost.append(ghostChip);
           body.append(ghost);
-          const anchor = snapMinutes(hit.minutes, snapStep, "floor");
+          const anchor = magnetOrSnap(hit.minutes, "floor", columnEdges(columnIndex));
           selecting = {
             anchor,
             downX: nativeEvent.clientX,
@@ -5003,8 +5102,9 @@
           const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
           if (!hit)
             return;
-          const start = snapMinutes(Math.min(selecting.anchor, hit.minutes), snapStep, "floor");
-          const end = Math.max(snapMinutes(Math.max(selecting.anchor, hit.minutes), snapStep, "ceil"), start + snapStep);
+          const edges = columnEdges(columnIndex);
+          const start = magnetOrSnap(Math.min(selecting.anchor, hit.minutes), "floor", edges);
+          const end = Math.max(magnetOrSnap(Math.max(selecting.anchor, hit.minutes), "ceil", edges), start + snapStep);
           selecting.start = start;
           selecting.end = end;
           ghost.style.top = `${(start - startMinutes) * pxPerMinute}px`;
@@ -5213,6 +5313,18 @@
     }
     getEventById(id) {
       return this.#events.find((event) => event.id === String(id)) ?? null;
+    }
+    getEventOverlaps(range, options = {}) {
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      return queryOverlaps({
+        events: this.#events,
+        backgrounds: this.#backgrounds,
+        range,
+        timeZone,
+        resourceIds: options.resourceIds ?? [],
+        includeBackgrounds: options.includeBackgrounds ?? false,
+        filter: options.filter
+      });
     }
     #commitEventMutation({ event, previous, current, name, nativeEvent }) {
       const index = this.#events.findIndex((item) => item.id === event.id);

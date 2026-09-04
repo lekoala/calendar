@@ -189,6 +189,42 @@ calendar.scrollToTime("10:00")
 calendar.revealEvent("event-1")
 ```
 
+## Overlap queries
+
+```js
+const hits = calendar.getEventOverlaps(
+  { start, end },
+  { resourceIds = [], includeBackgrounds = false, filter } = {},
+);
+```
+
+`start`/`end` are `Temporal.ZonedDateTime` values or ISO strings, compared by
+absolute instant over half-open `[start, end)` ranges; an empty or inverted
+range yields `[]`. `resourceIds = []` means no resource filter; a non-empty
+list keeps only entries belonging to those resources, except resource-less
+backgrounds, which are global context and match any list. Results follow
+paint order (events in state order, then backgrounds in state order).
+`filter(entry)` narrows further without the application reading class arrays
+itself: `entry = { kind: "event" | "background", event?, background? }`.
+
+```js
+// "Is there an unavailability here?" without touching classNames:
+const blocked = calendar.getEventOverlaps(
+  { start, end },
+  {
+    resourceIds: [resourceId],
+    includeBackgrounds: true,
+    filter: ({ kind, background }) => kind === "background" && background.classNames.includes("sc-blocked"),
+  },
+);
+```
+
+Overlapping simultaneous events are an application policy, not a core
+option: the core always lays out simultaneous events side by side (see
+`layoutEvents`), and the application allows, refuses or caps overlaps by
+combining `getEventOverlaps` with synchronous `preventDefault()` on
+`calendar:select` / `calendar:eventmove` / `calendar:eventresize`.
+
 ## Mutations / realtime adapters
 
 ```js

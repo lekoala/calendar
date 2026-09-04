@@ -105,6 +105,30 @@ export declare class CalendarViewElement extends HTMLElement {
      */
     getEventById(id: string | number): import("./core/model.js").NormalizedEvent | null;
     /**
+     * Public read surface over canonical state: events (and optionally
+     * backgrounds) overlapping `{ start, end }`, in paint order, or `[]`.
+     * Comparison is by absolute instant over half-open ranges; `resourceIds`
+     * scopes by resource (`[]` means no filter, resource-less backgrounds are
+     * global and match any scope); `filter({ kind, event, background })`
+     * narrows further without reading class arrays.
+     *
+     * @param {{ start: unknown, end: unknown }} range
+     * @param {{ resourceIds?: string[], includeBackgrounds?: boolean, filter?: (entry: { kind: "event" | "background", event?: import("./core/model.js").NormalizedEvent, background?: import("./core/model.js").NormalizedBackground }) => boolean }} [options]
+     * @returns {Array<import("./core/model.js").NormalizedEvent | import("./core/model.js").NormalizedBackground>}
+     */
+    getEventOverlaps(range: {
+        start: unknown;
+        end: unknown;
+    }, options?: {
+        resourceIds?: string[];
+        includeBackgrounds?: boolean;
+        filter?: (entry: {
+            kind: "event" | "background";
+            event?: import("./core/model.js").NormalizedEvent;
+            background?: import("./core/model.js").NormalizedBackground;
+        }) => boolean;
+    }): Array<import("./core/model.js").NormalizedEvent | import("./core/model.js").NormalizedBackground>;
+    /**
      * Non-pointer equivalent of dragging an event. Runs the same optimistic
      * commit as the pointer path, so keyboard and application commands share
      * one contract.
