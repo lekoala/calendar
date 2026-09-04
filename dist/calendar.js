@@ -4493,12 +4493,14 @@
       } catch {}
     }
     function dispatchContextMenu(target, detail, nativeEvent) {
-      target.dispatchEvent(new CustomEvent("calendar:eventcontextmenu", {
+      const handled = !target.dispatchEvent(new CustomEvent("calendar:eventcontextmenu", {
         bubbles: true,
         composed: true,
         cancelable: true,
         detail: { ...detail, nativeEvent }
       }));
+      if (handled)
+        nativeEvent.preventDefault?.();
     }
     function watchLongPress(target, onFire, shouldIgnore) {
       let timer = 0;

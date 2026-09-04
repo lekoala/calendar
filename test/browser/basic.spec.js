@@ -698,3 +698,47 @@ test("event nodes allow touch scroll while resize handles stay precise", async (
   expect(touch.event).toContain("pan-y");
   expect(touch.handle).toBe("none");
 });
+
+test("a handled contextmenu suppresses the native browser menu", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await page.locator('[data-event-id="a"]').first().waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__ctx = { intents: 0, prevented: null };
+    /** @type {any} */ (document.querySelector("calendar-view")).addEventListener(
+      "calendar:eventcontextmenu",
+      (/** @type {Event} */ event) => {
+        /** @type {any} */ (window).__ctx.intents += 1;
+        event.preventDefault();
+      },
+    );
+    // Registered after the core's own listener, so it observes the final flag.
+    document.addEventListener("contextmenu", (event) => {
+      /** @type {any} */ (window).__ctx.prevented = event.defaultPrevented;
+    });
+  });
+  const box = await eventBox(page, "a");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: "right" });
+  await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__ctx.intents)).toBe(1);
+  expect(await page.evaluate(() => /** @type {any} */ (window).__ctx.prevented)).toBe(true);
+});
+
+test("an unhandled contextmenu leaves the native browser menu alone", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await page.locator('[data-event-id="a"]').first().waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__ctx = { intents: 0, prevented: null };
+    /** @type {any} */ (document.querySelector("calendar-view")).addEventListener(
+      "calendar:eventcontextmenu",
+      () => {
+        /** @type {any} */ (window).__ctx.intents += 1;
+      },
+    );
+    document.addEventListener("contextmenu", (event) => {
+      /** @type {any} */ (window).__ctx.prevented = event.defaultPrevented;
+    });
+  });
+  const box = await eventBox(page, "a");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: "right" });
+  await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__ctx.intents)).toBe(1);
+  expect(await page.evaluate(() => /** @type {any} */ (window).__ctx.prevented)).toBe(false);
+});
