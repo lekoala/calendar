@@ -85,7 +85,8 @@ export class CalendarViewElement extends HTMLElement {
   connectedCallback() {
     this.classList.add("calendar-view");
     if (!this.hasAttribute("date")) {
-      this.setAttribute("date", "2026-09-03");
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      this.setAttribute("date", Temporal.Now.plainDateISO(timeZone).toString());
     }
     this.#queueRender();
   }
@@ -493,7 +494,7 @@ export class CalendarViewElement extends HTMLElement {
 
   /**
    * Polite announcement for view/date changes and keyboard commits. The
-   * status node is rebuilt on every render, so the message is written after
+   * status node persists across renders, so the message is written after
    * the next frame flush; the last message wins.
    *
    * @param {string} message
@@ -582,6 +583,11 @@ export class CalendarViewElement extends HTMLElement {
     const scroll = this.querySelector(".cv-scroller");
     const scrollTop = scroll?.scrollTop ?? 0;
     const scrollLeft = scroll?.scrollLeft ?? 0;
+    // The live region outlives the grid so announcements scheduled before a
+    // render are never lost when the subtree is replaced.
+    const status = this.querySelector(":scope > .cv-status") ?? document.createElement("p");
+    status.className = "cv-status";
+    status.setAttribute("role", "status");
 
     this.replaceChildren();
     this.dataset.view = this.view;
@@ -639,9 +645,6 @@ export class CalendarViewElement extends HTMLElement {
     scroller.scrollTop = scrollTop;
     scroller.scrollLeft = scrollLeft;
 
-    const status = document.createElement("p");
-    status.className = "cv-status";
-    status.setAttribute("role", "status");
     this.append(status);
 
     // Dispatched once the whole subtree exists, so applications can decorate

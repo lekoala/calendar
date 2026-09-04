@@ -67,9 +67,11 @@ Resource `droppable: false` or event `movable: false` must prevent drag before i
 
 During a drag the original node stays in place while a detached mirror follows the pointer across time, days and resources. The calendar commits optimistically on drop and re-renders; the residual click after a moved drag is suppressed.
 
+Dragging a slice of a multi-day event shifts the whole event: the day delta between source and target columns plus the wall-clock minute delta apply to both `start` and `end`, so the total duration is preserved (same contract as `Shift` + arrows). A single `click` handler in the capture phase both dispatches `calendar:eventclick` and drops the residual click after a drag, resize or long-press.
+
 A viewport autoscroller advances the scroll while the pointer rests near the scroller edge. It is a separate helper, not part of layout math.
 
-Event nodes use `touch-action: none` so pointer drag works on touch. Touch range selection remains a later milestone.
+Event nodes use `touch-action: pan-x pan-y` so a touch gesture starting on an event can still scroll the grid; a scroll takeover fires `pointercancel`, which the drag/resize paths already treat as an abort without commit. Resize handles keep `touch-action: none` for precision. Touch range selection remains a later milestone.
 
 `calendar:eventmove` detail shape:
 
@@ -80,6 +82,8 @@ Event nodes use `touch-action: none` so pointer drag works on touch. Touch range
 ## 5. Resize
 
 Support end resize first; start resize is also desirable and should be part of the design rather than an afterthought. Both edges expose a resize handle on resizable events; the start edge snaps with floor and the end edge with ceil, keeping at least one snap step of duration.
+
+A multi-day event is sliced one block per day. Only the first day owns the start edge and only the last day owns the end edge: resizing a clipped edge (a slice boundary created by the day cut, not the true event boundary) is a no-op that restores the visual without dispatching. Resizing a true edge keeps the opposite edge from the full event, never from the slice.
 
 `calendar:eventresize` follows the same optimistic contract as move:
 
@@ -97,7 +101,7 @@ calendar.addEventListener("calendar:eventcontextmenu", (event) => {
 });
 ```
 
-Desktop: right-click (`contextmenu`) on an event or an empty slot. The core never calls `preventDefault()` on the native event; the application suppresses the browser menu when it handles the intent.
+Desktop: right-click (`contextmenu`) on an event or an empty slot. When the application handles the intent (`preventDefault()` on `calendar:eventcontextmenu`), the core suppresses the native browser menu; otherwise the browser menu is left alone.
 
 Touch/pen: press-and-hold (550 ms, 12 px tolerance) on an event or an empty slot fires the same event. A fired long-press suppresses the residual click/select/drag that would otherwise follow. Mouse pointers never trigger long-press; they use right-click.
 

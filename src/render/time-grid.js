@@ -193,9 +193,9 @@ export function renderTimeGrid({
   }
 
   /**
-   * Dispatch a cancelable context intent. The core never calls
-   * `preventDefault()` on the native event; the application suppresses the
-   * browser menu when it handles the intent.
+   * Dispatch a cancelable context intent. When the application handles the
+   * intent (`preventDefault()` on the dispatched event), the native browser
+   * menu is suppressed; otherwise it is left alone.
    *
    * @param {Element} target
    * @param {object} detail
@@ -203,7 +203,7 @@ export function renderTimeGrid({
    * @returns {void}
    */
   function dispatchContextMenu(target, detail, nativeEvent) {
-    target.dispatchEvent(
+    const handled = !target.dispatchEvent(
       new CustomEvent("calendar:eventcontextmenu", {
         bubbles: true,
         composed: true,
@@ -211,6 +211,7 @@ export function renderTimeGrid({
         detail: { ...detail, nativeEvent },
       }),
     );
+    if (handled) nativeEvent.preventDefault?.();
   }
 
   /**
@@ -493,7 +494,7 @@ export function renderTimeGrid({
       node.dataset.eventId = event.id;
       node.style.top = `${geometry.top}px`;
       node.style.height = `${geometry.height}px`;
-      node.style.left = `${item.left * 100}%`;
+      node.style.insetInlineStart = `${item.left * 100}%`;
       node.style.width = `${item.width * 100}%`;
       node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
 
@@ -502,27 +503,26 @@ export function renderTimeGrid({
       else node.textContent = content == null ? (event.title ?? labels.untitledEvent) : String(content);
 
       // Native <button> activation covers pointer click and Enter/Space equally.
-      node.addEventListener("click", (nativeEvent) => {
-        node.dispatchEvent(
-          new CustomEvent("calendar:eventclick", {
-            bubbles: true,
-            composed: true,
-            cancelable: true,
-            detail: { event, date: column.date, resource: column.resource, nativeEvent },
-          }),
-        );
-      });
-
-      // A drag, resize or long-press that moved must not leak an eventclick
-      // from its residual click.
+      // A single capture-phase handler both dispatches eventclick and drops
+      // the residual click after a drag, resize or long-press.
       node.addEventListener(
         "click",
         (nativeEvent) => {
-          if (!suppressClick) return;
-          suppressClick = false;
-          longPressConsumed = false;
-          nativeEvent.stopPropagation();
-          nativeEvent.preventDefault();
+          if (suppressClick) {
+            suppressClick = false;
+            longPressConsumed = false;
+            nativeEvent.stopPropagation();
+            nativeEvent.preventDefault();
+            return;
+          }
+          node.dispatchEvent(
+            new CustomEvent("calendar:eventclick", {
+              bubbles: true,
+              composed: true,
+              cancelable: true,
+              detail: { event, date: column.date, resource: column.resource, nativeEvent },
+            }),
+          );
         },
         true,
       );
@@ -762,13 +762,35 @@ export function renderTimeGrid({
             return;
           }
           if (!moved || !pending) return;
+          // A slice edge clipped by a day boundary is not the true event
+          // edge: resizing it would truncate the multi-day span. Only the
+          // first day owns the start edge and only the last day owns the
+          // end edge.
+          const startZoned = toZonedDateTime(event.start, timeZone);
+          const endZoned = toZonedDateTime(event.end, timeZone);
+          const isFirstDay = Temporal.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
+          const isLastDay = Temporal.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
+          if ((edge === "start" && !isFirstDay) || (edge === "end" && !isLastDay)) {
+            node.style.top = savedTop;
+            node.style.height = savedHeight;
+            return;
+          }
           suppressClick = true;
+          const nextStart =
+            edge === "start" ? zonedDateTimeAt(column.date, pending.start, timeZone) : startZoned;
+          const nextEnd = edge === "end" ? zonedDateTimeAt(column.date, pending.end, timeZone) : endZoned;
+          if (Temporal.ZonedDateTime.compare(nextEnd, nextStart) <= 0) {
+            node.style.top = savedTop;
+            node.style.height = savedHeight;
+            suppressClick = false;
+            return;
+          }
           const result = host.commitEventResize({
             event,
             previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
             current: {
-              start: zonedDateTimeAt(column.date, pending.start, timeZone),
-              end: zonedDateTimeAt(column.date, pending.end, timeZone),
+              start: nextStart,
+              end: nextEnd,
               resourceId: event.resourceId ?? null,
             },
             nativeEvent: upEvent,
@@ -874,12 +896,19 @@ export function renderTimeGrid({
           // A non-droppable target reverts silently: no dispatch, no state change.
           if (!range.droppable) return;
           suppressClick = true;
+          // The mirror shows the dragged slice, but the commit shifts the
+          // whole event so multi-day spans keep their total duration (same
+          // contract as the keyboard move path).
+          const dayDelta = range.column.date.since(column.date).days;
+          const minuteDelta = range.start - item.start;
+          const startZoned = toZonedDateTime(event.start, timeZone);
+          const endZoned = toZonedDateTime(event.end, timeZone);
           host.commitEventMove({
             event,
             previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
             current: {
-              start: zonedDateTimeAt(range.column.date, range.start, timeZone),
-              end: zonedDateTimeAt(range.column.date, range.end, timeZone),
+              start: startZoned.add({ days: dayDelta, minutes: minuteDelta }),
+              end: endZoned.add({ days: dayDelta, minutes: minuteDelta }),
               resourceId: range.column.resource?.id ?? null,
             },
             nativeEvent: upEvent,

@@ -39,16 +39,15 @@
 
 .cv-axis {
   position: sticky;
-  left: 0;
+  inset-inline-start: 0;
   z-index: 3;
   width: 3.5rem;
-  min-height: 70rem;
   background: var(--calendar-bg);
 }
 
 .cv-axis-label {
   position: absolute;
-  right: 0.5rem;
+  inset-inline-end: 0.5rem;
   color: var(--calendar-muted);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
@@ -85,7 +84,7 @@
 
 .cv-resource-corner {
   position: sticky;
-  left: 0;
+  inset-inline-start: 0;
   z-index: 3;
   width: 3.5rem;
   background: var(--calendar-bg);
@@ -369,7 +368,11 @@
   color: var(--calendar-text);
   text-align: start;
   cursor: grab;
-  touch-action: none;
+  /* Pan keeps touch scrolling working when the gesture starts on an event.
+     A scroll takeover fires pointercancel, which the drag/resize paths
+     already treat as an abort without commit. Resize handles stay precise
+     with touch-action: none. */
+  touch-action: pan-x pan-y;
 }
 
 .cv-event:active {

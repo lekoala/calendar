@@ -4842,13 +4842,30 @@
             }
             if (!moved || !pending)
               return;
+            const startZoned = toZonedDateTime(event.start, timeZone);
+            const endZoned = toZonedDateTime(event.end, timeZone);
+            const isFirstDay = Temporal2.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
+            const isLastDay = Temporal2.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
+            if (edge === "start" && !isFirstDay || edge === "end" && !isLastDay) {
+              node.style.top = savedTop;
+              node.style.height = savedHeight;
+              return;
+            }
             suppressClick = true;
+            const nextStart = edge === "start" ? zonedDateTimeAt(column.date, pending.start, timeZone) : startZoned;
+            const nextEnd = edge === "end" ? zonedDateTimeAt(column.date, pending.end, timeZone) : endZoned;
+            if (Temporal2.ZonedDateTime.compare(nextEnd, nextStart) <= 0) {
+              node.style.top = savedTop;
+              node.style.height = savedHeight;
+              suppressClick = false;
+              return;
+            }
             const result = host.commitEventResize({
               event,
               previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
               current: {
-                start: zonedDateTimeAt(column.date, pending.start, timeZone),
-                end: zonedDateTimeAt(column.date, pending.end, timeZone),
+                start: nextStart,
+                end: nextEnd,
                 resourceId: event.resourceId ?? null
               },
               nativeEvent: upEvent
@@ -4937,12 +4954,16 @@
             if (!range.droppable)
               return;
             suppressClick = true;
+            const dayDelta = range.column.date.since(column.date).days;
+            const minuteDelta = range.start - item.start;
+            const startZoned = toZonedDateTime(event.start, timeZone);
+            const endZoned = toZonedDateTime(event.end, timeZone);
             host.commitEventMove({
               event,
               previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
               current: {
-                start: zonedDateTimeAt(range.column.date, range.start, timeZone),
-                end: zonedDateTimeAt(range.column.date, range.end, timeZone),
+                start: startZoned.add({ days: dayDelta, minutes: minuteDelta }),
+                end: endZoned.add({ days: dayDelta, minutes: minuteDelta }),
                 resourceId: range.column.resource?.id ?? null
               },
               nativeEvent: upEvent
@@ -4970,7 +4991,7 @@
         node.dataset.eventId = event.id;
         node.style.top = `${geometry.top}px`;
         node.style.height = `${geometry.height}px`;
-        node.style.left = `${item.left * 100}%`;
+        node.style.insetInlineStart = `${item.left * 100}%`;
         node.style.width = `${item.width * 100}%`;
         node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
         const content = eventContent?.({ event, date: column.date, resource: column.resource, element: node });
@@ -4979,20 +5000,19 @@
         else
           node.textContent = content == null ? event.title ?? labels.untitledEvent : String(content);
         node.addEventListener("click", (nativeEvent) => {
+          if (suppressClick) {
+            suppressClick = false;
+            longPressConsumed = false;
+            nativeEvent.stopPropagation();
+            nativeEvent.preventDefault();
+            return;
+          }
           node.dispatchEvent(new CustomEvent("calendar:eventclick", {
             bubbles: true,
             composed: true,
             cancelable: true,
             detail: { event, date: column.date, resource: column.resource, nativeEvent }
           }));
-        });
-        node.addEventListener("click", (nativeEvent) => {
-          if (!suppressClick)
-            return;
-          suppressClick = false;
-          longPressConsumed = false;
-          nativeEvent.stopPropagation();
-          nativeEvent.preventDefault();
         }, true);
         const movable = isMovable(event, host.editable);
         const resizable = isResizable(event, host.editable);
@@ -5220,7 +5240,8 @@
     connectedCallback() {
       this.classList.add("calendar-view");
       if (!this.hasAttribute("date")) {
-        this.setAttribute("date", "2026-09-03");
+        const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+        this.setAttribute("date", Temporal2.Now.plainDateISO(timeZone).toString());
       }
       this.#queueRender();
     }
@@ -5524,6 +5545,9 @@
       const scroll = this.querySelector(".cv-scroller");
       const scrollTop = scroll?.scrollTop ?? 0;
       const scrollLeft = scroll?.scrollLeft ?? 0;
+      const status = this.querySelector(":scope > .cv-status") ?? document.createElement("p");
+      status.className = "cv-status";
+      status.setAttribute("role", "status");
       this.replaceChildren();
       this.dataset.view = this.view;
       const scroller = document.createElement("div");
@@ -5572,9 +5596,6 @@
       this.append(scroller);
       scroller.scrollTop = scrollTop;
       scroller.scrollLeft = scrollLeft;
-      const status = document.createElement("p");
-      status.className = "cv-status";
-      status.setAttribute("role", "status");
       this.append(status);
       this.dispatchEvent(new CustomEvent("calendar:render", {
         bubbles: true,

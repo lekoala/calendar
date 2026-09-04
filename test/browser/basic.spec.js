@@ -580,3 +580,121 @@ test("a dragged event magnetizes to a neighboring boundary", async ({ page }) =>
   expect(move.start).toContain("T10:10:00+02:00");
   expect(move.end).toContain("T10:50:00+02:00");
 });
+
+test("dragging a multi-day slice preserves the total duration", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await trackMoves(page);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = [
+      {
+        id: "night",
+        title: "Night shift",
+        start: "2026-09-03T17:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-04T09:00:00+02:00[Europe/Brussels]",
+      },
+    ];
+    calendar.backgrounds = [];
+  });
+  await flushRender(page);
+  // The Sep 4 slice (08:00-09:00) is the second rendered block.
+  const target = page.locator('[data-event-id="night"]').nth(1);
+  await target.waitFor({ state: "visible" });
+  const box = await target.boundingBox();
+  assert(box, "expected the second slice to have a bounding box");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 54, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => readMoves(page)).toHaveLength(1);
+  const [move] = await readMoves(page);
+  // +30 minutes on the slice shifts the whole 16h span, not just the slice.
+  expect(move.start).toContain("T17:30:00+02:00");
+  expect(move.end).toContain("2026-09-04T09:30:00+02:00");
+});
+
+test("resizing a clipped multi-day edge is a no-op", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await trackMoves(page);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = [
+      {
+        id: "night",
+        title: "Night shift",
+        start: "2026-09-03T17:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-04T09:00:00+02:00[Europe/Brussels]",
+      },
+    ];
+    calendar.backgrounds = [];
+  });
+  await flushRender(page);
+  // The Sep 4 slice starts at slotMin (clipped), not at the true start.
+  const handle = page.locator('[data-event-id="night"] .cv-resize-n').nth(1);
+  await handle.waitFor({ state: "visible" });
+  const box = await handle.boundingBox();
+  assert(box, "expected the clipped start handle to have a bounding box");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 36, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  expect(await readResizes(page)).toHaveLength(0);
+});
+
+test("dragging an event does not leak an eventclick", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await trackMoves(page);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__clicks = [];
+    /** @type {any} */ (document.querySelector("calendar-view")).addEventListener(
+      "calendar:eventclick",
+      () => {
+        /** @type {any} */ (window).__clicks.push(1);
+      },
+    );
+  });
+  const box = await eventBox(page, "a");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 90, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => readMoves(page)).toHaveLength(1);
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => /** @type {any} */ (window).__clicks)).toHaveLength(0);
+});
+
+test("no date attribute anchors on today", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  const date = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const el = document.createElement("calendar-view");
+        document.body.append(el);
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const value = el.getAttribute("date");
+            el.remove();
+            resolve(value);
+          }),
+        );
+      }),
+  );
+  expect(date).toBe(Temporal.Now.plainDateISO("Europe/Brussels").toString());
+});
+
+test("event nodes allow touch scroll while resize handles stay precise", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await page.locator('[data-event-id="a"] .cv-resize-s').first().waitFor({ state: "visible" });
+  const touch = await page.evaluate(() => {
+    const event = /** @type {any} */ (document.querySelector('[data-event-id="a"]'));
+    const handle = /** @type {any} */ (document.querySelector('[data-event-id="a"] .cv-resize-s'));
+    return {
+      event: getComputedStyle(event).touchAction,
+      handle: getComputedStyle(handle).touchAction,
+    };
+  });
+  expect(touch.event).toContain("pan-x");
+  expect(touch.event).toContain("pan-y");
+  expect(touch.handle).toBe("none");
+});

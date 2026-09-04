@@ -172,6 +172,8 @@ calendar without resources -> []
 
 ## Navigation
 
+Without a `date` attribute, the element anchors on today's date (`Temporal.Now.plainDateISO`) in the configured time zone.
+
 ```js
 calendar.setView("week")
 calendar.gotoDate("2026-09-03")
