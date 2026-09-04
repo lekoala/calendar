@@ -1,4 +1,4 @@
-import { CalendarViewElement, defineCalendarView } from "../../dist/types/index.js";
+import { CalendarViewElement, dates, defineCalendarView } from "../../dist/types/index.js";
 
 const element = document.createElement("calendar-view") as CalendarViewElement;
 element.configure({ timeZone: "Europe/Brussels", monthEventLimit: 3 });
@@ -26,6 +26,16 @@ element.batch(() => {
   element.resources = [{ id: "resource-a", title: "Resource A" }];
 });
 void element.refetchEvents();
+
+const anchor = dates.toPlainDate("2026-09-03");
+void dates.startOfWeek(anchor);
+const weeks: unknown = dates.getMonthWeeks(anchor);
+void weeks;
+
+// Classic-script consumers reach the exact same object through a static.
+void CalendarViewElement.dates.getMonthWeeks(anchor, { firstDay: 1 });
+void CalendarViewElement.dates.startOfWeek(anchor);
+void CalendarViewElement.dates.toPlainDate("2026-09-03");
 
 defineCalendarView();
 customElements.define("app-calendar-view", class extends CalendarViewElement {});

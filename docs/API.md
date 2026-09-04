@@ -191,6 +191,30 @@ calendar.scrollToTime("10:00")
 calendar.revealEvent("event-1")
 ```
 
+## Civil date helpers
+
+External navigators (mini-calendars, custom headers) reuse the same civil
+derivation as the grid instead of hand-rolling month math. One object with
+two access paths to the same reference:
+
+```js
+// ESM consumers import the helpers object.
+import { dates } from "@lekoala/calendar";
+
+// Classic-script consumers (e.g. over file://) reach the exact same object
+// through the registered element class.
+const { dates } = customElements.get("calendar-view");
+```
+
+- `dates.getMonthWeeks(date, { firstDay, hiddenDays })` — the true civil
+  weeks of the anchor month: full 7-day rows from `firstDay`, 4 to 6 rows
+  depending on the month, never padded. Fixed-height grids are a
+  presentation choice and pad on the consumer side. Rows stay rectangular
+  only without hidden days.
+- `dates.startOfWeek(date, firstDay)` — first civil day of the containing
+  week.
+- `dates.toPlainDate(value)` — accepts `Temporal.PlainDate` or ISO strings.
+
 ## Overlap queries
 
 ```js

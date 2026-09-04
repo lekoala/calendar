@@ -33,6 +33,11 @@
           ],
           "members": [
             {
+              "kind": "field",
+              "name": "dates",
+              "description": "Pass-through for the shared civil helpers, same reference as the ESM `dates` export."
+            },
+            {
               "kind": "method",
               "name": "configure"
             },

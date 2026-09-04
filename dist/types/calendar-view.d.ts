@@ -48,9 +48,44 @@ export type CalendarConfig = {
     slotLabelContent?: (info: object) => unknown;
     moreLinkContent?: (info: object) => unknown;
 };
+/**
+ * Civil date helpers shared with the main grid, exposed for external
+ * navigators (mini-calendars, custom headers). One object with two access
+ * paths: ESM `import { dates } from "…"`, and classic scripts
+ * `customElements.get("calendar-view").dates` — the element static is the
+ * very same reference, so nothing is re-wrapped.
+ *
+ * @type {{
+ *   getMonthWeeks(
+ *     date: Temporal.PlainDate | string,
+ *     options?: { firstDay?: number, hiddenDays?: Iterable<number>, locale?: string },
+ *   ): Temporal.PlainDate[][],
+ *   startOfWeek(date: Temporal.PlainDate | string, firstDay?: number): Temporal.PlainDate,
+ *   toPlainDate(value: Temporal.PlainDate | string): Temporal.PlainDate,
+ * }}
+ */
+export declare const dates: {
+    getMonthWeeks(date: Temporal.PlainDate | string, options?: {
+        firstDay?: number;
+        hiddenDays?: Iterable<number>;
+        locale?: string;
+    }): Temporal.PlainDate[][];
+    startOfWeek(date: Temporal.PlainDate | string, firstDay?: number): Temporal.PlainDate;
+    toPlainDate(value: Temporal.PlainDate | string): Temporal.PlainDate;
+};
 export declare class CalendarViewElement extends HTMLElement {
     #private;
     static observedAttributes: string[];
+    /** Pass-through for the shared civil helpers, same reference as the ESM `dates` export. */
+    static dates: {
+        getMonthWeeks(date: Temporal.PlainDate | string, options?: {
+            firstDay?: number;
+            hiddenDays?: Iterable<number>;
+            locale?: string;
+        }): Temporal.PlainDate[][];
+        startOfWeek(date: Temporal.PlainDate | string, firstDay?: number): Temporal.PlainDate;
+        toPlainDate(value: Temporal.PlainDate | string): Temporal.PlainDate;
+    };
     connectedCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(): void;

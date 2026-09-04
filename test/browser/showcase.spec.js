@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -56,6 +57,19 @@ test("showcase renders seeded team events with kind cards", async ({ page }) => 
   expect(count).toBeGreaterThan(5);
   await expect(page.locator('.cv-event[data-kind="review"]').first()).toBeVisible();
   await expect(page.locator(".sc-card strong").first()).not.toBeEmpty();
+});
+
+test("the classic-script build serves the shell over file://", async ({ page }) => {
+  // The showcase loads `../dist/calendar.js` and reaches the month math
+  // through element statics — no local ESM import, so it opens from disk.
+  const fileUrl = pathToFileURL(fileURLToPath(new URL("../../demo/showcase.html", import.meta.url))).href;
+  /** @type {string[]} */
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  await page.goto(fileUrl);
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await expect(page.locator(".sc-mini-day")).toHaveCount(42);
+  expect(errors).toHaveLength(0);
 });
 
 test("the shell fills the viewport and only the calendar scrolls", async ({ page }) => {
@@ -208,6 +222,134 @@ test("the mini month navigates the anchor date and shows ISO weeks", async ({ pa
   await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText("10");
 });
 
+test("month and year selects drive the mini grid without navigating", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  await page.selectOption("#mini-month", "10");
+  await expect(page.locator('.sc-mini-day[data-date="2026-10-15"]')).toBeVisible();
+  // Selecting shows another month; the main anchor only moves on day click.
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-03");
+  await page.click('.sc-mini-day[data-date="2026-10-15"]');
+  await flushRender(page);
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-10-15");
+
+  await page.selectOption("#mini-year", "2030");
+  await expect(page.locator('.sc-mini-day[data-date="2030-10-01"]')).toBeVisible();
+  // Chevron past the window edge recenters the year list on the anchor.
+  await page.selectOption("#mini-year", "2036");
+  await page.click("#mini-next");
+  await page.click("#mini-next");
+  await page.click("#mini-next");
+  await expect(page.locator("#mini-year")).toHaveValue("2037");
+  await expect(page.locator('.sc-mini-day[data-date="2037-01-15"]')).toBeVisible();
+});
+
+test("short months still fill six stable rows", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  // February 2021 holds four civil weeks; presentation pads it to six.
+  await page.selectOption("#mini-year", "2021");
+  await page.selectOption("#mini-month", "2");
+  await expect(page.locator(".sc-mini-day")).toHaveCount(42);
+  await expect(page.locator('.sc-mini-day[data-date="2021-02-01"]')).toBeVisible();
+  await expect(page.locator('.sc-mini-day[data-date="2021-03-14"]')).toBeVisible();
+});
+
+test("outside-month days navigate and nothing is ever disabled", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  await expect(page.locator("#mini-grid [disabled]")).toHaveCount(0);
+  await expect(page.locator('.sc-mini-day[data-date="2026-08-31"]')).toHaveAttribute(
+    "data-outside-month",
+    "true",
+  );
+  await page.click('.sc-mini-day[data-date="2026-08-31"]');
+  await flushRender(page);
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-08-31");
+});
+
+test("the mini-month marks closed days and the active week", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  // Closed follows the fixture policy (closedWeekdays) and the hidden
+  // Sunday, never the weekday name: Saturday and Sunday read closed, a
+  // plain Thursday does not.
+  await expect(page.locator('.sc-mini-day[data-date="2026-09-05"]')).toHaveAttribute("data-closed", "true");
+  await expect(page.locator('.sc-mini-day[data-date="2026-09-06"]')).toHaveAttribute("data-closed", "true");
+  await expect(page.locator('.sc-mini-day[data-date="2026-09-03"]')).not.toHaveAttribute(
+    "data-closed",
+    "true",
+  );
+  // The anchor week (Mon 31 Aug – Sun 6 Sep) rides one band of seven.
+  await expect(page.locator('.sc-mini-day[data-activeweek="true"]')).toHaveCount(7);
+  await expect(page.locator('.sc-mini-day[data-date="2026-09-01"]')).toHaveAttribute(
+    "data-activeweek",
+    "true",
+  );
+  await expect(page.locator('.sc-mini-day[data-date="2026-09-10"]')).not.toHaveAttribute(
+    "data-activeweek",
+    "true",
+  );
+  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveAttribute("aria-current", "date");
+});
+
+test("the viewer toggle re-marks availability without touching navigation", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  const adminMarks = await page.locator('.sc-mini-day[data-marked="true"]').count();
+  expect(adminMarks).toBeGreaterThan(0);
+  await expect(page.locator("#mini-legend")).toContainText("Free time");
+  await page.click("#tools-toggle");
+  await page.click('#grid-menu [data-grid="viewer"]');
+  await expect(page.locator("#mini-legend")).toContainText("Bookable for you");
+  const externalMarks = await page.locator('.sc-mini-day[data-marked="true"]').count();
+  // Bookable implies available, so the external set can only shrink.
+  expect(externalMarks).toBeLessThanOrEqual(adminMarks);
+  // Navigation is viewer-independent: an outside-month day still jumps.
+  await page.keyboard.press("Escape");
+  await page.click('.sc-mini-day[data-date="2026-08-31"]');
+  await flushRender(page);
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-08-31");
+  await expect(page.locator("#mini-grid [disabled]")).toHaveCount(0);
+});
+
+test("occupancy removes the availability dot without closing the day", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  const [iso, nextIso] = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const day = calendar.date;
+    return /** @type {[string, string]} */ ([day.toString(), day.add({ days: 1 }).toString()]);
+  });
+  // Every active room fully occupied leaves no free interval: the dot
+  // disappears while the day itself stays open (not closed, navigable).
+  await page.evaluate(
+    ([day, next]) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      const fill = (/** @type {string} */ resourceId) => ({
+        id: `fill-${resourceId.split("-")[1]}`,
+        start: `${day}T08:00:00+02:00[Europe/Brussels]`,
+        end: `${day}T18:00:00+02:00[Europe/Brussels]`,
+        resourceId,
+      });
+      calendar.events = ["room-a", "room-b", "room-c"].map(fill);
+      void next;
+    },
+    [iso, nextIso],
+  );
+  // `.events =` re-renders the core; the mini follows via calendar:render.
+  await flushRender(page);
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-marked", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-closed", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${nextIso}"]`)).toHaveAttribute("data-marked", "true");
+});
+
 test("room and kind filters change what the core is given", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
@@ -345,6 +487,64 @@ test("a non-bookable range refuses the drop it is drawn over", async ({ page }) 
   await expect(page.locator("#toast")).toContainText("Daily reset");
 });
 
+test("bookable hours paint green with an amber late desk", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // Two open days (Thu/Fri) across three rooms; Saturday stays fully closed.
+  await expect(page.locator(".cv-background.sc-open")).toHaveCount(6);
+  // room-b Thursday 18:00-20:00 at 1.5px/min from a 07:00 slot start.
+  const extra = page.locator(".cv-background.sc-extra");
+  await expect(extra).toHaveCount(1);
+  const style = await extra.getAttribute("style");
+  expect(style).toContain("top: 990px");
+  expect(style).toContain("height: 180px");
+});
+
+test("an extended desk window accepts the drop official hours refuse", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const returned = calendar.moveEvent("live", {
+      start: "2026-09-03T18:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T18:30:00+02:00[Europe/Brussels]",
+      resourceId: "room-b",
+    });
+    return { accepted: returned !== null, start: String(calendar.getEventById("live").start) };
+  });
+  expect(outcome.accepted).toBe(true);
+  expect(outcome.start).toContain("T18:00:00+02:00");
+  // Outside every window the guard still refuses.
+  const refused = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return calendar.moveEvent("live", {
+      start: "2026-09-03T21:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T21:30:00+02:00[Europe/Brussels]",
+      resourceId: "room-b",
+    });
+  });
+  expect(refused).toBeNull();
+});
+
+test("flagged bookings carry an icon cluster, hidden when short", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // Seeded remote/priority flags render trailing glyphs on roomy cards,
+  // while short cards hide the cluster instead of clipping it.
+  await expect(page.locator(".cv-event .sc-icons .ti-video").first()).toBeVisible();
+  const clusters = await page.evaluate(() =>
+    [...document.querySelectorAll(".cv-event .sc-icons")].map((node) => ({
+      star: node.querySelector(".ti-star") !== null,
+      shown: getComputedStyle(node).display !== "none",
+    })),
+  );
+  expect(clusters.some((cluster) => cluster.star && cluster.shown)).toBe(true);
+  expect(clusters.some((cluster) => !cluster.shown)).toBe(true);
+  // List rows lead with the kind glyph.
+  await setView(page, "list");
+  await expect(page.locator(".sc-row .ti").first()).toBeVisible();
+});
+
 test("an accepted move can still be reverted after the round-trip", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
@@ -472,7 +672,12 @@ test("the locale switch drives the core labels and the shell's own dates", async
   // One `configure()` call carries both halves: `labels` for the strings the
   // core writes itself, `locale` for everything `Intl` formats.
   await expect(page.locator(".cv-scroller")).toHaveAttribute("aria-label", "Calendrier");
-  await expect(page.locator("#mini-title")).toHaveText(/septembre/);
+  await expect(page.locator("#mini-month")).toHaveValue("9");
+  const monthLabel = await page.evaluate(() => {
+    const select = /** @type {any} */ (document.getElementById("mini-month"));
+    return select.options[select.selectedIndex]?.text ?? "";
+  });
+  expect(monthLabel).toMatch(/septembre/);
   await expect(page.locator("#anchor-sub")).toContainText("fr");
   await page.keyboard.press("Escape");
 

@@ -242,6 +242,13 @@ function fullMonthWeeks(date, firstDay) {
  * with hidden days removed, so every row keeps the same length and the grid
  * stays rectangular.
  *
+ * Contract for external navigators (mini-calendars): the result holds the
+ * true civil weeks of the month — full 7-day rows from `firstDay`, 4 to 6
+ * rows depending on the month, never padded to a fixed height. Row count
+ * stability (e.g. an always-6-row mini grid) is a presentation choice and
+ * belongs to the consumer. Rows are rectangular only when no hidden days
+ * are configured; with hidden days each row keeps the same visible days.
+ *
  * @param {Temporal.PlainDate | string} date
  * @param {DateDerivationOptions} [options]
  * @returns {Temporal.PlainDate[][]}
