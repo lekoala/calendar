@@ -143,6 +143,8 @@ npm run dev
 
 Then open `http://127.0.0.1:4173/demo/`.
 
+The demos load the committed `dist/` build (classic bundle + stylesheet, Temporal bundled inline) rather than `node_modules`, so the same files also publish as a static site. The published demos live at <https://lekoala.github.io/calendar/>; after a source change, regenerate the build with `bun run sync` and commit, or the drift gate in `verify`/CI fails.
+
 ## Development
 
 The project is self-contained: explicit custom-element registration, source ESM, Light DOM, committed generated artifacts, browser tests for real interaction, and an `AGENTS.md` that protects the architectural invariants.

@@ -4,10 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Calendar prototype — resources</title>
-  <link rel="stylesheet" href="../src/calendar.css">
-  <script type="importmap">
-    {"imports":{"temporal-polyfill":"../node_modules/temporal-polyfill/index.js","temporal-utils":"../node_modules/temporal-utils/dist/index.js","temporal-utils/protected":"../node_modules/temporal-utils/dist/protected.js","temporal-utils/protected-error-messages":"../node_modules/temporal-utils/dist/protected-error-messages.js"}}
-  </script>
+  <link rel="stylesheet" href="../dist/calendar.css">
+  <script src="../dist/calendar.js"></script>
   <style>body{margin:0;padding:2rem;background:#eef1f6;font-family:system-ui,sans-serif}nav{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem}</style>
 </head>
 <body>
@@ -22,7 +20,6 @@
 </nav>
 <calendar-view view="resourceThreeDays" date="2026-09-03"></calendar-view>
 <script type="module">
-  import "../src/define.js";
   const calendar = document.querySelector("calendar-view");
   const rooms = (count) =>
     Array.from({ length: count }, (_, index) => ({ id: `room-${index + 1}`, title: `Room ${index + 1}` }));
