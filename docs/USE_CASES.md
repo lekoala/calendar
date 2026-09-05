@@ -124,7 +124,10 @@ Search happens outside the core. The result contains an event/date/resource. The
 ```js
 calendar.gotoDate(result.date)
 // select/show resource in application state
-// future calendar.revealEvent(result.id)
+calendar.revealEvent(result.id, { focus: true, highlight: true }) // Milestone 14
+// search results that carry { eventId, date, time, resourceId } reveal
+// events that are not in the loaded range (Milestone 14: gotoDate, await
+// the async source, scroll/highlight/focus).
 ```
 
 ## 9. Recurring events
@@ -288,6 +291,129 @@ responses; only the newest state may render (§7, DATA_AND_REALTIME.md).
 
 Simulate add/update/remove every few seconds while the user is scrolled
 mid-day; no navigation or scroll reset (§7).
+
+## 14. Temporal state at the operator's desk
+
+A page stays open all day. Events age from future → current → past as the
+clock moves, without any refetch. The operator distinguishes them visually,
+and one workflow refuses to move past items while another in the same
+application allows retroactive correction. The core exposes the temporal
+fact on rendered nodes and to content hooks, and never bakes a policy into
+the model: `editable`/`movable`/`resizable` remain application-owned.
+
+Core stress:
+
+- `data-temporal-state="past|current|future"` computed from canonical ranges
+  and `now`: `end <= now` → `past`, `start <= now < end` → `current`,
+  `now < start` → `future`;
+- `info.isPast` / `info.isCurrent` / `info.isFuture` in content hooks;
+- the fact recomputes as `now` advances without a source refetch, so a long
+  open page stays correct;
+- no write to `editable`/`movable`/`resizable` from the core.
+
+## 15. Guarded interaction
+
+Before a gesture starts — and at the destination while it runs — the
+application can refuse: a past or locked item, a blocked target. The refusal
+is visible before any commit: no resize handle, no drag start, an invalid
+ghost with a reason. Refusing and reverting after commit remain supported,
+but the archetypal move is refused up front.
+
+The principle is already proven by external placement: `addExternalDrop`
+validates structurally and by application before showing a ghost. Internal
+move/resize/select should share the same evaluation path instead of only
+preventing the dispatch at commit.
+
+Core stress:
+
+- `interactionPolicy({ action, event?, target, now })` → `true | reason`,
+  with `action ∈ move | resize | select`;
+- gates handle availability, drag start and the destination during the
+  gesture, using the existing invalid-ghost/`data-reason` model;
+- one evaluation path shared with `addExternalDrop`'s `validate`;
+- separation: user interaction goes through the policy, the mutation API
+  stays authoritative — `removeEvent()` may still delete locked/past items
+  because a server or realtime path demanded it.
+
+## 16. What is under this range?
+
+When an application proposes a range (interactive select, a move
+destination, an external drop, or a pure query), it needs what the range
+touches: which events and which background ranges cover or merely overlap
+it. A covering background may carry default creation metadata (a working
+window: location, default category); an overlapping one may be a blocker.
+The core resolves geometry; interpreting which background is the context and
+which is the constraint stays application-side, because several backgrounds
+can cover the same range and the core must not pick one.
+
+Core stress:
+
+- `getRangeContext({ start, end, resourceId })` → `{ events,
+  backgrounds: { covering, overlapping } }`;
+- `covering` = `background.start <= range.start && background.end >=
+  range.end`; `overlapping` = plain intersection;
+- interaction intents (`calendar:select`, `eventmove`, `eventresize`,
+  `externaldrop`) deliver `backgrounds: { covering, overlapping }` through
+  the same primitive;
+- no arbitrary background selection, no semantic type invented by the core.
+
+## 17. Proposed-slot preview
+
+A slot-finder suggests a handful of ranges (same day/time across resources,
+or spread over days). The application wants to show each suggestion inside
+the grid: it navigates to the date and makes the range visible with the real
+geometry. Because no interaction is running, the suggestion is a
+programmatic preview, distinct from the select ghost: it must not start a
+selection or fire `calendar:select`.
+
+Core stress:
+
+- `previewRange({ start, end, resourceId })` and `clearPreview()`;
+- preview geometry obeys the same slice/layout rules as events and honors
+  resource scoping;
+- `pointer-events: none`; independent of the pointer selection lifecycle;
+- pairing with reveal (Milestone 14) for the navigate → preview → confirm
+  workflow.
+
+## 18. Resource grouping to reduce visual load
+
+An operator manages many resources at once (rooms, vehicles, field teams).
+With 8–15 resources a flat row of columns is heavy to read. One grouping
+layer (site, building, team) turns the flat set into labelled blocks that
+match how the operator thinks. Resource hierarchy (site → unit → member,
+collapsible) is a different problem and stays out of scope.
+
+The group is visual and organizational, not a selection model: activating a
+group can stay application-side by expanding it to the members' `resourceIds`.
+
+Core stress:
+
+- `resourceGroups = [{ id, title }]` plus `resource.groupId` (single level);
+- a group-header row above the resource headers, covering the member
+  columns;
+- `resourceGroupContent({ group, resources, element })`;
+- array order defines group order; the `resources` array defines order within
+  a group;
+- no nesting/expand/collapse/tree grid; `resourceIds` stays the filtering
+  channel.
+
+## 19. Arbitrary view length and concurrent mutations
+
+Two workflows. (a) A time grid of 2, 4 or 5 days: custom durations appear
+without new view names, only a day count. (b) Two operators edit while the
+page is open: an optimistic move is pending when a second mutation lands, or
+a realtime echo arrives mid-pending. The existing
+optimistic/`preventDefault()`/`revert()` contract plus
+`revision`/`mutationId` are the seam; the milestone is the test matrix that
+makes pending/conflict/revert/superseded behaviour an explicit acceptance
+surface.
+
+Core stress:
+
+- `dayCount`/`duration` for time grids; week-anchored and rolling views keep
+  their existing semantics;
+- browser scenarios: pending → revert; pending → superseded move; realtime
+  update during a pending commit; conflict; no stale render.
 
 ## Stop conditions
 

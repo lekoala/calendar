@@ -17,6 +17,13 @@ First public release of the calendar.
 * Showcase application demonstrating room scheduling, availability backgrounds, mini-month navigation, search, clipboard operations, overlays, localization, and responsive layouts.
 * Documented client/server synchronization contract for optimistic updates, revisions, conflicts, and realtime updates.
 
+### Fixed
+
+* A deferred `revert()` now addresses its event by id and only undoes the placement it applied, instead of writing back at a captured array index: removing the event, or moving it again, before the application answers no longer overwrites a neighbouring event or resurrects deleted state.
+* Event normalization no longer injects `editable: true`, which outranked `configure({ editable: false })` and left the calendar editable through `moveEvent()`, `resizeEvent()`, drag, resize and the keyboard path.
+* `refetchEvents()` lets each source replace only the collection it owns, so `addEvent()` and the `backgrounds` setter applied while a request is in flight survive its resolution.
+* Drag autoscroll stops when its scroller leaves the document, instead of leaving a `requestAnimationFrame` loop running after the calendar is removed mid-drag.
+
 ### Notes
 
 The core intentionally leaves application concerns such as booking rules, notifications, persistence, search, overlays, and cross-range workflows to the consumer.

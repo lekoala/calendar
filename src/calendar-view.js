@@ -18,6 +18,7 @@ import {
   normalizeEvent,
   normalizeRangeBound,
   normalizeResource,
+  sameRange,
 } from "./core/model.js";
 import { queryOverlaps } from "./core/overlaps.js";
 import { renderList } from "./render/list.js";
@@ -320,41 +321,52 @@ export class CalendarViewElement extends HTMLElement {
    * @returns {import("./core/model.js").NormalizedEvent | null} the optimistic event, or null when rejected immediately
    */
   #commitEventMutation({ event, previous, current, name, nativeEvent }) {
-    const index = this.#events.findIndex((item) => item.id === event.id);
-    if (index < 0) return null;
-    const before = this.#events[index];
+    const id = event.id;
+    const before = this.getEventById(id);
+    if (!before) return null;
     // Optimistic commits keep the canonical boundary types: a committed
     // `current.start` string re-enters the same strict normalization as a
     // source payload, so `calendar.events` never mixes raw input and state.
     const allDay = before.allDay === true;
-    const start = normalizeRangeBound(current.start, allDay);
-    const end = normalizeRangeBound(current.end, allDay);
+    const optimistic = {
+      start: normalizeRangeBound(current.start, allDay),
+      end: normalizeRangeBound(current.end, allDay),
+      resourceId: current.resourceId,
+    };
+    const restored = { start: before.start, end: before.end, resourceId: before.resourceId ?? null };
     /**
      * @param {{ start: unknown, end: unknown, resourceId: string | null }} state
      * @returns {void}
      */
     const apply = (state) => {
-      this.#events = this.#events.map((item, i) => (i === index ? { ...item, ...state } : item));
+      this.#events = this.#events.map((item) => (item.id === id ? { ...item, ...state } : item));
       this.#queueRender();
     };
-    apply({ start, end, resourceId: current.resourceId });
+    apply(optimistic);
     let reverted = false;
+    // `revert()` may run long after the dispatch, once an application has
+    // decided asynchronously. By then the event can have been removed,
+    // reordered or moved again, so the undo addresses it by id and only
+    // fires while the placement it owns is still the one in state: a stale
+    // revert must never resurrect a deleted event, land on its neighbour,
+    // or undo someone else's newer move.
     const revert = () => {
       if (reverted) return;
       reverted = true;
-      this.#events = this.#events.map((item, i) => (i === index ? before : item));
-      this.#queueRender();
+      const live = this.getEventById(id);
+      if (!live || !sameRange(live, optimistic)) return;
+      apply(restored);
     };
     const accepted = this.dispatchEvent(
       new CustomEvent(name, {
         bubbles: true,
         composed: true,
         cancelable: true,
-        detail: { event: this.#events[index], previous, current, nativeEvent, revert },
+        detail: { event: this.getEventById(id), previous, current, nativeEvent, revert },
       }),
     );
     if (!accepted) revert();
-    return reverted ? null : this.#events[index];
+    return reverted ? null : this.getEventById(id);
   }
 
   /**
@@ -551,18 +563,26 @@ export class CalendarViewElement extends HTMLElement {
     this.#announceLoading(true);
     try {
       const [events, backgrounds] = await Promise.all([
-        eventSource ? eventSource(context) : this.#events,
-        backgroundSource ? backgroundSource(context) : this.#backgrounds,
+        eventSource ? eventSource(context) : null,
+        backgroundSource ? backgroundSource(context) : null,
       ]);
       if (controller.signal.aborted || version !== this.#requestVersion) return;
-      this.#events = Array.from(
-        /** @type {import("./core/model.js").EventInput[]} */ (events ?? []),
-        normalizeEvent,
-      );
-      this.#backgrounds = Array.from(
-        /** @type {import("./core/model.js").BackgroundInput[]} */ (backgrounds ?? []),
-        normalizeBackground,
-      );
+      // Each collection is replaced only by its own source. Reading the
+      // other one before the await and writing it back here would undo the
+      // incremental mutations (`addEvent`, `updateEvent`, `removeEvent`)
+      // an application applied while the request was in flight.
+      if (eventSource) {
+        this.#events = Array.from(
+          /** @type {import("./core/model.js").EventInput[]} */ (events ?? []),
+          normalizeEvent,
+        );
+      }
+      if (backgroundSource) {
+        this.#backgrounds = Array.from(
+          /** @type {import("./core/model.js").BackgroundInput[]} */ (backgrounds ?? []),
+          normalizeBackground,
+        );
+      }
       this.#queueRender();
     } catch (error) {
       if (controller.signal.aborted) return;

@@ -1,5 +1,6 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
+import { Temporal } from "temporal-polyfill";
 
 /**
  * Showcase shell: generic room-booking application around the core, in a
@@ -13,6 +14,74 @@ function flushRender(page) {
   return page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
+}
+
+/**
+ * The shell anchors on today, so every date here is derived, never pinned:
+ * a literal calendar day would silently rot the moment the suite is run on
+ * another date. The anchor is the element's own `date` attribute.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function anchorDate(page) {
+  const iso = await page.evaluate(() =>
+    /** @type {any} */ (document.querySelector("calendar-view")).getAttribute("date"),
+  );
+  return Temporal.PlainDate.from(/** @type {string} */ (iso));
+}
+
+/**
+ * First day at or after `date` the desk opens on, mirroring the fixture's own
+ * rule: Saturday is staffed for viewing only (`closedWeekdays`) and Sunday is
+ * never rendered (`hiddenDays`). The shell places its fixtures the same way,
+ * so this is where the seeded content actually lands.
+ *
+ * @param {Temporal.PlainDate} date
+ * @returns {Temporal.PlainDate}
+ */
+function openDayFrom(date) {
+  let cursor = date;
+  while (cursor.dayOfWeek > 5) cursor = cursor.add({ days: 1 });
+  return cursor;
+}
+
+/**
+ * First day at or after `date` whose ISO weekday is `weekday`. Weekly policy
+ * fixtures (a Thursday late desk, a Wednesday maintenance window) only exist
+ * on their own weekday, so tests navigate to it instead of hoping the opening
+ * range happens to contain it.
+ *
+ * @param {Temporal.PlainDate} date
+ * @param {number} weekday ISO 1-7
+ * @returns {Temporal.PlainDate}
+ */
+function weekdayFrom(date, weekday) {
+  return date.add({ days: (weekday - date.dayOfWeek + 7) % 7 });
+}
+
+/**
+ * Put the grid back at a known scroll offset. Navigation deliberately keeps
+ * `scrollTop`, so a point derived from an axis label would otherwise depend
+ * on wherever the previous interaction scrolled to.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function scrollToMorning(page) {
+  await page.evaluate(() =>
+    /** @type {any} */ (document.querySelector("calendar-view")).scrollToTime("08:00"),
+  );
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {Temporal.PlainDate | string} date
+ */
+async function gotoDate(page, date) {
+  await page.evaluate(
+    (iso) => /** @type {any} */ (document.querySelector("calendar-view")).gotoDate(iso),
+    String(date),
+  );
+  await flushRender(page);
 }
 
 /**
@@ -92,6 +161,7 @@ test("the view menu switches views and names the current one", async ({ page }) 
   await expect(page.locator(".cv-event").first()).toBeVisible();
   // Narrow viewports deliberately open on a single day, so the label is
   // whatever the shell chose: assert it follows, not a fixed name.
+  const anchor = await anchorDate(page);
   const initial = await page.evaluate(
     () => /** @type {any} */ (document.querySelector("calendar-view")).view,
   );
@@ -103,7 +173,7 @@ test("the view menu switches views and names the current one", async ({ page }) 
   await flushRender(page);
   await expect(page.locator("#view-menu")).toBeHidden();
   await expect(page.locator(".cv-month-day").first()).toBeVisible();
-  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-03");
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", anchor.toString());
   await expect(page.locator("#view-label")).toHaveText("Month");
 
   // Digit shortcuts are the reason one trigger can replace seven buttons.
@@ -111,7 +181,7 @@ test("the view menu switches views and names the current one", async ({ page }) 
   await page.keyboard.press("7");
   await flushRender(page);
   await expect(page.locator("#view-label")).toHaveText("List");
-  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-03");
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", anchor.toString());
 });
 
 test("clicking an event opens the app-owned detail sheet", async ({ page }) => {
@@ -133,10 +203,17 @@ test("the search palette reveals a loaded event on its date", async ({ page }) =
   // an async `load(query, { signal })` - the same shape as `eventSource`.
   await page.fill("#tools-search", "live sync");
   await expect(page.locator('.cb-option:has-text("Live sync")')).toBeVisible();
+  // "Live sync" is seeded on the next opening day, whichever weekday that is.
+  const liveDay = await page.evaluate(() =>
+    String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById("live").start).slice(
+      0,
+      10,
+    ),
+  );
   await page.locator('.cb-option:has-text("Live sync")').first().click();
   await flushRender(page);
   await expect(page.locator("#search-dialog")).toBeHidden();
-  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-04");
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", liveDay);
   await expect(page.locator("#cockpit .sc-last")).toContainText("search → live");
   // Navigation, not a value: reopening starts from an empty query, with no
   // picker and none of the previous search's transient results.
@@ -212,48 +289,71 @@ test("the mini month navigates the anchor date and shows ISO weeks", async ({ pa
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
-  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText("3");
-  // Temporal already answers this: no date library, no extra option.
-  await expect(page.locator(".sc-mini-week").first()).toHaveText("36");
-  await page.click('.sc-mini-day[data-date="2026-09-10"]');
+  const anchor = await anchorDate(page);
+  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText(String(anchor.day));
+  // Temporal already answers this: no date library, no extra option. The
+  // number belongs to the first day the grid renders, whichever it is.
+  const firstCell = await page.locator(".sc-mini-day").first().getAttribute("data-date");
+  await expect(page.locator(".sc-mini-week").first()).toHaveText(
+    String(Temporal.PlainDate.from(/** @type {string} */ (firstCell)).weekOfYear),
+  );
+  // A week away, staying inside the anchor's own month so the cell is always
+  // one of the six rendered rows.
+  const other = anchor.day <= 21 ? anchor.add({ days: 7 }) : anchor.subtract({ days: 7 });
+  await page.click(`.sc-mini-day[data-date="${other}"]`);
   await flushRender(page);
-  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-10");
-  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText("10");
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", other.toString());
+  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText(String(other.day));
 });
 
 test("month and year selects drive the mini grid without navigating", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
+  const anchor = await anchorDate(page);
   // The month label is the month alone: the year has its own select, and a
   // narrow label keeps the mini section from overflowing the sidebar.
   const monthText = await page.evaluate(() => {
     const select = /** @type {any} */ (document.getElementById("mini-month"));
     return select.options[select.selectedIndex]?.text ?? "";
   });
-  expect(monthText).toBe("September");
+  expect(monthText).toBe(
+    new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" }).format(
+      new Date(Date.UTC(anchor.year, anchor.month - 1, 1)),
+    ),
+  );
   const noOverflow = await page.evaluate(() => {
     const sidebar = /** @type {HTMLElement} */ (document.querySelector(".sc-sidebar"));
     return sidebar.scrollWidth <= sidebar.clientWidth;
   });
   expect(noOverflow).toBe(true);
-  await page.selectOption("#mini-month", "10");
-  await expect(page.locator('.sc-mini-day[data-date="2026-10-15"]')).toBeVisible();
+  // Mid-month in the month after the anchor: always one of the six rows.
+  const nextMonth = anchor.with({ day: 1 }).add({ months: 1 });
+  const target = nextMonth.with({ day: 15 });
+  await page.selectOption("#mini-month", String(nextMonth.month));
+  if (nextMonth.year !== anchor.year) await page.selectOption("#mini-year", String(nextMonth.year));
+  await expect(page.locator(`.sc-mini-day[data-date="${target}"]`)).toBeVisible();
   // Selecting shows another month; the main anchor only moves on day click.
-  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-09-03");
-  await page.click('.sc-mini-day[data-date="2026-10-15"]');
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", anchor.toString());
+  await page.click(`.sc-mini-day[data-date="${target}"]`);
   await flushRender(page);
-  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-10-15");
+  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", target.toString());
 
-  await page.selectOption("#mini-year", "2030");
-  await expect(page.locator('.sc-mini-day[data-date="2030-10-01"]')).toBeVisible();
-  // Chevron past the window edge recenters the year list on the anchor.
-  await page.selectOption("#mini-year", "2036");
+  const far = target.with({ year: target.year + 4, day: 1 });
+  await page.selectOption("#mini-year", String(far.year));
+  await expect(page.locator(`.sc-mini-day[data-date="${far}"]`)).toBeVisible();
+  // Chevron past the window edge recenters the year list on the anchor:
+  // three months on from October lands in January of the following year.
+  const edge = far.with({ month: 10, day: 1, year: target.year + 10 });
+  await page.selectOption("#mini-year", String(edge.year));
+  await page.selectOption("#mini-month", "10");
   await page.click("#mini-next");
   await page.click("#mini-next");
   await page.click("#mini-next");
-  await expect(page.locator("#mini-year")).toHaveValue("2037");
-  await expect(page.locator('.sc-mini-day[data-date="2037-01-15"]')).toBeVisible();
+  await expect(page.locator("#mini-year")).toHaveValue(String(edge.year + 1));
+  await expect(
+    page.locator(`.sc-mini-day[data-date="${edge.add({ months: 3 }).with({ day: 15 })}"]`),
+  ).toBeVisible();
 });
 
 test("short months still fill six stable rows", async ({ page }) => {
@@ -273,13 +373,16 @@ test("outside-month days navigate and nothing is ever disabled", async ({ page }
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
   await expect(page.locator("#mini-grid [disabled]")).toHaveCount(0);
-  await expect(page.locator('.sc-mini-day[data-date="2026-08-31"]')).toHaveAttribute(
-    "data-outside-month",
-    "true",
-  );
-  await page.click('.sc-mini-day[data-date="2026-08-31"]');
+  // Six stable rows always spill over at least one month edge; take whichever
+  // padding day the anchor's month happens to produce.
+  const outside = page.locator('.sc-mini-day[data-outside-month="true"]').first();
+  const outsideIso = await outside.getAttribute("data-date");
+  await outside.click();
   await flushRender(page);
-  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-08-31");
+  await expect(page.locator("#anchor-label")).toHaveAttribute(
+    "data-date",
+    /** @type {string} */ (outsideIso),
+  );
 });
 
 test("the mini-month marks closed days and the active week", async ({ page }) => {
@@ -288,20 +391,28 @@ test("the mini-month marks closed days and the active week", async ({ page }) =>
   await openPanel(page);
   // Closed follows the fixture policy (closedWeekdays) and the hidden
   // Sunday, never the weekday name: Saturday and Sunday read closed, a
-  // plain Thursday does not.
-  await expect(page.locator('.sc-mini-day[data-date="2026-09-05"]')).toHaveAttribute("data-closed", "true");
-  await expect(page.locator('.sc-mini-day[data-date="2026-09-06"]')).toHaveAttribute("data-closed", "true");
-  await expect(page.locator('.sc-mini-day[data-date="2026-09-03"]')).not.toHaveAttribute(
+  // plain working day does not. Taken from the anchor's own month, so the
+  // cells exist whatever month the shell opened on.
+  const anchor = await anchorDate(page);
+  const firstOfMonth = anchor.with({ day: 1 });
+  const saturday = weekdayFrom(firstOfMonth, 6);
+  const sunday = saturday.add({ days: 1 });
+  const working = weekdayFrom(firstOfMonth, 4);
+  await expect(page.locator(`.sc-mini-day[data-date="${saturday}"]`)).toHaveAttribute("data-closed", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${sunday}"]`)).toHaveAttribute("data-closed", "true");
+  await expect(page.locator(`.sc-mini-day[data-date="${working}"]`)).not.toHaveAttribute(
     "data-closed",
     "true",
   );
-  // The anchor week (Mon 31 Aug – Sun 6 Sep) rides one band of seven.
+  // The anchor's civil week rides one band of seven.
+  const monday = anchor.subtract({ days: anchor.dayOfWeek - 1 });
+  const otherWeek = anchor.day <= 21 ? anchor.add({ days: 7 }) : anchor.subtract({ days: 7 });
   await expect(page.locator('.sc-mini-day[data-activeweek="true"]')).toHaveCount(7);
-  await expect(page.locator('.sc-mini-day[data-date="2026-09-01"]')).toHaveAttribute(
+  await expect(page.locator(`.sc-mini-day[data-date="${monday}"]`)).toHaveAttribute(
     "data-activeweek",
     "true",
   );
-  await expect(page.locator('.sc-mini-day[data-date="2026-09-10"]')).not.toHaveAttribute(
+  await expect(page.locator(`.sc-mini-day[data-date="${otherWeek}"]`)).not.toHaveAttribute(
     "data-activeweek",
     "true",
   );
@@ -327,9 +438,14 @@ test("the viewer toggle re-marks availability without touching navigation", asyn
   await page.keyboard.press("Escape");
   await closePanel(page);
   await openPanel(page);
-  await page.click('.sc-mini-day[data-date="2026-08-31"]');
+  const outside = page.locator('.sc-mini-day[data-outside-month="true"]').first();
+  const outsideIso = await outside.getAttribute("data-date");
+  await outside.click();
   await flushRender(page);
-  await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", "2026-08-31");
+  await expect(page.locator("#anchor-label")).toHaveAttribute(
+    "data-date",
+    /** @type {string} */ (outsideIso),
+  );
   await expect(page.locator("#mini-grid [disabled]")).toHaveCount(0);
 });
 
@@ -337,11 +453,11 @@ test("occupancy removes the availability dot without closing the day", async ({ 
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
-  const [iso, nextIso] = await page.evaluate(() => {
-    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    const day = calendar.date;
-    return /** @type {[string, string]} */ ([day.toString(), day.add({ days: 1 }).toString()]);
-  });
+  // Availability only means anything on a day the desk opens.
+  const anchor = await anchorDate(page);
+  const day = openDayFrom(anchor);
+  const iso = day.toString();
+  const nextIso = openDayFrom(day.add({ days: 1 })).toString();
   // Every active room fully occupied leaves no free interval: the dot
   // disappears while the day itself stays open (not closed, navigable).
   await page.evaluate(
@@ -349,8 +465,8 @@ test("occupancy removes the availability dot without closing the day", async ({ 
       const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
       const fill = (/** @type {string} */ resourceId) => ({
         id: `fill-${resourceId.split("-")[1]}`,
-        start: `${day}T08:00:00+02:00[Europe/Brussels]`,
-        end: `${day}T18:00:00+02:00[Europe/Brussels]`,
+        start: `${day}T08:00:00[Europe/Brussels]`,
+        end: `${day}T18:00:00[Europe/Brussels]`,
         resourceId,
       });
       calendar.events = ["room-a", "room-b", "room-c"].map(fill);
@@ -373,10 +489,8 @@ test("a seeded fully-booked day shows red, and no day mixes markers", async ({ p
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
-  const fullIso = await page.evaluate(() => {
-    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    return calendar.date.add({ days: 6 }).toString();
-  });
+  // The fixture puts it a week out, on the first opening day from there.
+  const fullIso = openDayFrom((await anchorDate(page)).add({ days: 6 })).toString();
   await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).toHaveAttribute("data-full", "true");
   await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).not.toHaveAttribute(
     "data-marked",
@@ -455,17 +569,15 @@ test("a nearly-full day shows amber before it tips to red", async ({ page }) => 
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
-  const iso = await page.evaluate(() =>
-    /** @type {any} */ (document.querySelector("calendar-view")).date.toString(),
-  );
+  const iso = openDayFrom(await anchorDate(page)).toString();
   // Every room 08:00-17:30 leaves half an hour: still bookable, but under
   // the `nearFullFreeMinutes` policy, so amber instead of red.
   await page.evaluate((day) => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = ["room-a", "room-b", "room-c"].map((resourceId) => ({
       id: `near-${resourceId.split("-")[1]}`,
-      start: `${day}T08:00:00+02:00[Europe/Brussels]`,
-      end: `${day}T17:30:00+02:00[Europe/Brussels]`,
+      start: `${day}T08:00:00[Europe/Brussels]`,
+      end: `${day}T17:30:00[Europe/Brussels]`,
       resourceId,
     }));
   }, iso);
@@ -486,8 +598,8 @@ test("a nearly-full day shows amber before it tips to red", async ({ page }) => 
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = ["room-a", "room-b", "room-c"].map((resourceId) => ({
       id: `full-${resourceId.split("-")[1]}`,
-      start: `${day}T08:00:00+02:00[Europe/Brussels]`,
-      end: `${day}T18:00:00+02:00[Europe/Brussels]`,
+      start: `${day}T08:00:00[Europe/Brussels]`,
+      end: `${day}T18:00:00[Europe/Brussels]`,
       resourceId,
     }));
   }, iso);
@@ -500,10 +612,8 @@ test("the mini month names its verdict in the accessible name", async ({ page })
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
-  // The seeded fully-booked day (anchor + 6) reads red aloud.
-  const fullIso = await page.evaluate(() =>
-    /** @type {any} */ (document.querySelector("calendar-view")).date.add({ days: 6 }).toString(),
-  );
+  // The seeded fully-booked day, a week out, reads red aloud.
+  const fullIso = openDayFrom((await anchorDate(page)).add({ days: 6 })).toString();
   await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).toHaveAttribute(
     "aria-label",
     /fully booked$/,
@@ -545,7 +655,12 @@ test("the seeded all-day closure lives in the lane and opens the detail sheet", 
   await expect(page.locator(".cv-allday-event")).toHaveCount(1);
   const bar = page.locator(".cv-allday-event[data-event-id='seed-all-day']");
   await expect(bar).toContainText("Atrium closure");
-  await expect(bar).toHaveAttribute("aria-label", "Atrium closure, 2026-09-03 to 2026-09-05, all day");
+  // Seeded from the anchor across three civil days, end exclusive.
+  const anchor = await anchorDate(page);
+  await expect(bar).toHaveAttribute(
+    "aria-label",
+    `Atrium closure, ${anchor} to ${anchor.add({ days: 2 })}, all day`,
+  );
   // Timed bookings stay in the bodies; the lane bar never leaks down there.
   await expect(page.locator(".cv-day-body .cv-allday-event")).toHaveCount(0);
   await bar.click();
@@ -624,9 +739,11 @@ test("the application refuses a move that breaks its own booking rules", async (
   const outcome = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const before = String(calendar.getEventById("live").start);
+    // 21:00 is past closing on every weekday and outside every extended desk
+    // window, so the refusal never depends on which day the shell opened on.
     const returned = calendar.moveEvent("live", {
-      start: before.replace(/T\d\d:/, "T19:"),
-      end: String(calendar.getEventById("live").end).replace(/T\d\d:/, "T19:"),
+      start: before.replace(/T\d\d:/, "T21:"),
+      end: String(calendar.getEventById("live").end).replace(/T\d\d:/, "T21:"),
     });
     return { before, returned, after: String(calendar.getEventById("live").start) };
   });
@@ -664,7 +781,10 @@ test("bookable hours paint green with an amber late desk", async ({ page }) => {
   // The shell opens on a single day below 640px; pin the 3-day resource
   // view so the band counts are portable across viewports.
   await setView(page, "resourceThreeDays");
-  // Two open days (Thu/Fri) across three rooms; Saturday stays fully closed.
+  // Pinned to a Thursday, the rolling window is Thu/Fri/Sat whatever day the
+  // shell opened on: two open days across three rooms, Saturday fully closed,
+  // and the room-b late desk is the single extended window in view.
+  await gotoDate(page, weekdayFrom(await anchorDate(page), 4));
   await expect(page.locator(".cv-background.sc-open")).toHaveCount(6);
   // room-b Thursday 18:00-20:00 at 1.5px/min from a 07:00 slot start.
   const extra = page.locator(".cv-background.sc-extra");
@@ -677,26 +797,30 @@ test("bookable hours paint green with an amber late desk", async ({ page }) => {
 test("an extended desk window accepts the drop official hours refuse", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  const outcome = await page.evaluate(() => {
+  // The late desk is a weekly rule, so the target is the next Thursday. The
+  // zone annotation carries the whole answer: writing an offset by hand would
+  // be wrong for half the year.
+  const thursday = weekdayFrom(await anchorDate(page), 4);
+  const outcome = await page.evaluate((day) => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const returned = calendar.moveEvent("live", {
-      start: "2026-09-03T18:00:00+02:00[Europe/Brussels]",
-      end: "2026-09-03T18:30:00+02:00[Europe/Brussels]",
+      start: `${day}T18:00:00[Europe/Brussels]`,
+      end: `${day}T18:30:00[Europe/Brussels]`,
       resourceId: "room-b",
     });
     return { accepted: returned !== null, start: String(calendar.getEventById("live").start) };
-  });
+  }, thursday.toString());
   expect(outcome.accepted).toBe(true);
-  expect(outcome.start).toContain("T18:00:00+02:00");
+  expect(outcome.start).toContain(`${thursday}T18:00:00`);
   // Outside every window the guard still refuses.
-  const refused = await page.evaluate(() => {
+  const refused = await page.evaluate((day) => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     return calendar.moveEvent("live", {
-      start: "2026-09-03T21:00:00+02:00[Europe/Brussels]",
-      end: "2026-09-03T21:30:00+02:00[Europe/Brussels]",
+      start: `${day}T21:00:00[Europe/Brussels]`,
+      end: `${day}T21:30:00[Europe/Brussels]`,
       resourceId: "room-b",
     });
-  });
+  }, thursday.toString());
   expect(refused).toBeNull();
 });
 
@@ -1001,20 +1125,21 @@ test("cut parks the booking in the workbench and Escape disarms it", async ({ pa
 test("replanning the current day queues its bookings, which survive navigation", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
+  // Replanning only says something on a working day, so pin the range to the
+  // first one the fixture opens on.
+  const anchor = await anchorDate(page);
+  await gotoDate(page, openDayFrom(anchor));
   await openPanel(page);
   await page.click("#tools-toggle");
   await page.click('[data-tool="reschedule-day"]');
   const queued = await page.locator("#workbench-list li").count();
-  // The seeded anchor day holds a dozen+ bookings, all queued in one beat.
+  // A seeded working day holds a dozen+ bookings, all queued in one beat.
   expect(queued).toBeGreaterThan(3);
   // Bulk fill arms nothing: an item only gets armed when cut or clicked.
   await expect(page.locator("#workbench-list button[aria-current='true']")).toHaveCount(0);
   // Navigation and re-renders must not lose the queue: it is application
   // state, rendered off its own `change` beat.
-  await page.evaluate(() => {
-    /** @type {any} */ (document.querySelector("calendar-view")).gotoDate("2026-09-24");
-  });
-  await flushRender(page);
+  await gotoDate(page, openDayFrom(anchor).add({ days: 21 }));
   await expect(page.locator("#workbench-list li")).toHaveCount(queued);
 });
 
@@ -1022,6 +1147,9 @@ test("dragging a workbench row onto the grid places it and advances the queue", 
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
+  // Past the six seeded weeks, so the target day is empty whatever day the
+  // shell opened on.
+  const empty = openDayFrom((await anchorDate(page)).add({ days: 33 }));
   const node = page.locator('.cv-event[data-kind="planning"]').first();
   const id = await node.getAttribute("data-event-id");
   await node.click({ button: "right" });
@@ -1037,10 +1165,8 @@ test("dragging a workbench row onto the grid places it and advances the queue", 
     String(id2),
   );
 
-  await page.evaluate(() => {
-    /** @type {any} */ (document.querySelector("calendar-view")).gotoDate("2026-10-06");
-  });
-  await flushRender(page);
+  await gotoDate(page, empty);
+  await scrollToMorning(page);
 
   const target = await page.evaluate(() => {
     const body = document.querySelector(".cv-day-body");
@@ -1096,7 +1222,7 @@ test("dragging a workbench row onto the grid places it and advances the queue", 
   // The target was policy-clean (no ghost red), the booking moved, left the
   // queue, and the next pending one was armed in the same beat.
   expect(outcome.ghostInvalid).toBe(false);
-  expect(outcome.start).toContain("2026-10-06T10:00");
+  expect(outcome.start).toContain(`${empty}T10:00`);
   expect(outcome.rows).toBe(1);
   expect(outcome.active).toBe(String(id));
 });
@@ -1105,16 +1231,17 @@ test("pasting the armed item places it, and an occupied slot keeps it", async ({
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
+  const anchor = await anchorDate(page);
+  // Past the six seeded weeks, so the paste target is a free day.
+  const empty = openDayFrom(anchor.add({ days: 33 }));
   const node = page.locator('.cv-event[data-kind="planning"]').first();
   const id = await node.getAttribute("data-event-id");
   await node.click({ button: "right" });
   await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
   await expect(page.locator("#workbench-list li")).toHaveCount(1);
 
-  await page.evaluate(() => {
-    /** @type {any} */ (document.querySelector("calendar-view")).gotoDate("2026-10-06");
-  });
-  await flushRender(page);
+  await gotoDate(page, empty);
+  await scrollToMorning(page);
   const point = await page.evaluate(() => {
     const body = document.querySelector(".cv-day-body");
     const rect = /** @type {HTMLElement} */ (body).getBoundingClientRect();
@@ -1133,24 +1260,24 @@ test("pasting the armed item places it, and an occupied slot keeps it", async ({
       String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById(eventId).start),
     String(id),
   );
-  expect(start).toContain("2026-10-06T10:00");
+  expect(start).toContain(`${empty}T10:00`);
   await expect(page.locator("#workbench-list li")).toHaveCount(0);
 
-  // A refused placement keeps the item: back on the anchor week, drag an
+  // A refused placement keeps the item: back on the seeded range, drag an
   // armed booking onto a slot another visible booking already holds. The app
-  // policy marks the ghost invalid and the drop is silent.
-  await page.evaluate(() => {
-    /** @type {any} */ (document.querySelector("calendar-view")).gotoDate("2026-09-03");
-  });
-  await flushRender(page);
-  const occupant = page.locator('.cv-event[data-kind="planning"]').nth(1);
-  const occupied = await occupant.boundingBox();
-  expect(occupied).not.toBeNull();
+  // policy marks the ghost invalid and the drop is silent. The seeded overlap
+  // is the deterministic occupant: mid-morning in room A on the first opening
+  // day, so it is neither closed, blocked nor off-screen.
+  await gotoDate(page, openDayFrom(anchor));
   const moved = page.locator('.cv-event[data-kind="planning"]').first();
   const movedId = await moved.getAttribute("data-event-id");
   await moved.click({ button: "right" });
   await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
   await expect(page.locator("#workbench-list li")).toHaveCount(1);
+  const occupant = page.locator('.cv-event[data-event-id="seed-overlap"]');
+  await occupant.scrollIntoViewIfNeeded();
+  const occupied = await occupant.boundingBox();
+  expect(occupied).not.toBeNull();
 
   const refused = await page.evaluate(
     async ({ eventId, x, y }) => {
@@ -1199,7 +1326,7 @@ test("pasting the armed item places it, and an occupied slot keeps it", async ({
   expect(refused.ghostInvalid).toBe(true);
   expect(refused.reason).toContain("already occupies");
   expect(refused.rows).toBe(1);
-  expect(refused.start).not.toContain("2026-10-06");
+  expect(refused.start).not.toContain(String(empty));
   await page.keyboard.press("Escape");
 });
 
@@ -1209,16 +1336,26 @@ test("dragging a booking out of the grid parks it, glows the zone and opens no m
   await openPanel(page);
   const card = page.locator('.cv-event[data-kind="planning"]').first();
   const id = await card.getAttribute("data-event-id");
+  // The first planning card of the day can sit well below the fold; grabbing
+  // it by a stale box would press on whatever is at those coordinates.
+  await card.scrollIntoViewIfNeeded();
   const box = await card.boundingBox();
   expect(box).not.toBeNull();
   const x = (box?.x ?? 0) + (box?.width ?? 0) / 2;
   const y = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+  // The axis strip is outside every column, and unlike a fixed upward sweep
+  // it stays on screen whatever hour the booking sits at: column bodies keep
+  // their full height, so a point above the scroller can still be inside one.
+  const axisX = await page.evaluate(() => {
+    const axis = /** @type {HTMLElement} */ (document.querySelector(".cv-axis"));
+    const rect = axis.getBoundingClientRect();
+    return rect.left + rect.width / 2;
+  });
   await page.mouse.move(x, y);
   await page.mouse.down();
-  // Sweep far above the grid. While the pointer is outside every column the
-  // core arms `data-dropout` on the dragged card and the shell lights the
-  // workbench panel as the drop zone.
-  await page.mouse.move(x + 30, y - 300, { steps: 6 });
+  // While the pointer is outside every column the core arms `data-dropout` on
+  // the dragged card and the shell lights the workbench panel as the target.
+  await page.mouse.move(axisX, y, { steps: 6 });
   await expect(page.locator(`.cv-event[data-event-id="${id}"]:not(.cv-drag-mirror)`)).toHaveAttribute(
     "data-dropout",
     "true",
@@ -1249,8 +1386,8 @@ test("a blocked-range slot queues the bookings it overlaps", async ({ page }) =>
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const day = calendar.date.toString();
     return calendar.getEventOverlaps({
-      start: `${day}T12:00:00+02:00[Europe/Brussels]`,
-      end: `${day}T13:00:00+02:00[Europe/Brussels]`,
+      start: `${day}T12:00:00[Europe/Brussels]`,
+      end: `${day}T13:00:00[Europe/Brussels]`,
     }).length;
   });
   // Drive the empty-slot handler directly with a time inside the block, so
@@ -1265,7 +1402,7 @@ test("a blocked-range slot queues the bookings it overlaps", async ({ page }) =>
         detail: {
           event: null,
           date: day,
-          time: `${day}T12:20:00+02:00[Europe/Brussels]`,
+          time: `${day}T12:20:00[Europe/Brussels]`,
           resourceId: null,
           clientX: 0,
           clientY: 0,
@@ -1286,8 +1423,8 @@ test("right-clicking a day header queues that day's bookings", async ({ page }) 
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
-  // The default resource view's first day header belongs to room A / the
-  // anchor day, so the action is scoped to that resource's day.
+  // The default resource view's first day header belongs to room A and the
+  // first rendered day, so the action is scoped to that resource's day.
   await page.locator(".cv-day-header").first().click({ button: "right" });
   await expect(page.locator("#context-menu")).toBeVisible();
   await page
@@ -1299,7 +1436,8 @@ test("right-clicking a day header queues that day's bookings", async ({ page }) 
   const expected = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const resourceId = calendar.resources[0].id;
-    const day = calendar.date.toString();
+    // The first column, not the anchor: a hidden Sunday is never rendered.
+    const day = calendar.getVisibleRange().start.toString();
     return /** @type {Array<{ resourceId: unknown, start: unknown }>} */ (calendar.events).filter(
       (event) => event.resourceId === resourceId && String(event.start).slice(0, 10) === day,
     ).length;

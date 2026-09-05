@@ -275,3 +275,117 @@ test("a source asked for a month still receives whole weeks when days are hidden
     .poll(() => page.evaluate(() => /** @type {any} */ (window).__range))
     .toEqual({ start: "2026-08-31", end: "2026-10-05" });
 });
+
+test("configure({ editable: false }) locks events that omit the flag", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await expect(page.locator(".cv-resize-handle")).toHaveCount(6);
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).configure({ editable: false });
+  });
+  await flushRender(page);
+  // Read-only is a render decision too: no resize handle is armed any more.
+  await expect(page.locator(".cv-resize-handle")).toHaveCount(0);
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const item = calendar.getEventById("a");
+    const moved = calendar.moveEvent("a", {
+      start: String(item.start).replace("T09:", "T11:"),
+      end: String(item.end).replace("T10:", "T12:"),
+    });
+    const resized = calendar.resizeEvent("a", { end: String(item.end).replace("T10:", "T11:") });
+    // An explicit event flag still outranks the calendar default.
+    calendar.updateEvent({ ...calendar.getEventById("b"), editable: true });
+    const optedIn = calendar.moveEvent("b", {
+      start: String(calendar.getEventById("b").start).replace("T13:", "T15:"),
+      end: String(calendar.getEventById("b").end).replace("T14:", "T16:"),
+    });
+    return {
+      moved,
+      resized,
+      optedIn: optedIn !== null,
+      start: String(calendar.getEventById("a").start),
+    };
+  });
+  expect(outcome.moved).toBeNull();
+  expect(outcome.resized).toBeNull();
+  expect(outcome.optedIn).toBe(true);
+  expect(outcome.start).toContain("T09:00");
+});
+
+test("a background refetch keeps the events added while it was in flight", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.configure({
+      backgroundSource: () =>
+        new Promise((resolve) =>
+          window.setTimeout(
+            () =>
+              resolve([
+                {
+                  id: "bg-late",
+                  start: "2026-09-04T08:00:00+02:00[Europe/Brussels]",
+                  end: "2026-09-04T09:00:00+02:00[Europe/Brussels]",
+                },
+              ]),
+            120,
+          ),
+        ),
+    });
+    const pending = calendar.refetchEvents();
+    // Incremental mutations do not wait for a source that does not own them.
+    calendar.addEvent({
+      id: "mid-flight",
+      title: "Added mid-flight",
+      start: "2026-09-03T15:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T16:00:00+02:00[Europe/Brussels]",
+    });
+    await pending;
+    return {
+      events: calendar.events.map((/** @type {any} */ event) => event.id),
+      backgrounds: calendar.backgrounds.map((/** @type {any} */ background) => background.id),
+    };
+  });
+  expect(outcome.events).toEqual(["a", "b", "c", "mid-flight"]);
+  expect(outcome.backgrounds).toEqual(["bg-late"]);
+});
+
+test("an event refetch keeps the backgrounds set while it was in flight", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.configure({
+      eventSource: () =>
+        new Promise((resolve) =>
+          window.setTimeout(
+            () =>
+              resolve([
+                {
+                  id: "from-source",
+                  title: "From source",
+                  start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+                  end: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+                },
+              ]),
+            120,
+          ),
+        ),
+    });
+    const pending = calendar.refetchEvents();
+    calendar.backgrounds = [
+      ...calendar.backgrounds,
+      {
+        id: "bg-mid-flight",
+        start: "2026-09-04T08:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-04T09:00:00+02:00[Europe/Brussels]",
+      },
+    ];
+    await pending;
+    return {
+      events: calendar.events.map((/** @type {any} */ event) => event.id),
+      backgrounds: calendar.backgrounds.map((/** @type {any} */ background) => background.id),
+    };
+  });
+  expect(outcome.events).toEqual(["from-source"]);
+  expect(outcome.backgrounds).toEqual(["bg", "bg-mid-flight"]);
+});

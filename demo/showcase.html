@@ -2102,7 +2102,10 @@
 
       <div class="sc-clipboard" id="clipboard-bar" role="status" hidden></div>
 
-      <calendar-view class="actual-calendar" view="resourceThreeDays" date="2026-09-03"
+      <!-- No `date`: the element anchors on today, so the shell always opens
+           on a live range. Every fixture below is derived from that anchor,
+           and the archive rule (`beforeToday`) then means what it says. -->
+      <calendar-view class="actual-calendar" view="resourceThreeDays"
                      slot-min="07:00" slot-max="20:00"></calendar-view>
 
       <section class="sc-activity" id="activity" aria-label="Activity" hidden>
@@ -2445,6 +2448,9 @@
   const dockCount = document.getElementById("dock-count");
   const cockpit = document.getElementById("cockpit");
   const ZONE = "Europe/Brussels";
+  // The element's own civil helpers, so the shell needs no date library and
+  // no second opinion on what a calendar day is.
+  const { toPlainDate } = /** @type {any} */ (calendar.constructor).dates;
 
   let logged = 0;
   let busy = false;
@@ -2561,6 +2567,32 @@
   }
 
   /**
+   * The first day the user is actually looking at. The anchor is not always
+   * rendered - a hidden Sunday is skipped, and `week` snaps to the civil week
+   * - so an action scoped to "this day" follows the grid, not the anchor.
+   */
+  function visibleDay() {
+    return calendar.getVisibleRange().start;
+  }
+
+  /**
+   * First day at or after `date` on which the desk actually opens. Sunday is
+   * never rendered and Saturday is viewing-only, so a fixture landing there
+   * would be invisible or frozen. The shell anchors on today, so the weekday
+   * moves with the real calendar and the showcase fixtures have to follow it
+   * instead of assuming the anchor is a working day.
+   *
+   * @param {any} date Temporal.PlainDate
+   */
+  function openDayFrom(date) {
+    let cursor = date;
+    while (cursor.dayOfWeek === 7 || POLICY.closedWeekdays.includes(cursor.dayOfWeek)) {
+      cursor = cursor.add({ days: 1 });
+    }
+    return cursor;
+  }
+
+  /**
    * Six weeks of bookings around the anchor date, so month view is as
    * populated as the time grids. Dates come from the element's own
    * Temporal.PlainDate: the demo needs no date library of its own.
@@ -2601,19 +2633,21 @@
       }
     }
 
-    // One deliberate overlap on the anchor day, to show column layout.
+    // One deliberate overlap on the first opening day of the range, to show
+    // column layout on a day that is still bookable.
+    const overlapDay = openDayFrom(calendar.date);
     store.push({
       id: "seed-overlap",
       title: "Overlap review",
-      start: stamp(calendar.date, 9 * 60 + 30),
-      end: stamp(calendar.date, 10 * 60 + 30),
+      start: stamp(overlapDay, 9 * 60 + 30),
+      end: stamp(overlapDay, 10 * 60 + 30),
       resourceId: "room-a",
       extendedProps: { kind: "deadline", seats: 6 },
     });
-    // One deterministic fully-booked day (anchor + 6): every room busy from
-    // opening to closing, so the mini-month can show its red "full" marker
-    // from the first load instead of waiting for a manual fill.
-    const fullDay = calendar.date.add({ days: 6 });
+    // One deterministic fully-booked day about a week out: every room busy
+    // from opening to closing, so the mini-month can show its red "full"
+    // marker from the first load instead of waiting for a manual fill.
+    const fullDay = openDayFrom(calendar.date.add({ days: 6 }));
     for (const room of ROOMS) {
       store.push({
         id: `seed-full-${room.id}`,
@@ -2624,12 +2658,14 @@
         extendedProps: { kind: "maintenance", seats: 0 },
       });
     }
-    // Stable target for search and realtime stand-ins.
+    // Stable target for search and realtime stand-ins, on the next opening
+    // day so it is always visible and always still bookable.
+    const liveDay = openDayFrom(calendar.date.add({ days: 1 }));
     store.push({
       id: "live",
       title: "Live sync",
-      start: stamp(calendar.date.add({ days: 1 }), 11 * 60),
-      end: stamp(calendar.date.add({ days: 1 }), 11 * 60 + 30),
+      start: stamp(liveDay, 11 * 60),
+      end: stamp(liveDay, 11 * 60 + 30),
       resourceId: "room-b",
       extendedProps: { kind: "planning", seats: 3 },
     });
@@ -2662,7 +2698,13 @@
     // an ISO hour: roll the date instead of emitting one Temporal refuses.
     const days = Math.floor(minutes / (24 * 60));
     const rest = minutes - days * 24 * 60;
-    return `${days ? date.add({ days }) : date}T${clock(rest)}:00+02:00[${ZONE}]`;
+    // The offset is derived, never written by hand: this zone runs +02:00 in
+    // summer and +01:00 in winter, and the shell opens on today, so a literal
+    // offset would be rejected for half the year.
+    return toPlainDate(String(date))
+      .add({ days })
+      .toZonedDateTime({ timeZone: ZONE, plainTime: `${clock(rest)}:00` })
+      .toString();
   }
 
   /** @param {number} minutes wall-clock minutes from midnight */
@@ -3045,8 +3087,8 @@
         15,
         wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start)),
       );
-      start = `${target.date}T${clock(target.minutes ?? POLICY.opensAt)}:00+02:00[${ZONE}]`;
-      end = `${target.date}T${clock((target.minutes ?? POLICY.opensAt) + duration)}:00+02:00[${ZONE}]`;
+      start = stamp(target.date, target.minutes ?? POLICY.opensAt);
+      end = stamp(target.date, (target.minutes ?? POLICY.opensAt) + duration);
     }
     const reason = violation({ start, end, resourceId: target.resourceId });
     if (reason) return reason;
@@ -3086,10 +3128,10 @@
       return;
     }
     const moved = calendar.moveEvent(eventId, {
-      start: allDay ? date : `${date}T${clock(minutes ?? POLICY.opensAt)}:00+02:00[${ZONE}]`,
+      start: allDay ? date : stamp(date, minutes ?? POLICY.opensAt),
       end: allDay
         ? addDays(date, /** @type {any} */ (item.end).since(item.start).days)
-        : `${date}T${clock((minutes ?? POLICY.opensAt) + Math.max(15, wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start))))}:00+02:00[${ZONE}]`,
+        : stamp(date, (minutes ?? POLICY.opensAt) + Math.max(15, wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start)))),
       resourceId,
     });
     if (!moved) return; // guard() already explained and `revert()` kept it
@@ -3352,8 +3394,8 @@
   function pasteCopy(slot) {
     if (!copyClipboard) return;
     const item = calendar.getEventById(copyClipboard.id);
-    const start = `${slot.date}T${clock(slot.minutes)}:00+02:00[${ZONE}]`;
-    const end = `${slot.date}T${clock(slot.minutes + copyClipboard.durationMin)}:00+02:00[${ZONE}]`;
+    const start = stamp(slot.date, slot.minutes);
+    const end = stamp(slot.date, slot.minutes + copyClipboard.durationMin);
     const reason = violation({ start, end, resourceId: slot.resourceId });
     if (reason) {
       record(`paste refused: ${reason}`);
@@ -4300,7 +4342,8 @@
     const room = ROOMS.find((item) => activeRooms.has(item.id));
     const resourceId = calendar.view.startsWith("resource") ? (room?.id ?? null) : null;
     if (sidebar.matches(":popover-open")) sidebar.hidePopover();
-    openCreate(stamp(calendar.date, 9 * 60), stamp(calendar.date, 9 * 60 + 30), resourceId);
+    const day = visibleDay();
+    openCreate(stamp(day, 9 * 60), stamp(day, 9 * 60 + 30), resourceId);
   });
 
   createDialog.addEventListener("click", (event) => {
@@ -4591,8 +4634,8 @@
       });
     }
     if (copyClipboard) {
-      const pasteStart = `${date}T${clock(minutes)}:00+02:00[${ZONE}]`;
-      const pasteEnd = `${date}T${clock(minutes + copyClipboard.durationMin)}:00+02:00[${ZONE}]`;
+      const pasteStart = stamp(date, minutes);
+      const pasteEnd = stamp(date, minutes + copyClipboard.durationMin);
       const pasteReason = violation({ start: pasteStart, end: pasteEnd, resourceId }) ??
         (calendar
           .getEventOverlaps({ start: pasteStart, end: pasteEnd }, { resourceIds: resourceId ? [resourceId] : [] })
@@ -4619,8 +4662,8 @@
           const inBlock = calendar.events.filter((event) => {
             if (resourceId !== null && event.resourceId !== resourceId) return false;
             return blockedHere.some((range) => {
-              const from = `${date}T${clock(range.from)}:00+02:00[${ZONE}]`;
-              const to = `${date}T${clock(range.to)}:00+02:00[${ZONE}]`;
+              const from = stamp(date, range.from);
+              const to = stamp(date, range.to);
               return calendar
                 .getEventOverlaps({ start: from, end: to }, { resourceIds: resourceId ? [resourceId] : [] })
                 .some((entry) => String(entry.id) === String(event.id));
@@ -4638,8 +4681,8 @@
         label: "Book 30 minutes here",
         icon: "calendar-plus",
         run: () => {
-          const start = `${date}T${clock(minutes)}:00+02:00[${ZONE}]`;
-          const end = `${date}T${clock(minutes + 30)}:00+02:00[${ZONE}]`;
+          const start = stamp(date, minutes);
+          const end = stamp(date, minutes + 30);
           const reason = violation({ start, end, resourceId });
           if (reason) {
             record(`create refused: ${reason}`);
@@ -4658,8 +4701,8 @@
           calendar.backgrounds = [...calendar.backgrounds, {
             id,
             title: "Blocked by the operator",
-            start: `${date}T${clock(minutes)}:00+02:00[${ZONE}]`,
-            end: `${date}T${clock(minutes + 60)}:00+02:00[${ZONE}]`,
+            start: stamp(date, minutes),
+            end: stamp(date, minutes + 60),
             classNames: ["sc-blocked"],
             ...(resourceId ? { resourceId } : {}),
           }];
@@ -4990,9 +5033,9 @@
       calendar.scrollToTime(nowStamp().slice(11));
       record("revealed now");
     } else if (tool === "reschedule-day") {
-      // Queue every booking of the visible anchor day; placement comes later
+      // Queue every booking of the first day on screen; placement comes later
       // (drag or paste). The workbench keeps them all safe meanwhile.
-      parkDay(String(calendar.date));
+      parkDay(String(visibleDay()));
     } else if (tool === "shortcuts") {
       toolsMenu.hidePopover();
       shortcutsDialog.showModal();
@@ -5237,11 +5280,12 @@
   // --- Realtime stand-ins --------------------------------------------------
   document.getElementById("rt-add").addEventListener("click", () => {
     const id = `pushed-${Date.now()}`;
+    const day = visibleDay();
     const created = {
       id,
       title: "Pushed booking",
-      start: stamp(calendar.date, 13 * 60),
-      end: stamp(calendar.date, 13 * 60 + 30),
+      start: stamp(day, 13 * 60),
+      end: stamp(day, 13 * 60 + 30),
       resourceId: "room-a",
       extendedProps: { kind: "planning", seats: 5 },
     };

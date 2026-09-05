@@ -2,7 +2,7 @@
 
 The quality bar is closer to a polished scheduling application than a static calendar grid.
 
-All interaction events are `bubbles: true`, `composed: true` and `cancelable: true`. `dispatchEvent()` is synchronous: `preventDefault()` rejects an operation immediately, while `detail.revert()` is idempotent and may be called after an `await`.
+All interaction events are `bubbles: true`, `composed: true` and `cancelable: true`. `dispatchEvent()` is synchronous: `preventDefault()` rejects an operation immediately, while `detail.revert()` is idempotent and may be called after an `await`. A late `revert()` only undoes the placement it applied: if the event has since been removed or moved again, it does nothing.
 
 ## 1. Empty-slot hover
 

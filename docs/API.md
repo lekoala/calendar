@@ -72,6 +72,11 @@ event.movable ?? event.editable ?? calendar.editable
 event.resizable ?? event.editable ?? calendar.editable
 ```
 
+Every flag is optional, and normalization never fills one in: an event that
+omits `editable` stays undecided so `configure({ editable: false })` reaches
+it. A read-only calendar is therefore a single call, and an event that opts
+back in with `editable: true` still outranks it.
+
 Internally the calendar uses Temporal only. A timed event takes a
 `Temporal.ZonedDateTime` or an ISO string with offset/timezone, normalized
 toward `calendar.timeZone`; events exposed to render hooks and DOM events
@@ -207,6 +212,13 @@ calendar without resources -> []
 ```
 
 `[]` means no resource filter. Showing nothing when nothing is selected is an application policy, not encoded in this contract.
+
+`eventSource` and `backgroundSource` are independent: `refetchEvents()` runs
+both, and each one replaces only the collection it owns. Configuring a single
+source leaves the other collection alone, so `addEvent()`, `updateEvent()`,
+`removeEvent()` and the `backgrounds` setter applied while a request is in
+flight survive its resolution. Obsolete requests abort, and a stale
+completion never overwrites newer state.
 
 ## Navigation
 
@@ -401,6 +413,11 @@ calendar.addEventListener("calendar:loading", (event) => {
 `calendar:moreclick` reports that a month day has more events than `monthEventLimit` allows, with `detail: { date, events, hidden, nativeEvent }`. The core only carries the intent: whether that opens a popover, switches to the day view, or raises the chip limit is an application decision. The `+n more` control is a real button, so pointer and keyboard activation behave alike, and it does not fall through to the day cell's `calendar:select`.
 
 `dispatchEvent()` is synchronous: `preventDefault()` must be called synchronously during dispatch. `detail.revert()` is idempotent and may be called later, after an `await`.
+
+A deferred `revert()` addresses its event by id and only undoes the placement
+it applied. Once that placement is gone — the event was removed, or a newer
+move or resize superseded it — the call is a no-op instead of resurrecting
+stale state or landing on another event.
 
 `calendar:eventmove` / `calendar:eventresize` are optimistic reversible mutations:
 

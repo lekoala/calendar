@@ -120,6 +120,24 @@ export declare function normalizeRangeBound(value: unknown, allDay: boolean): Te
  */
 export declare function normalizeEvent(event: EventInput): NormalizedEvent;
 /**
+ * Structural equality over the three fields a move/resize commit owns.
+ * Callers use it to check that a placement they applied is still the one in
+ * state before undoing it.
+ *
+ * @param {{ start?: unknown, end?: unknown, resourceId?: string | null }} a
+ * @param {{ start?: unknown, end?: unknown, resourceId?: string | null }} b
+ * @returns {boolean}
+ */
+export declare function sameRange(a: {
+    start?: unknown;
+    end?: unknown;
+    resourceId?: string | null;
+}, b: {
+    start?: unknown;
+    end?: unknown;
+    resourceId?: string | null;
+}): boolean;
+/**
  * @param {Partial<CalendarEvent>} event
  * @param {boolean} [calendarEditable]
  * @returns {boolean}

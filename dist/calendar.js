@@ -3962,7 +3962,6 @@
     }
     const { classNames, extendedProps, start, end, allDay = false, ...rest } = event;
     return {
-      editable: true,
       ...rest,
       id: String(event.id),
       allDay,
@@ -3971,6 +3970,18 @@
       classNames: Array.from(classNames ?? []),
       extendedProps: { ...extendedProps ?? {} }
     };
+  }
+  function sameBound(a, b) {
+    if (a === b)
+      return true;
+    if (a instanceof Temporal2.ZonedDateTime && b instanceof Temporal2.ZonedDateTime)
+      return a.equals(b);
+    if (a instanceof Temporal2.PlainDate && b instanceof Temporal2.PlainDate)
+      return a.equals(b);
+    return false;
+  }
+  function sameRange(a, b) {
+    return sameBound(a.start, b.start) && sameBound(a.end, b.end) && (a.resourceId ?? null) === (b.resourceId ?? null);
   }
   function isMovable(event, calendarEditable) {
     return event.movable ?? event.editable ?? calendarEditable ?? true;
@@ -4469,7 +4480,18 @@
   function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
     let delta = 0;
     let frame = 0;
+    const cancel = () => {
+      if (frame === 0)
+        return;
+      cancelAnimationFrame(frame);
+      frame = 0;
+    };
     const tick = () => {
+      if (!scroller.isConnected) {
+        delta = 0;
+        frame = 0;
+        return;
+      }
       scroller.scrollTop += delta;
       frame = requestAnimationFrame(tick);
     };
@@ -4480,19 +4502,14 @@
         if (next === delta)
           return;
         delta = next;
-        if (delta !== 0 && frame === 0)
+        if (delta !== 0 && frame === 0 && scroller.isConnected)
           frame = requestAnimationFrame(tick);
-        if (delta === 0 && frame !== 0) {
-          cancelAnimationFrame(frame);
-          frame = 0;
-        }
+        if (delta === 0)
+          cancel();
       },
       stop() {
         delta = 0;
-        if (frame !== 0) {
-          cancelAnimationFrame(frame);
-          frame = 0;
-        }
+        cancel();
       }
     };
   }
@@ -5817,35 +5834,41 @@
       });
     }
     #commitEventMutation({ event, previous, current, name, nativeEvent }) {
-      const index = this.#events.findIndex((item) => item.id === event.id);
-      if (index < 0)
+      const id = event.id;
+      const before = this.getEventById(id);
+      if (!before)
         return null;
-      const before = this.#events[index];
       const allDay = before.allDay === true;
-      const start = normalizeRangeBound(current.start, allDay);
-      const end = normalizeRangeBound(current.end, allDay);
+      const optimistic = {
+        start: normalizeRangeBound(current.start, allDay),
+        end: normalizeRangeBound(current.end, allDay),
+        resourceId: current.resourceId
+      };
+      const restored = { start: before.start, end: before.end, resourceId: before.resourceId ?? null };
       const apply = (state) => {
-        this.#events = this.#events.map((item, i) => i === index ? { ...item, ...state } : item);
+        this.#events = this.#events.map((item) => item.id === id ? { ...item, ...state } : item);
         this.#queueRender();
       };
-      apply({ start, end, resourceId: current.resourceId });
+      apply(optimistic);
       let reverted = false;
       const revert = () => {
         if (reverted)
           return;
         reverted = true;
-        this.#events = this.#events.map((item, i) => i === index ? before : item);
-        this.#queueRender();
+        const live = this.getEventById(id);
+        if (!live || !sameRange(live, optimistic))
+          return;
+        apply(restored);
       };
       const accepted = this.dispatchEvent(new CustomEvent(name, {
         bubbles: true,
         composed: true,
         cancelable: true,
-        detail: { event: this.#events[index], previous, current, nativeEvent, revert }
+        detail: { event: this.getEventById(id), previous, current, nativeEvent, revert }
       }));
       if (!accepted)
         revert();
-      return reverted ? null : this.#events[index];
+      return reverted ? null : this.getEventById(id);
     }
     #commitEventMove({ event, previous, current, nativeEvent = null }) {
       return this.#commitEventMutation({ event, previous, current, name: "calendar:eventmove", nativeEvent });
@@ -5964,13 +5987,17 @@
       this.#announceLoading(true);
       try {
         const [events, backgrounds] = await Promise.all([
-          eventSource ? eventSource(context) : this.#events,
-          backgroundSource ? backgroundSource(context) : this.#backgrounds
+          eventSource ? eventSource(context) : null,
+          backgroundSource ? backgroundSource(context) : null
         ]);
         if (controller.signal.aborted || version !== this.#requestVersion)
           return;
-        this.#events = Array.from(events ?? [], normalizeEvent);
-        this.#backgrounds = Array.from(backgrounds ?? [], normalizeBackground);
+        if (eventSource) {
+          this.#events = Array.from(events ?? [], normalizeEvent);
+        }
+        if (backgroundSource) {
+          this.#backgrounds = Array.from(backgrounds ?? [], normalizeBackground);
+        }
         this.#queueRender();
       } catch (error) {
         if (controller.signal.aborted)

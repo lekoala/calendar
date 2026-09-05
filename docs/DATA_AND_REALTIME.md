@@ -93,3 +93,7 @@ The client side of that reconciliation (optimistic `PATCH`, `revision`,
 Incremental updates are convenience/performance. For broad changes (schedule rules, bulk import, permissions) a full source refetch is an acceptable safe path.
 
 Refetch should preserve viewport/date/scroll and application-owned selection state.
+
+It also preserves the collections it does not own. `refetchEvents()` drives
+both sources, but each one replaces only its own collection, and mutations
+applied while a request is in flight are not rolled back when it resolves.

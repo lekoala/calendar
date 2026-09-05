@@ -742,3 +742,99 @@ test("an unhandled contextmenu leaves the native browser menu alone", async ({ p
   await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__ctx.intents)).toBe(1);
   expect(await page.evaluate(() => /** @type {any} */ (window).__ctx.prevented)).toBe(false);
 });
+
+/**
+ * True while the page is still scheduling animation frames, sampled over a
+ * window long enough for a running loop to tick many times.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function framesKeepComing(page) {
+  const before = await page.evaluate(() => /** @type {any} */ (window).__frames);
+  await page.waitForTimeout(250);
+  const after = await page.evaluate(() => /** @type {any} */ (window).__frames);
+  return after > before;
+}
+
+test("a deferred revert never lands on another event", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const hooks = /** @type {any} */ (window);
+    hooks.__revert = null;
+    calendar.addEventListener(
+      "calendar:eventmove",
+      (/** @type {Event} */ event) => {
+        hooks.__revert = /** @type {CustomEvent} */ (event).detail.revert;
+      },
+      { once: true },
+    );
+    const item = calendar.getEventById("a");
+    calendar.moveEvent("a", {
+      start: String(item.start).replace("T09:", "T11:"),
+      end: String(item.end).replace("T10:", "T12:"),
+    });
+    // The application answers late, after removing the event it just moved.
+    // The undo has nothing left to apply and must not touch its neighbours.
+    calendar.removeEvent("a");
+    hooks.__revert();
+    return calendar.events.map((/** @type {any} */ event) => ({
+      id: event.id,
+      start: String(event.start),
+    }));
+  });
+  expect(outcome.map((/** @type {any} */ event) => event.id)).toEqual(["b", "c"]);
+  expect(outcome[0].start).toContain("2026-09-04T13:20");
+});
+
+test("a deferred revert leaves a newer move alone", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  const start = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const hooks = /** @type {any} */ (window);
+    hooks.__revert = null;
+    calendar.addEventListener("calendar:eventmove", (/** @type {Event} */ event) => {
+      hooks.__revert ??= /** @type {CustomEvent} */ (event).detail.revert;
+    });
+    const item = calendar.getEventById("a");
+    calendar.moveEvent("a", {
+      start: String(item.start).replace("T09:", "T11:"),
+      end: String(item.end).replace("T10:", "T12:"),
+    });
+    // A second move supersedes the first before the application answers, so
+    // the stale undo is no longer applicable.
+    calendar.moveEvent("a", {
+      start: String(item.start).replace("T09:", "T15:"),
+      end: String(item.end).replace("T10:", "T16:"),
+    });
+    hooks.__revert();
+    return String(calendar.getEventById("a").start);
+  });
+  expect(start).toContain("T15:00");
+});
+
+test("autoscroll stops when the calendar leaves the document mid-drag", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await page.evaluate(() => {
+    const hooks = /** @type {any} */ (window);
+    hooks.__frames = 0;
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) => {
+      hooks.__frames += 1;
+      return raf(callback);
+    };
+  });
+  const box = await eventBox(page, "a");
+  const scroller = await page.locator(".cv-scroller").boundingBox();
+  assert(scroller, "expected the scroller to have a bounding box");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  // Parked inside the bottom autoscroll band, the frame loop keeps running
+  // on its own without any further pointer event.
+  await page.mouse.move(box.x + box.width / 2, scroller.y + scroller.height - 8, { steps: 6 });
+  expect(await framesKeepComing(page)).toBe(true);
+  // Cleanup normally rides on pointerup, which never reaches a removed node.
+  await page.evaluate(() => document.querySelector("calendar-view")?.remove());
+  expect(await framesKeepComing(page)).toBe(false);
+  await page.mouse.up();
+});

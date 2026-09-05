@@ -1,8 +1,9 @@
 # Roadmap
 
 The milestones below are the construction trace of the project: each lists
-what landed, in the order it landed. Nothing further is planned. 0.1 is
-feature-complete for its scope; the deferred and candidate lists at the
+what landed, in the order it landed. 0.1 is feature-complete for its scope.
+Milestones 10–16 are the planned 0.2 trace, driven by the use cases in
+`docs/USE_CASES.md` (§8, §14–§19); the deferred and candidate lists at the
 bottom are revisit-only-with-a-use-case entries.
 
 ## 0.1 — released
@@ -116,10 +117,140 @@ Exit condition: a coherent starting point.
   `getEventById` / `moveEvent` / `addEvent`, `getEventOverlaps` as paste
   validation).
 
+0.2 milestones add seams and small pure helpers over the existing engine;
+none may grow a second interaction engine, a live-clock service, a query
+subsystem or a resource tree. Known debt (keyed reconciliation, consolidated
+pointer engine, source-range cache) stays refactor-only debt unless a
+milestone is explicitly scoped to it. Each milestone below carries a **lean
+guardrail** to re-evaluate at implementation time: if the work needs more
+than the guardrail allows, stop and re-scope instead of growing the core.
+
+## Milestone 10 — render seams
+
+- a single private `afterRender(callback)` seam executed once the pending
+  render has inserted its subtree, drained on `disconnectedCallback`; focus
+  and announcement work land on it instead of nesting
+  `requestAnimationFrame`;
+- `#announce` and `#refocusEvent` collapse their two-frame dance onto that
+  seam (the `.cv-status` live region already survives `replaceChildren`); a
+  separate cancellable announce frame where a11y timing demands it;
+- `docs/API.md`: `prev()`, `next()`, `today()`, `scrollToTime()` leave
+  "Planned" — already implemented and browser-tested; `revealEvent` stays
+  the only future entry until Milestone 14.
+
+Lean guardrail: pure refactor, net reduction in lines. The seam is one
+queued callback list drained on disconnect; if announce timing needs more
+than the after-render queue, keep it a single cancellable frame. No new
+machinery.
+
+## Milestone 11 — temporal state as an observed fact
+
+- rendered event nodes carry `data-temporal-state="past|current|future"`,
+  derived from `end <= now`, `start <= now < end`, `now < start`; content
+  hooks receive `info.isPast` / `info.isCurrent` / `info.isFuture`;
+- the fact recomputes as `now` advances without a refetch, so a long open
+  page ages correctly;
+- the core never derives `editable`/`movable`/`resizable` from it; policy
+  stays application-side (retroactive edit, lock-after-start,
+  lock-after-close). Use case §14.
+
+Lean guardrail: one pure `temporalState(start, end, now)` helper reused by
+the renderers' existing `eventContent`/chip call sites; `now` is whatever
+the render already computes — never a global clock. Live boundary aging is
+at most a single `setTimeout` to the next `start`/`end` boundary, cancelled
+on disconnect. If a "now service" or timer-driven recompute is required to
+make it testable, the milestone is oversized.
+
+## Milestone 12 — dynamic interaction policy
+
+- `configure({ interactionPolicy({ action, event?, target, now }) })`
+  returning `true | reason`, with `action ∈ move | resize | select`;
+- gates before the gesture (no resize handle, no drag start) and validates
+  the destination during the gesture with the existing
+  invalid-ghost/`data-reason` model;
+- one evaluation path shared with `addExternalDrop`'s `validate`;
+- interaction is a permission: `moveEvent`/`resizeEvent`/`removeEvent`
+  stay authoritative, so realtime/server removal of locked or past items is
+  not blocked. Use case §15.
+
+Lean guardrail: one decision seam (`policy(action, event, target)` evaluated
+in `calendar-view.js`, `now` cached per render) with thin checks at the
+gesture entry points, reusing the existing `cv-invalid`/`data-reason`
+visuals. Non-goals while implementing: do not unify the pointer engines, do
+not import an `eventConstraint`/`businessHours` taxonomy. This is the
+milestone most at risk of a code monster; if the seam cannot stay a
+decision-only callback, stop and re-scope.
+
+## Milestone 13 — range context
+
+- `getRangeContext({ start, end, resourceId })` →
+  `{ events, backgrounds: { covering, overlapping } }`;
+- `calendar:select` / `eventmove` / `eventresize` / `externaldrop` append
+  `backgrounds: { covering, overlapping }`, computed through the same
+  primitive;
+- geometry only: the core never picks "the" background — interpreting
+  schedule vs blocker stays application-side. Use case §16.
+
+Lean guardrail: small `covering`/`overlapping` helpers in the overlap
+module, context computed at dispatch/commit time in `calendar-view.js` and
+attached to the existing detail payloads — never recomputed per
+`pointermove`. If a gesture needs live feedback from this context, reuse the
+Milestone 12 policy seam instead of wiring context into the renderer.
+
+## Milestone 14 — reveal and programmatic preview
+
+- `revealEvent(id, { focus, highlight })` — in-range reveal with
+  scroll-to-time, optional highlight and focus;
+- `reveal({ eventId, date, time, resourceId })` — out-of-range reveal for
+  search results: `gotoDate`, await the async source (stale guards
+  unchanged), then scroll/highlight/focus;
+- `previewRange({ start, end, resourceId })` + `clearPreview()` — evidence
+  for application-proposed ranges, `pointer-events: none`, independent of
+  the pointer select ghost. Use cases §8, §17.
+
+Lean guardrail: reuse `gotoDate`/`await refetchEvents()`/`scrollToTime()`
+and the proven external-drop host seam — the preview mirrors
+`getExternalDrag` as a read-only `getPreview` ghost painted with the
+existing geometry helpers; no new layout or load-tracking subsystem. Focus
+and highlight land on the Milestone 10 `afterRender` queue.
+
+## Milestone 15 — resource grouping, one level
+
+- `calendar.resourceGroups = [{ id, title }]` plus `resource.groupId`; a
+  group-header row above `resourceHeaderContent`; array order defines group
+  order, the `resources` array defines order within a group;
+- `resourceGroupContent({ group, resources, element })` joins the
+  content-hook family;
+- no nesting, expand/collapse or tree grid; grouping and hierarchy stay
+  separate concerns — hierarchy remains a revisit-only candidate; group
+  filtering stays application-side over `resourceIds`. Use case §18.
+
+Lean guardrail: hard one-level limit — `groupId` normalized in the model, a
+group-header row over the existing resource headers, one
+`resourceGroupContent` hook. If nesting, collapse or tree-grid requirements
+appear, that is the signal to stop and re-scope, not to extend the
+milestone.
+
+## Milestone 16 — view duration + concurrency hardening
+
+- a generic day count for time grids (`dayCount`/`duration`) replacing the
+  closed `threeDays`/`resourceThreeDays` catalogue without new names; week
+  views keep week anchoring, rolling views keep filling visible days
+  (`getVisibleDates`/`stepAnchor` semantics unchanged);
+- hardening, not new API: browser tests for pending/conflict/revert, a
+  second mutation while the first is in flight, and a realtime echo during
+  a pending commit — over the existing `revision`/`mutationId`/`revert()`
+  contract. Use case §19.
+
+Lean guardrail: a single `dayCount`/`duration` option overriding the
+time-grid view names; the concurrency matrix is browser tests only — zero
+net core surface. If arbitrary named views or a view-plugin system start to
+look attractive, that is the signal to pause and re-scope.
+
 ## Post-0.x candidates (revisit only with a use case)
 
 - generic mini-calendar package;
-- resource grouping/hierarchy;
+- resource hierarchy (grouping landed in Milestone 15);
 - optional recurrence adapter;
 - framework adapters;
 - print/export helpers;

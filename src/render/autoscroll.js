@@ -21,7 +21,23 @@ export function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
   /** @type {number} */
   let frame = 0;
 
+  /** @returns {void} */
+  const cancel = () => {
+    if (frame === 0) return;
+    cancelAnimationFrame(frame);
+    frame = 0;
+  };
+
   const tick = () => {
+    // Cleanup normally rides on `pointerup`/`pointercancel`, but a scroller
+    // can leave the document mid-drag (the calendar is removed, or a render
+    // replaces the subtree) and no pointer event follows. The loop owns its
+    // own liveness so it never outlives its target.
+    if (!scroller.isConnected) {
+      delta = 0;
+      frame = 0;
+      return;
+    }
     scroller.scrollTop += delta;
     frame = requestAnimationFrame(tick);
   };
@@ -36,19 +52,13 @@ export function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
       const next = clientY < rect.top + edge ? -speed : clientY > rect.bottom - edge ? speed : 0;
       if (next === delta) return;
       delta = next;
-      if (delta !== 0 && frame === 0) frame = requestAnimationFrame(tick);
-      if (delta === 0 && frame !== 0) {
-        cancelAnimationFrame(frame);
-        frame = 0;
-      }
+      if (delta !== 0 && frame === 0 && scroller.isConnected) frame = requestAnimationFrame(tick);
+      if (delta === 0) cancel();
     },
     /** @returns {void} */
     stop() {
       delta = 0;
-      if (frame !== 0) {
-        cancelAnimationFrame(frame);
-        frame = 0;
-      }
+      cancel();
     },
   };
 }

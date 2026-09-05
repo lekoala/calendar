@@ -98,8 +98,11 @@ export function normalizeEvent(event) {
     throw new TypeError("Event requires id, start and end");
   }
   const { classNames, extendedProps, start, end, allDay = false, ...rest } = event;
+  // No `editable` default here on purpose: an injected `true` would outrank
+  // `configure({ editable: false })` in `isMovable`/`isResizable`, which
+  // resolve the event flags *then* the calendar default. An event that omits
+  // the flag stays undecided so the calendar keeps the last word.
   return /** @type {NormalizedEvent} */ ({
-    editable: true,
     ...rest,
     id: String(event.id),
     allDay,
@@ -108,6 +111,38 @@ export function normalizeEvent(event) {
     classNames: Array.from(classNames ?? []),
     extendedProps: { ...(extendedProps ?? {}) },
   });
+}
+
+/**
+ * Equality of one range boundary. Timed and civil bounds never compare equal
+ * across types, mirroring the strictness of `normalizeRangeBound`.
+ *
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {boolean}
+ */
+function sameBound(a, b) {
+  if (a === b) return true;
+  if (a instanceof Temporal.ZonedDateTime && b instanceof Temporal.ZonedDateTime) return a.equals(b);
+  if (a instanceof Temporal.PlainDate && b instanceof Temporal.PlainDate) return a.equals(b);
+  return false;
+}
+
+/**
+ * Structural equality over the three fields a move/resize commit owns.
+ * Callers use it to check that a placement they applied is still the one in
+ * state before undoing it.
+ *
+ * @param {{ start?: unknown, end?: unknown, resourceId?: string | null }} a
+ * @param {{ start?: unknown, end?: unknown, resourceId?: string | null }} b
+ * @returns {boolean}
+ */
+export function sameRange(a, b) {
+  return (
+    sameBound(a.start, b.start) &&
+    sameBound(a.end, b.end) &&
+    (a.resourceId ?? null) === (b.resourceId ?? null)
+  );
 }
 
 /**

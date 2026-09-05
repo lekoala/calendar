@@ -8,6 +8,7 @@ import {
   normalizeEvent,
   normalizeRangeBound,
   normalizeResource,
+  sameRange,
 } from "../../src/core/model.js";
 
 const TIMED = {
@@ -18,7 +19,6 @@ const TIMED = {
 test("normalizeEvent applies defaults and copies metadata", () => {
   const event = normalizeEvent({ id: "a", ...TIMED });
   assert.equal(event.id, "a");
-  assert.equal(event.editable, true);
   assert.equal(event.allDay, false);
   assert.deepEqual(event.classNames, []);
   assert.deepEqual(event.extendedProps, {});
@@ -56,6 +56,17 @@ test("normalizeRangeBound is strict about which type the flag allows", () => {
   assert.throws(() => normalizeRangeBound("2026-09-03", false), TypeError);
 });
 
+test("normalizeEvent leaves editable undecided so the calendar default applies", () => {
+  const event = normalizeEvent({ id: "a", ...TIMED });
+  // An injected `editable: true` would outrank `configure({ editable: false })`.
+  assert.equal(event.editable, undefined);
+  assert.equal(isMovable(event, false), false);
+  assert.equal(isResizable(event, false), false);
+  assert.equal(isMovable(event, true), true);
+  // An explicit event flag still wins over the calendar default.
+  assert.equal(isMovable(normalizeEvent({ id: "b", ...TIMED, editable: true }), false), true);
+});
+
 test("movable/resizable resolve through editable then calendar default", () => {
   assert.equal(isMovable({ movable: false, editable: true }), false);
   assert.equal(isMovable({ editable: false }), false);
@@ -64,6 +75,24 @@ test("movable/resizable resolve through editable then calendar default", () => {
   assert.equal(isResizable({ resizable: false, editable: true }), false);
   assert.equal(isResizable({ editable: false }), false);
   assert.equal(isResizable({}, true), true);
+});
+
+test("sameRange compares the three fields an optimistic commit owns", () => {
+  const event = normalizeEvent({ id: "a", ...TIMED, resourceId: "r1" });
+  const same = normalizeEvent({ id: "b", ...TIMED, resourceId: "r1" });
+  assert.equal(sameRange(event, same), true);
+  assert.equal(sameRange(event, { ...same, resourceId: "r2" }), false);
+  assert.equal(sameRange(event, { ...same, end: same.start }), false);
+  // A missing resourceId reads as null, so both spellings agree.
+  const global = normalizeEvent({ id: "c", ...TIMED });
+  assert.equal(sameRange(global, { ...global, resourceId: null }), true);
+  // Civil and timed bounds never compare equal across types.
+  const allDay = normalizeEvent({ id: "d", allDay: true, start: "2026-09-03", end: "2026-09-04" });
+  assert.equal(sameRange(allDay, event), false);
+  assert.equal(
+    sameRange(allDay, normalizeEvent({ id: "e", allDay: true, start: "2026-09-03", end: "2026-09-04" })),
+    true,
+  );
 });
 
 test("normalizeResource applies generic defaults", () => {
