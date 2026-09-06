@@ -4210,6 +4210,15 @@
     return hits;
   }
 
+  // src/core/policy.js
+  function normalizePolicyDecision(result) {
+    if (result === false)
+      return { ok: false, reason: null };
+    if (typeof result === "string")
+      return { ok: false, reason: result || null };
+    return { ok: true, reason: null };
+  }
+
   // src/core/temporal.js
   function temporalState(start, end, now, timeZone = "UTC") {
     const { start: startInstant, end: endInstant } = instantRangeOf(start, end, timeZone);
@@ -4843,12 +4852,26 @@
     function beginAllDayDrag(bar, event, startDay, endDay, nativeEvent) {
       if (nativeEvent.button !== 0)
         return;
+      if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
+        const startGate = host.checkInteraction({
+          action: "move",
+          event,
+          start: event.start,
+          end: event.end,
+          resourceId: event.resourceId ?? null,
+          allDay: true
+        });
+        if (!startGate.ok)
+          return;
+      }
       tryCapture(bar, nativeEvent.pointerId);
       const downX = nativeEvent.clientX;
       const downY = nativeEvent.clientY;
       let moved = false;
       let mirror = null;
       let pending = null;
+      let laneKey = startDay;
+      let laneOk = true;
       const onMove = (moveEvent) => {
         if (longPressConsumed)
           return;
@@ -4871,7 +4894,28 @@
         pending = { index, droppable };
         mirror.style.gridColumn = `${index + 2} / ${Math.min(columns.length, index + (endDay - startDay)) + 2}`;
         mirror.style.gridRow = String(Number.parseFloat(bar.style.gridRow) || 1);
-        mirror.classList.toggle("cv-invalid", !droppable);
+        if (index !== laneKey) {
+          laneKey = index;
+          const dayDelta = index - startDay;
+          const resourceId = columns[index].resource?.id ?? null;
+          let decision = { ok: true, reason: null };
+          if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
+            decision = host.checkInteraction({
+              action: "move",
+              event,
+              start: event.start.add({ days: dayDelta }),
+              end: event.end.add({ days: dayDelta }),
+              resourceId,
+              allDay: true
+            });
+          }
+          laneOk = decision.ok;
+          if (decision.reason)
+            mirror.dataset.reason = decision.reason;
+          else
+            delete mirror.dataset.reason;
+        }
+        mirror.classList.toggle("cv-invalid", !droppable || !laneOk);
       };
       const cleanup = () => {
         bar.removeEventListener("pointermove", onMove);
@@ -4888,6 +4932,10 @@
           return;
         if (!wasMoved || !range?.droppable)
           return;
+        if (!laneOk) {
+          suppressClick = true;
+          return;
+        }
         suppressClick = true;
         const dayDelta = range.index - startDay;
         const resourceId = columns[range.index].resource?.id ?? null;
@@ -4997,7 +5045,23 @@
           if (!movable)
             return;
           keyboardEvent.preventDefault();
-          const next = commitAllDayMove(event, key === "ArrowRight" ? 1 : -1, event.resourceId ?? null, keyboardEvent);
+          const days = key === "ArrowRight" ? 1 : -1;
+          if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
+            const gate = host.checkInteraction({
+              action: "move",
+              event,
+              start: event.start.add({ days }),
+              end: event.end.add({ days }),
+              resourceId: event.resourceId ?? null,
+              allDay: true
+            });
+            if (!gate.ok) {
+              if (gate.reason)
+                host.announce(gate.reason);
+              return;
+            }
+          }
+          const next = commitAllDayMove(event, days, event.resourceId ?? null, keyboardEvent);
           if (next)
             host.announce(describeEvent(next, timeZone, labels.untitledEvent));
         });
@@ -5193,6 +5257,19 @@
             const nextEnd = nextStart.add(duration);
             current = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
           }
+          const moveGate = host.checkInteraction({
+            action: "move",
+            event,
+            start: current.start,
+            end: current.end,
+            resourceId: current.resourceId ?? null,
+            allDay: event.allDay === true
+          });
+          if (!moveGate.ok) {
+            if (moveGate.reason)
+              host.announce(moveGate.reason);
+            return;
+          }
           const result = host.commitEventMove({ event, previous, current, nativeEvent });
           if (!result)
             return;
@@ -5213,6 +5290,19 @@
             nextEnd = endZoned.add({ minutes: snapStep });
           if (nextEnd.epochMilliseconds - nextStart.epochMilliseconds < snapStep * 60 * 1000)
             return;
+          const resizeGate = host.checkInteraction({
+            action: "resize",
+            event,
+            start: nextStart,
+            end: nextEnd,
+            resourceId: event.resourceId ?? null,
+            allDay: event.allDay === true
+          });
+          if (!resizeGate.ok) {
+            if (resizeGate.reason)
+              host.announce(resizeGate.reason);
+            return;
+          }
           const result = host.commitEventResize({
             event,
             previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
@@ -5226,6 +5316,16 @@
         }, beginResize = function(nativeEvent, edge) {
           if (nativeEvent.button !== 0)
             return;
+          const pressGate = host.checkInteraction({
+            action: "resize",
+            event,
+            start: event.start,
+            end: event.end,
+            resourceId: event.resourceId ?? null,
+            allDay: event.allDay === true
+          });
+          if (!pressGate.ok)
+            return;
           nativeEvent.stopPropagation();
           nativeEvent.preventDefault();
           tryCapture(node, nativeEvent.pointerId);
@@ -5235,6 +5335,8 @@
           const downY = nativeEvent.clientY;
           let moved = false;
           let pending = null;
+          let resizeKey = `${item.start}:${item.end}`;
+          let resizeOk = true;
           const onMove = (moveEvent) => {
             if (longPressConsumed)
               return;
@@ -5256,6 +5358,23 @@
             pending = { start, end };
             node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
             node.style.height = `${(end - start) * pxPerMinute}px`;
+            const key = `${start}:${end}`;
+            if (key !== resizeKey) {
+              resizeKey = key;
+              const decision = host.checkInteraction({
+                action: "resize",
+                event,
+                start: zonedDateTimeAt(column.date, start, timeZone),
+                end: zonedDateTimeAt(column.date, end, timeZone),
+                resourceId: column.resource?.id ?? null
+              });
+              resizeOk = decision.ok;
+              node.classList.toggle("cv-invalid", !decision.ok);
+              if (decision.reason)
+                node.dataset.reason = decision.reason;
+              else
+                delete node.dataset.reason;
+            }
           };
           const onUp = (upEvent) => {
             node.removeEventListener("pointermove", onMove);
@@ -5267,6 +5386,14 @@
             }
             if (!moved || !pending)
               return;
+            node.classList.remove("cv-invalid");
+            delete node.dataset.reason;
+            if (!resizeOk) {
+              node.style.top = savedTop;
+              node.style.height = savedHeight;
+              suppressClick = true;
+              return;
+            }
             const startZoned = toZonedDateTime(event.start, timeZone);
             const endZoned = toZonedDateTime(event.end, timeZone);
             const isFirstDay = Temporal2.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
@@ -5305,6 +5432,8 @@
             node.removeEventListener("pointerup", onUp);
             node.style.top = savedTop;
             node.style.height = savedHeight;
+            node.classList.remove("cv-invalid");
+            delete node.dataset.reason;
             longPressConsumed = false;
             suppressClick = false;
           };
@@ -5320,6 +5449,16 @@
           const downHit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
           if (!downHit)
             return;
+          const startGate = host.checkInteraction({
+            action: "move",
+            event,
+            start: event.start,
+            end: event.end,
+            resourceId: event.resourceId ?? null,
+            allDay: event.allDay === true
+          });
+          if (!startGate.ok)
+            return;
           tryCapture(node, nativeEvent.pointerId);
           const duration = item.end - item.start;
           const grabOffset = downHit.minutes - item.start;
@@ -5330,6 +5469,8 @@
           let moved = false;
           let mirror = null;
           let pending = null;
+          let dragKey = `${columnIndex}:${item.start}`;
+          let dragOk = true;
           const onMove = (moveEvent) => {
             if (longPressConsumed)
               return;
@@ -5362,7 +5503,23 @@
               target.body.append(mirror);
             mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
             mirror.style.height = `${duration * pxPerMinute}px`;
-            mirror.classList.toggle("cv-invalid", !droppable);
+            const key = `${hit.column}:${start}`;
+            if (key !== dragKey) {
+              dragKey = key;
+              const decision = host.checkInteraction({
+                action: "move",
+                event,
+                start: zonedDateTimeAt(target.column.date, start, timeZone),
+                end: zonedDateTimeAt(target.column.date, start + duration, timeZone),
+                resourceId: target.column.resource?.id ?? null
+              });
+              dragOk = decision.ok;
+              if (decision.reason)
+                mirror.dataset.reason = decision.reason;
+              else
+                delete mirror.dataset.reason;
+            }
+            mirror.classList.toggle("cv-invalid", !droppable || !dragOk);
           };
           const cleanup = () => {
             node.removeEventListener("pointermove", onMove);
@@ -5395,6 +5552,10 @@
               return;
             if (!range.droppable)
               return;
+            if (!dragOk) {
+              suppressClick = true;
+              return;
+            }
             suppressClick = true;
             const dayDelta = range.column.date.since(column.date).days;
             const minuteDelta = range.start - item.start;
@@ -5485,7 +5646,15 @@
           }, press);
         });
         node.addEventListener("keydown", onEventKeyDown);
-        if (resizable) {
+        const resizeAllowed = resizable && host.checkInteraction({
+          action: "resize",
+          event,
+          start: event.start,
+          end: event.end,
+          resourceId: event.resourceId ?? null,
+          allDay: event.allDay === true
+        }).ok;
+        if (resizeAllowed) {
           for (const edge of ["start", "end"]) {
             const handle = document.createElement("div");
             handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "n" : "s"}`;
@@ -5512,6 +5681,8 @@
         body.append(hover);
         let ghost = null;
         let ghostChip = null;
+        let selectKey = null;
+        let selectOk = true;
         const showHover = (nativeEvent) => {
           const target = nativeEvent.target;
           const overEvent = target instanceof Element && target.closest(".cv-event") !== null;
@@ -5542,6 +5713,19 @@
           const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
           if (!hit)
             return;
+          const anchor = magnetOrSnap(hit.minutes, "floor", columnEdges(columnIndex));
+          const anchorStart = zonedDateTimeAt(column.date, anchor, timeZone);
+          const gate = host.checkInteraction({
+            action: "select",
+            event: null,
+            start: anchorStart,
+            end: anchorStart.add({ minutes: defaultDuration }),
+            resourceId: column.resource?.id ?? null
+          });
+          if (!gate.ok)
+            return;
+          selectKey = `${anchor}:${anchor + defaultDuration}`;
+          selectOk = true;
           hover.hidden = true;
           tryCapture(body, nativeEvent.pointerId);
           ghost = document.createElement("div");
@@ -5551,7 +5735,6 @@
           ghostChip.className = "cv-select-chip";
           ghost.append(ghostChip);
           body.append(ghost);
-          const anchor = magnetOrSnap(hit.minutes, "floor", columnEdges(columnIndex));
           selecting = {
             anchor,
             downX: nativeEvent.clientX,
@@ -5580,6 +5763,23 @@
           ghost.style.top = `${(start - startMinutes) * pxPerMinute}px`;
           ghost.style.height = `${(end - start) * pxPerMinute}px`;
           ghostChip.textContent = `${formatClock(start)} - ${formatClock(end)}`;
+          const key = `${start}:${end}`;
+          if (key !== selectKey) {
+            selectKey = key;
+            const decision = host.checkInteraction({
+              action: "select",
+              event: null,
+              start: zonedDateTimeAt(column.date, start, timeZone),
+              end: zonedDateTimeAt(column.date, end, timeZone),
+              resourceId: column.resource?.id ?? null
+            });
+            selectOk = decision.ok;
+            ghost.classList.toggle("cv-invalid", !decision.ok);
+            if (decision.reason)
+              ghost.dataset.reason = decision.reason;
+            else
+              delete ghost.dataset.reason;
+          }
         });
         const finishSelection = (nativeEvent, cancelled) => {
           const wasLongPress = longPressConsumed;
@@ -5593,6 +5793,10 @@
           ghostChip = null;
           if (cancelled || wasLongPress)
             return;
+          if (moved && !selectOk) {
+            suppressClick = true;
+            return;
+          }
           if (moved) {
             suppressClick = true;
             dispatchSelect(body, column, start, end, nativeEvent);
@@ -5687,6 +5891,23 @@
           return null;
         const column = columns[index];
         const resourceId = column.resource?.id ?? null;
+        const policy = host.checkInteraction({
+          action: "external",
+          event: null,
+          start: column.date,
+          end: column.date.add({ days: 1 }),
+          resourceId,
+          allDay: true
+        });
+        if (!policy.ok) {
+          return {
+            kind: "lane",
+            index,
+            target: { date: column.date, time: null, resourceId, allDay: true },
+            ok: false,
+            reason: policy.reason
+          };
+        }
         const validity = externalTargetValidity(column.date, null, resourceId, true, column.resource?.droppable !== false);
         return {
           kind: "lane",
@@ -5710,6 +5931,25 @@
       const column = columns[hit.column];
       const time = zonedDateTimeAt(column.date, start, timeZone);
       const resourceId = column.resource?.id ?? null;
+      const policy = host.checkInteraction({
+        action: "external",
+        event: null,
+        start: time,
+        end: time.add({ minutes: duration }),
+        resourceId
+      });
+      if (!policy.ok) {
+        return {
+          kind: "grid",
+          index: hit.column,
+          start,
+          end,
+          time,
+          target: { date: column.date, time, resourceId, allDay: false },
+          ok: false,
+          reason: policy.reason
+        };
+      }
       const validity = externalTargetValidity(column.date, time, resourceId, false, column.resource?.droppable !== false);
       return {
         kind: "grid",
@@ -5826,6 +6066,14 @@
     defaultTimedEventDuration: Temporal2.Duration.from({ minutes: 30 })
   };
   var MAX_TIMEOUT_MS = 2147483647;
+  function targetDate(start, timeZone) {
+    if (start instanceof Temporal2.PlainDate)
+      return start;
+    if (typeof start === "string" && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+      return Temporal2.PlainDate.from(start);
+    }
+    return toZonedDateTime(start, timeZone).toPlainDate();
+  }
   var dates = { getMonthWeeks, startOfWeek, toPlainDate };
 
   class CalendarViewElement extends HTMLElement {
@@ -5844,7 +6092,6 @@
     #afterRenderQueue = [];
     #pendingAnnounce = null;
     #announceFrame = null;
-    #now = null;
     #agingTimer = null;
     connectedCallback() {
       this.classList.add("calendar-view");
@@ -5975,6 +6222,23 @@
         timeZone,
         resourceId: range?.resourceId ?? null
       });
+    }
+    checkInteraction({ action, event, start, end, resourceId, allDay = false }) {
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      const policy = this.#config.interactionPolicy;
+      if (typeof policy !== "function")
+        return { ok: true, reason: null };
+      const context = this.getRangeContext({ start, end, resourceId });
+      const target = {
+        start,
+        end,
+        date: targetDate(start, timeZone),
+        time: allDay ? null : toZonedDateTime(start, timeZone),
+        resourceId: resourceId ?? null,
+        allDay
+      };
+      const now = Temporal2.Now.zonedDateTimeISO(timeZone);
+      return normalizePolicyDecision(policy({ action, event, target, context, now }));
     }
     #commitEventMutation({ event, previous, current, name, nativeEvent }) {
       const id = event.id;
@@ -6241,8 +6505,7 @@
       const dateOptions = this.#dateOptions();
       const dates2 = getVisibleDates(this.date, this.view, dateOptions);
       const resources = isResourceView(this.view) ? this.#resources : [];
-      this.#now = Temporal2.Now.zonedDateTimeISO(options.timeZone);
-      const now = this.#now;
+      const now = Temporal2.Now.zonedDateTimeISO(options.timeZone);
       const scroll = this.querySelector(".cv-scroller");
       const scrollTop = scroll?.scrollTop ?? 0;
       const scrollLeft = scroll?.scrollLeft ?? 0;
@@ -6302,6 +6565,7 @@
             announce: (message) => this.#announce(message),
             refocusEvent: (id) => this.#refocusEvent(id),
             getRangeContext: (range) => this.getRangeContext(range),
+            checkInteraction: (input) => this.checkInteraction(input),
             commitEventMove: (input) => this.#commitEventMove(input),
             commitEventResize: (input) => this.#commitEventResize(input),
             getExternalDrag: () => this.#dragExternal,

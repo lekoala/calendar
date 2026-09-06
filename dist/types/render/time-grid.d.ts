@@ -12,6 +12,17 @@ export type TimeGridHost = {
         end: unknown;
         resourceId?: string | null;
     }) => import("../core/overlaps.js").RangeContext;
+    /**
+     * synchronous policy gate for user-originated interactions
+     */
+    checkInteraction: (input: {
+        action: "select" | "move" | "resize" | "external";
+        event: import("../core/model.js").NormalizedEvent | null;
+        start: unknown;
+        end: unknown;
+        resourceId: string | null;
+        allDay?: boolean;
+    }) => import("../core/policy.js").PolicyDecision;
     commitEventMove: (input: {
         event: import("../core/model.js").NormalizedEvent;
         previous: {
@@ -98,6 +109,14 @@ export type ActiveSelection = {
  * @property {(message: string) => void} announce
  * @property {(id: string) => void} refocusEvent
  * @property {(range: { start: unknown, end: unknown, resourceId?: string | null }) => import("../core/overlaps.js").RangeContext} getRangeContext canonical range context for the proposed range
+ * @property {(input: {
+ *   action: "select" | "move" | "resize" | "external",
+ *   event: import("../core/model.js").NormalizedEvent | null,
+ *   start: unknown,
+ *   end: unknown,
+ *   resourceId: string | null,
+ *   allDay?: boolean,
+ * }) => import("../core/policy.js").PolicyDecision} checkInteraction synchronous policy gate for user-originated interactions
  * @property {(input: {
  *   event: import("../core/model.js").NormalizedEvent,
  *   previous: { start: unknown, end: unknown, resourceId: string | null },

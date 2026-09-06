@@ -163,6 +163,7 @@ calendar.configure({
   resourceHeaderContent,
   slotLabelContent,
   moreLinkContent,
+  interactionPolicy,
 });
 ```
 
@@ -343,6 +344,49 @@ optimistic post-mutation state — so the mutated event may appear in
 `context.events.overlapping`. For `externaldrop` the context covers the
 range the ghost previewed and validated: `[time, time + duration)` for
 timed drops, the civil day for lane drops.
+
+## Interaction policy
+
+```js
+calendar.configure({
+  interactionPolicy({ action, event, target, context, now }) {
+    if (target.end <= now) return "Past";
+    return true;
+  },
+});
+```
+
+Policy applies to every user-originated calendar interaction, regardless
+of input modality: pointer drag/resize/select, keyboard move/resize,
+external drops and selection. Programmatic mutation APIs
+(`moveEvent`/`resizeEvent`/`addEvent`/`updateEvent`/`removeEvent`) remain
+authoritative and never consult the policy — realtime and server paths
+stay unblocked, and application-owned menus (delete, cancel) enforce
+their own permissions.
+
+- `action` is `select`, `move`, `resize` or `external`. `select` and
+  `external` carry no existing event (`event: null`); `external`
+  describes the placement interaction without pretending to know what
+  the opaque payload means.
+- `event` is the acted-on event, or `null`.
+- `target` is the proposed placement: `{ start, end, date, time,
+  resourceId, allDay }`. `start`/`end` are the full proposed range
+  (zoned for timed, civil for all-day); `time` is the proposed start as
+  an instant, `null` for all-day.
+- `context` is the canonical range context of the proposed range (see
+  above); `now` is the moment the decision is taken.
+- Return `true` (or nothing) to allow, `false` to refuse quietly, or a
+  reason string to refuse with feedback. Strictly synchronous: server
+  validation stays in the commit/revert path.
+
+The policy gates before a gesture (no resize handle, no drag or
+selection start — a refused keyboard operation announces its reason when
+it has one) and re-validates the destination only when the snapped
+target changes, painting the existing invalid ghost and `data-reason`.
+A refused drop commits nothing and dispatches nothing. For external
+drops the chain is structural validity, then the global policy, then the
+source-specific `validate` — the first refusal wins. Without a
+configured policy nothing changes.
 
 ## Mutations / realtime adapters
 

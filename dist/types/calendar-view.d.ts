@@ -51,6 +51,58 @@ export type CalendarConfig = {
     resourceHeaderContent?: (info: object) => unknown;
     slotLabelContent?: (info: object) => unknown;
     moreLinkContent?: (info: object) => unknown;
+    /**
+     * synchronous gate for user-originated interactions (pointer, keyboard, external drop, selection); programmatic mutations never consult it
+     */
+    interactionPolicy?: (decision: InteractionPolicyInput) => boolean | string | null | undefined;
+};
+export type InteractionPolicyInput = {
+    /**
+     * the proposed interaction; `select` and `external` carry no existing event
+     */
+    action: "select" | "move" | "resize" | "external";
+    /**
+     * the acted-on event, or null for select/external
+     */
+    event: import("./core/model.js").NormalizedEvent | null;
+    /**
+     * the proposed placement
+     */
+    target: InteractionPolicyTarget;
+    /**
+     * canonical range context of the proposed range
+     */
+    context: import("./core/overlaps.js").RangeContext;
+    /**
+     * the moment the decision is taken
+     */
+    now: Temporal.ZonedDateTime;
+};
+export type InteractionPolicyTarget = {
+    /**
+     * proposed range start (zoned timed, civil all-day)
+     */
+    start: unknown;
+    /**
+     * proposed range end (zoned timed, civil all-day)
+     */
+    end: unknown;
+    /**
+     * winner civil date
+     */
+    date: Temporal.PlainDate;
+    /**
+     * proposed start as an instant for timed ranges, null for all-day
+     */
+    time: Temporal.ZonedDateTime | null;
+    /**
+     * proposed resource, or null
+     */
+    resourceId: string | null;
+    /**
+     * true for all-day lane placements
+     */
+    allDay: boolean;
 };
 export type ExternalDropMeta = {
     /**
@@ -213,6 +265,31 @@ export declare class CalendarViewElement extends HTMLElement {
         end: unknown;
         resourceId?: string | null;
     }): import("./core/overlaps.js").RangeContext;
+    /**
+     * Single evaluation path for user-originated interactions (pointer,
+     * keyboard, external drop, selection). Resolves the canonical context of
+     * the proposed range, takes a fresh `now`, and normalizes the application
+     * answer to `{ ok, reason }`. Strictly synchronous: server validation
+     * stays in the commit/revert path. Programmatic mutations
+     * (`moveEvent`/`resizeEvent`/`removeEvent`) never call this.
+     *
+     * @param {object} input
+     * @param {"select" | "move" | "resize" | "external"} input.action
+     * @param {import("./core/model.js").NormalizedEvent | null} input.event
+     * @param {unknown} input.start proposed range start
+     * @param {unknown} input.end proposed range end
+     * @param {string | null} input.resourceId
+     * @param {boolean} [input.allDay]
+     * @returns {import("./core/policy.js").PolicyDecision}
+     */
+    checkInteraction({ action, event, start, end, resourceId, allDay }: {
+        action: "select" | "move" | "resize" | "external";
+        event: import("./core/model.js").NormalizedEvent | null;
+        start: unknown;
+        end: unknown;
+        resourceId: string | null;
+        allDay?: boolean;
+    }): import("./core/policy.js").PolicyDecision;
     /**
      * Non-pointer equivalent of dragging an event. Runs the same optimistic
      * commit as the pointer path, so keyboard and application commands share

@@ -125,6 +125,11 @@
             },
             {
               "kind": "method",
+              "name": "checkInteraction",
+              "description": "Single evaluation path for user-originated interactions (pointer, keyboard, external drop, selection)."
+            },
+            {
+              "kind": "method",
               "name": "moveEvent",
               "description": "Non-pointer equivalent of dragging an event."
             },

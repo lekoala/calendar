@@ -21,6 +21,8 @@ import {
   sameRange,
 } from "./core/model.js";
 import { queryOverlaps, queryRangeContext } from "./core/overlaps.js";
+import { normalizePolicyDecision } from "./core/policy.js";
+import { toZonedDateTime } from "./core/slicing.js";
 import { nextStateChangeMs } from "./core/temporal.js";
 import { renderList } from "./render/list.js";
 import { renderMonthGrid } from "./render/month-grid.js";
@@ -56,6 +58,32 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {(info: object) => unknown} [resourceHeaderContent]
  * @property {(info: object) => unknown} [slotLabelContent]
  * @property {(info: object) => unknown} [moreLinkContent]
+ * @property {(decision: InteractionPolicyInput) => boolean | string | null | undefined} [interactionPolicy] synchronous gate for user-originated interactions (pointer, keyboard, external drop, selection); programmatic mutations never consult it
+ */
+
+/**
+ * Input for the dynamic interaction policy.
+ *
+ * @typedef {object} InteractionPolicyInput
+ * @property {"select" | "move" | "resize" | "external"} action the proposed interaction; `select` and `external` carry no existing event
+ * @property {import("./core/model.js").NormalizedEvent | null} event the acted-on event, or null for select/external
+ * @property {InteractionPolicyTarget} target the proposed placement
+ * @property {import("./core/overlaps.js").RangeContext} context canonical range context of the proposed range
+ * @property {Temporal.ZonedDateTime} now the moment the decision is taken
+ */
+
+/**
+ * Proposed placement for a policy decision. Mirrors the external-drop
+ * anchor and adds the full proposed range, so a policy never recomposes
+ * `end` or reads the range back out of `context`.
+ *
+ * @typedef {object} InteractionPolicyTarget
+ * @property {unknown} start proposed range start (zoned timed, civil all-day)
+ * @property {unknown} end proposed range end (zoned timed, civil all-day)
+ * @property {Temporal.PlainDate} date winner civil date
+ * @property {Temporal.ZonedDateTime | null} time proposed start as an instant for timed ranges, null for all-day
+ * @property {string | null} resourceId proposed resource, or null
+ * @property {boolean} allDay true for all-day lane placements
  */
 
 /**
@@ -90,6 +118,22 @@ const DEFAULTS = {
 // Largest delay a `setTimeout` accepts; aging boundaries beyond it simply
 // re-arm on the next render instead of overflowing.
 const MAX_TIMEOUT_MS = 2147483647;
+
+/**
+ * Winner civil date of a proposed range start: civil input stays civil,
+ * zoned input projects in `timeZone`.
+ *
+ * @param {unknown} start
+ * @param {string} timeZone
+ * @returns {Temporal.PlainDate}
+ */
+function targetDate(start, timeZone) {
+  if (start instanceof Temporal.PlainDate) return start;
+  if (typeof start === "string" && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    return Temporal.PlainDate.from(start);
+  }
+  return toZonedDateTime(start, timeZone).toPlainDate();
+}
 
 /**
  * Civil date helpers shared with the main grid, exposed for external
@@ -147,8 +191,6 @@ export class CalendarViewElement extends HTMLElement {
   #pendingAnnounce = null;
   /** Single cancellable announce frame for a11y timing. @type {number | null} */
   #announceFrame = null;
-  /** Last render's `now`, kept so interaction decisions reuse the instant the grid was painted with. Rewritten on every render, never read as a clock. @type {Temporal.ZonedDateTime | null} */
-  #now = null;
   /** One-shot aging timer to the next visible event boundary. @type {number | null} */
   #agingTimer = null;
 
@@ -358,6 +400,40 @@ export class CalendarViewElement extends HTMLElement {
       timeZone,
       resourceId: range?.resourceId ?? null,
     });
+  }
+
+  /**
+   * Single evaluation path for user-originated interactions (pointer,
+   * keyboard, external drop, selection). Resolves the canonical context of
+   * the proposed range, takes a fresh `now`, and normalizes the application
+   * answer to `{ ok, reason }`. Strictly synchronous: server validation
+   * stays in the commit/revert path. Programmatic mutations
+   * (`moveEvent`/`resizeEvent`/`removeEvent`) never call this.
+   *
+   * @param {object} input
+   * @param {"select" | "move" | "resize" | "external"} input.action
+   * @param {import("./core/model.js").NormalizedEvent | null} input.event
+   * @param {unknown} input.start proposed range start
+   * @param {unknown} input.end proposed range end
+   * @param {string | null} input.resourceId
+   * @param {boolean} [input.allDay]
+   * @returns {import("./core/policy.js").PolicyDecision}
+   */
+  checkInteraction({ action, event, start, end, resourceId, allDay = false }) {
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    const policy = this.#config.interactionPolicy;
+    if (typeof policy !== "function") return { ok: true, reason: null };
+    const context = this.getRangeContext({ start, end, resourceId });
+    const target = {
+      start,
+      end,
+      date: targetDate(start, timeZone),
+      time: allDay ? null : toZonedDateTime(start, timeZone),
+      resourceId: resourceId ?? null,
+      allDay,
+    };
+    const now = Temporal.Now.zonedDateTimeISO(timeZone);
+    return normalizePolicyDecision(policy({ action, event, target, context, now }));
   }
 
   /**
@@ -799,11 +875,9 @@ export class CalendarViewElement extends HTMLElement {
     const resources = isResourceView(this.view) ? this.#resources : [];
 
     // `now` is whatever this render computes: one instant shared by the now
-    // indicator, temporal states and the aging boundary, cached per render so
-    // later interaction decisions reuse the instant the grid was painted with.
-    // Never a clock service.
-    this.#now = Temporal.Now.zonedDateTimeISO(options.timeZone);
-    const now = this.#now;
+    // indicator, temporal states and the aging boundary. Never a clock
+    // service; interaction decisions take their own `now` when they run.
+    const now = Temporal.Now.zonedDateTimeISO(options.timeZone);
 
     const scroll = this.querySelector(".cv-scroller");
     const scrollTop = scroll?.scrollTop ?? 0;
@@ -877,6 +951,8 @@ export class CalendarViewElement extends HTMLElement {
             announce: (message) => this.#announce(message),
             refocusEvent: (id) => this.#refocusEvent(id),
             getRangeContext: (range) => this.getRangeContext(range),
+            checkInteraction: (/** @type {Parameters<CalendarViewElement["checkInteraction"]>[0]} */ input) =>
+              this.checkInteraction(input),
             commitEventMove: (input) => this.#commitEventMove(input),
             commitEventResize: (input) => this.#commitEventResize(input),
             getExternalDrag: () => this.#dragExternal,

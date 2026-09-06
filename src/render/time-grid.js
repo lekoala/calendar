@@ -41,6 +41,14 @@ import { createAutoscroller } from "./autoscroll.js";
  * @property {(id: string) => void} refocusEvent
  * @property {(range: { start: unknown, end: unknown, resourceId?: string | null }) => import("../core/overlaps.js").RangeContext} getRangeContext canonical range context for the proposed range
  * @property {(input: {
+ *   action: "select" | "move" | "resize" | "external",
+ *   event: import("../core/model.js").NormalizedEvent | null,
+ *   start: unknown,
+ *   end: unknown,
+ *   resourceId: string | null,
+ *   allDay?: boolean,
+ * }) => import("../core/policy.js").PolicyDecision} checkInteraction synchronous policy gate for user-originated interactions
+ * @property {(input: {
  *   event: import("../core/model.js").NormalizedEvent,
  *   previous: { start: unknown, end: unknown, resourceId: string | null },
  *   current: { start: unknown, end: unknown, resourceId: string | null },
@@ -489,6 +497,18 @@ export function renderTimeGrid({
    */
   function beginAllDayDrag(bar, event, startDay, endDay, nativeEvent) {
     if (nativeEvent.button !== 0) return;
+    // A refused start never arms a drag: no mirror, no capture.
+    if (event.start instanceof Temporal.PlainDate && event.end instanceof Temporal.PlainDate) {
+      const startGate = host.checkInteraction({
+        action: "move",
+        event,
+        start: event.start,
+        end: event.end,
+        resourceId: event.resourceId ?? null,
+        allDay: true,
+      });
+      if (!startGate.ok) return;
+    }
     tryCapture(bar, nativeEvent.pointerId);
     const downX = nativeEvent.clientX;
     const downY = nativeEvent.clientY;
@@ -497,6 +517,11 @@ export function renderTimeGrid({
     let mirror = null;
     /** @type {{ index: number, droppable: boolean } | null} */
     let pending = null;
+    // Last evaluated destination (day index) and its policy decision.
+    // Seeded with the entry day so the first identical snap skips.
+    /** @type {number} */
+    let laneKey = startDay;
+    let laneOk = true;
 
     /** @param {PointerEvent} moveEvent @returns {void} */
     const onMove = (moveEvent) => {
@@ -517,7 +542,27 @@ export function renderTimeGrid({
       pending = { index, droppable };
       mirror.style.gridColumn = `${index + 2} / ${Math.min(columns.length, index + (endDay - startDay)) + 2}`;
       mirror.style.gridRow = String(Number.parseFloat(bar.style.gridRow) || 1);
-      mirror.classList.toggle("cv-invalid", !droppable);
+      if (index !== laneKey) {
+        laneKey = index;
+        const dayDelta = index - startDay;
+        const resourceId = columns[index].resource?.id ?? null;
+        /** @type {import("../core/policy.js").PolicyDecision} */
+        let decision = { ok: true, reason: null };
+        if (event.start instanceof Temporal.PlainDate && event.end instanceof Temporal.PlainDate) {
+          decision = host.checkInteraction({
+            action: "move",
+            event,
+            start: event.start.add({ days: dayDelta }),
+            end: event.end.add({ days: dayDelta }),
+            resourceId,
+            allDay: true,
+          });
+        }
+        laneOk = decision.ok;
+        if (decision.reason) mirror.dataset.reason = decision.reason;
+        else delete mirror.dataset.reason;
+      }
+      mirror.classList.toggle("cv-invalid", !droppable || !laneOk);
     };
 
     const cleanup = () => {
@@ -535,6 +580,11 @@ export function renderTimeGrid({
       cleanup();
       if (longPressConsumed) return;
       if (!wasMoved || !range?.droppable) return;
+      // A destination the policy refused while dragging commits nothing.
+      if (!laneOk) {
+        suppressClick = true;
+        return;
+      }
       suppressClick = true;
       const dayDelta = range.index - startDay;
       const resourceId = columns[range.index].resource?.id ?? null;
@@ -666,12 +716,22 @@ export function renderTimeGrid({
         if (key !== "ArrowLeft" && key !== "ArrowRight") return;
         if (!movable) return;
         keyboardEvent.preventDefault();
-        const next = commitAllDayMove(
-          event,
-          key === "ArrowRight" ? 1 : -1,
-          event.resourceId ?? null,
-          keyboardEvent,
-        );
+        const days = key === "ArrowRight" ? 1 : -1;
+        if (event.start instanceof Temporal.PlainDate && event.end instanceof Temporal.PlainDate) {
+          const gate = host.checkInteraction({
+            action: "move",
+            event,
+            start: event.start.add({ days }),
+            end: event.end.add({ days }),
+            resourceId: event.resourceId ?? null,
+            allDay: true,
+          });
+          if (!gate.ok) {
+            if (gate.reason) host.announce(gate.reason);
+            return;
+          }
+        }
+        const next = commitAllDayMove(event, days, event.resourceId ?? null, keyboardEvent);
         if (next) host.announce(describeEvent(next, timeZone, labels.untitledEvent));
       });
 
@@ -1018,6 +1078,20 @@ export function renderTimeGrid({
           const nextEnd = nextStart.add(duration);
           current = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
         }
+        // Keyboard moves obey the policy like pointer drags: a refusal
+        // announces its reason when it has one, and commits nothing.
+        const moveGate = host.checkInteraction({
+          action: "move",
+          event,
+          start: current.start,
+          end: current.end,
+          resourceId: current.resourceId ?? null,
+          allDay: event.allDay === true,
+        });
+        if (!moveGate.ok) {
+          if (moveGate.reason) host.announce(moveGate.reason);
+          return;
+        }
         const result = host.commitEventMove({ event, previous, current, nativeEvent });
         if (!result) return;
         host.announce(describeEvent(result, timeZone, labels.untitledEvent));
@@ -1042,6 +1116,18 @@ export function renderTimeGrid({
         else if (key === "ArrowLeft") nextEnd = endZoned.subtract({ minutes: snapStep });
         else nextEnd = endZoned.add({ minutes: snapStep });
         if (nextEnd.epochMilliseconds - nextStart.epochMilliseconds < snapStep * 60 * 1000) return;
+        const resizeGate = host.checkInteraction({
+          action: "resize",
+          event,
+          start: nextStart,
+          end: nextEnd,
+          resourceId: event.resourceId ?? null,
+          allDay: event.allDay === true,
+        });
+        if (!resizeGate.ok) {
+          if (resizeGate.reason) host.announce(resizeGate.reason);
+          return;
+        }
         const result = host.commitEventResize({
           event,
           previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
@@ -1055,7 +1141,19 @@ export function renderTimeGrid({
 
       node.addEventListener("keydown", onEventKeyDown);
 
-      if (resizable) {
+      // No resize handle when the policy refuses the event where it stands:
+      // the gate doubles as the destination checker's entry point.
+      const resizeAllowed =
+        resizable &&
+        host.checkInteraction({
+          action: "resize",
+          event,
+          start: event.start,
+          end: event.end,
+          resourceId: event.resourceId ?? null,
+          allDay: event.allDay === true,
+        }).ok;
+      if (resizeAllowed) {
         for (const edge of /** @type {["start", "end"]} */ (["start", "end"])) {
           const handle = document.createElement("div");
           handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "n" : "s"}`;
@@ -1077,6 +1175,17 @@ export function renderTimeGrid({
        */
       function beginResize(nativeEvent, edge) {
         if (nativeEvent.button !== 0) return;
+        // Handles only render when allowed, but the policy may read state
+        // the calendar never re-renders on: re-check at press time.
+        const pressGate = host.checkInteraction({
+          action: "resize",
+          event,
+          start: event.start,
+          end: event.end,
+          resourceId: event.resourceId ?? null,
+          allDay: event.allDay === true,
+        });
+        if (!pressGate.ok) return;
         nativeEvent.stopPropagation();
         nativeEvent.preventDefault();
         tryCapture(node, nativeEvent.pointerId);
@@ -1087,6 +1196,11 @@ export function renderTimeGrid({
         let moved = false;
         /** @type {{ start: number, end: number } | null} */
         let pending = null;
+        // Last evaluated destination (`start:end`) and its policy decision.
+        // Seeded with the entry target so the first identical snap skips.
+        /** @type {string} */
+        let resizeKey = `${item.start}:${item.end}`;
+        let resizeOk = true;
 
         /** @param {PointerEvent} moveEvent @returns {void} */
         const onMove = (moveEvent) => {
@@ -1106,6 +1220,21 @@ export function renderTimeGrid({
           pending = { start, end };
           node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
           node.style.height = `${(end - start) * pxPerMinute}px`;
+          const key = `${start}:${end}`;
+          if (key !== resizeKey) {
+            resizeKey = key;
+            const decision = host.checkInteraction({
+              action: "resize",
+              event,
+              start: zonedDateTimeAt(column.date, start, timeZone),
+              end: zonedDateTimeAt(column.date, end, timeZone),
+              resourceId: column.resource?.id ?? null,
+            });
+            resizeOk = decision.ok;
+            node.classList.toggle("cv-invalid", !decision.ok);
+            if (decision.reason) node.dataset.reason = decision.reason;
+            else delete node.dataset.reason;
+          }
         };
 
         /** @param {PointerEvent} upEvent @returns {void} */
@@ -1118,6 +1247,16 @@ export function renderTimeGrid({
             return;
           }
           if (!moved || !pending) return;
+          node.classList.remove("cv-invalid");
+          delete node.dataset.reason;
+          // A destination the policy refused while resizing commits
+          // nothing: the invalid node already showed the refusal.
+          if (!resizeOk) {
+            node.style.top = savedTop;
+            node.style.height = savedHeight;
+            suppressClick = true;
+            return;
+          }
           // A slice edge clipped by a day boundary is not the true event
           // edge: resizing it would truncate the multi-day span. Only the
           // first day owns the start edge and only the last day owns the
@@ -1163,6 +1302,8 @@ export function renderTimeGrid({
           node.removeEventListener("pointerup", onUp);
           node.style.top = savedTop;
           node.style.height = savedHeight;
+          node.classList.remove("cv-invalid");
+          delete node.dataset.reason;
           // No click follows a cancel: drop both suppression flags.
           longPressConsumed = false;
           suppressClick = false;
@@ -1188,6 +1329,16 @@ export function renderTimeGrid({
         }
         const downHit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
         if (!downHit) return;
+        // A refused start never arms a drag: no mirror, no capture.
+        const startGate = host.checkInteraction({
+          action: "move",
+          event,
+          start: event.start,
+          end: event.end,
+          resourceId: event.resourceId ?? null,
+          allDay: event.allDay === true,
+        });
+        if (!startGate.ok) return;
         tryCapture(node, nativeEvent.pointerId);
         const duration = item.end - item.start;
         const grabOffset = downHit.minutes - item.start;
@@ -1200,6 +1351,12 @@ export function renderTimeGrid({
         let mirror = null;
         /** @type {{ start: number, end: number, column: TimeGridColumn, droppable: boolean } | null} */
         let pending = null;
+        // Last evaluated destination (`column:start`) and its policy
+        // decision: re-evaluated only when the snapped target changes.
+        // Seeded with the entry target so the first identical snap skips.
+        /** @type {string} */
+        let dragKey = `${columnIndex}:${item.start}`;
+        let dragOk = true;
 
         /** @param {PointerEvent} moveEvent @returns {void} */
         const onMove = (moveEvent) => {
@@ -1233,7 +1390,21 @@ export function renderTimeGrid({
           if (mirror.parentNode !== target.body) target.body.append(mirror);
           mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
           mirror.style.height = `${duration * pxPerMinute}px`;
-          mirror.classList.toggle("cv-invalid", !droppable);
+          const key = `${hit.column}:${start}`;
+          if (key !== dragKey) {
+            dragKey = key;
+            const decision = host.checkInteraction({
+              action: "move",
+              event,
+              start: zonedDateTimeAt(target.column.date, start, timeZone),
+              end: zonedDateTimeAt(target.column.date, start + duration, timeZone),
+              resourceId: target.column.resource?.id ?? null,
+            });
+            dragOk = decision.ok;
+            if (decision.reason) mirror.dataset.reason = decision.reason;
+            else delete mirror.dataset.reason;
+          }
+          mirror.classList.toggle("cv-invalid", !droppable || !dragOk);
         };
 
         const cleanup = () => {
@@ -1275,6 +1446,12 @@ export function renderTimeGrid({
           }
           if (!range) return;
           if (!range.droppable) return;
+          // A destination the policy refused while dragging commits
+          // nothing: the invalid mirror already showed the refusal.
+          if (!dragOk) {
+            suppressClick = true;
+            return;
+          }
           suppressClick = true;
           // The mirror shows the dragged slice, but the commit shifts the
           // whole event so multi-day spans keep their total duration (same
@@ -1326,6 +1503,11 @@ export function renderTimeGrid({
       let ghost = null;
       /** @type {HTMLSpanElement | null} */
       let ghostChip = null;
+      // Last evaluated select destination (`start:end`) and its policy
+      // decision: re-evaluated only when the snapped target changes.
+      /** @type {string | null} */
+      let selectKey = null;
+      let selectOk = true;
 
       /** @param {PointerEvent} nativeEvent @returns {void} */
       const showHover = (nativeEvent) => {
@@ -1357,6 +1539,20 @@ export function renderTimeGrid({
         if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-event")) return;
         const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
         if (!hit) return;
+        const anchor = magnetOrSnap(hit.minutes, "floor", columnEdges(columnIndex));
+        // A refused start never arms a selection: no ghost, no capture.
+        const anchorStart = zonedDateTimeAt(column.date, anchor, timeZone);
+        const gate = host.checkInteraction({
+          action: "select",
+          event: null,
+          start: anchorStart,
+          end: anchorStart.add({ minutes: defaultDuration }),
+          resourceId: column.resource?.id ?? null,
+        });
+        if (!gate.ok) return;
+        // Seeded with the entry target so the first identical snap skips.
+        selectKey = `${anchor}:${anchor + defaultDuration}`;
+        selectOk = true;
         hover.hidden = true;
         tryCapture(body, nativeEvent.pointerId);
         ghost = document.createElement("div");
@@ -1366,7 +1562,6 @@ export function renderTimeGrid({
         ghostChip.className = "cv-select-chip";
         ghost.append(ghostChip);
         body.append(ghost);
-        const anchor = magnetOrSnap(hit.minutes, "floor", columnEdges(columnIndex));
         selecting = {
           anchor,
           downX: nativeEvent.clientX,
@@ -1396,6 +1591,21 @@ export function renderTimeGrid({
         ghost.style.top = `${(start - startMinutes) * pxPerMinute}px`;
         ghost.style.height = `${(end - start) * pxPerMinute}px`;
         ghostChip.textContent = `${formatClock(start)} - ${formatClock(end)}`;
+        const key = `${start}:${end}`;
+        if (key !== selectKey) {
+          selectKey = key;
+          const decision = host.checkInteraction({
+            action: "select",
+            event: null,
+            start: zonedDateTimeAt(column.date, start, timeZone),
+            end: zonedDateTimeAt(column.date, end, timeZone),
+            resourceId: column.resource?.id ?? null,
+          });
+          selectOk = decision.ok;
+          ghost.classList.toggle("cv-invalid", !decision.ok);
+          if (decision.reason) ghost.dataset.reason = decision.reason;
+          else delete ghost.dataset.reason;
+        }
       });
 
       /**
@@ -1415,6 +1625,12 @@ export function renderTimeGrid({
         ghost = null;
         ghostChip = null;
         if (cancelled || wasLongPress) return;
+        // A destination the policy refused while dragging dispatches
+        // nothing: the invalid ghost already showed the refusal.
+        if (moved && !selectOk) {
+          suppressClick = true;
+          return;
+        }
         if (moved) {
           suppressClick = true;
           dispatchSelect(body, column, start, end, nativeEvent);
@@ -1563,6 +1779,25 @@ export function renderTimeGrid({
       if (index < 0) return null;
       const column = columns[index];
       const resourceId = column.resource?.id ?? null;
+      // Global interaction policy first, source-specific `validate` second;
+      // the first refusal wins. A lane drop covers its civil day.
+      const policy = host.checkInteraction({
+        action: "external",
+        event: null,
+        start: column.date,
+        end: column.date.add({ days: 1 }),
+        resourceId,
+        allDay: true,
+      });
+      if (!policy.ok) {
+        return {
+          kind: "lane",
+          index,
+          target: { date: column.date, time: null, resourceId, allDay: true },
+          ok: false,
+          reason: policy.reason,
+        };
+      }
       const validity = externalTargetValidity(
         column.date,
         null,
@@ -1594,6 +1829,26 @@ export function renderTimeGrid({
     const column = columns[hit.column];
     const time = zonedDateTimeAt(column.date, start, timeZone);
     const resourceId = column.resource?.id ?? null;
+    // Same chain as the lane: global policy, then source `validate`.
+    const policy = host.checkInteraction({
+      action: "external",
+      event: null,
+      start: time,
+      end: time.add({ minutes: duration }),
+      resourceId,
+    });
+    if (!policy.ok) {
+      return {
+        kind: "grid",
+        index: hit.column,
+        start,
+        end,
+        time,
+        target: { date: column.date, time, resourceId, allDay: false },
+        ok: false,
+        reason: policy.reason,
+      };
+    }
     const validity = externalTargetValidity(
       column.date,
       time,
