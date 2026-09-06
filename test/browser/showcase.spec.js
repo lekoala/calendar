@@ -2,8 +2,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 import {
   anchorDate,
-  emptyDayFrom,
   closePanel,
+  emptyDayFrom,
   flushRender,
   gotoDate,
   openDayFrom,

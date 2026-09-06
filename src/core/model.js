@@ -43,6 +43,7 @@ import { Temporal } from "temporal-polyfill";
  * @property {string} [title]
  * @property {boolean} [selectable]
  * @property {boolean} [droppable]
+ * @property {string} [groupId] id of the single-level visual group this resource belongs to
  * @property {string[]} [classNames]
  * @property {Record<string, unknown>} [extendedProps]
  */
@@ -173,6 +174,7 @@ export function isResizable(event, calendarEditable) {
  * @property {string} [title]
  * @property {boolean} [selectable]
  * @property {boolean} [droppable]
+ * @property {string} [groupId]
  * @property {string[]} [classNames]
  * @property {Record<string, unknown>} [extendedProps]
  */
@@ -185,15 +187,51 @@ export function normalizeResource(resource) {
   if (!resource || resource.id == null) {
     throw new TypeError("Resource requires id");
   }
-  const { classNames, extendedProps, ...rest } = resource;
+  const { classNames, extendedProps, groupId, ...rest } = resource;
   return /** @type {NormalizedResource} */ ({
     title: String(resource.id),
     selectable: true,
     droppable: true,
     ...rest,
+    ...(groupId == null ? {} : { groupId: String(groupId) }),
     id: String(resource.id),
     classNames: Array.from(classNames ?? []),
     extendedProps: { ...(extendedProps ?? {}) },
+  });
+}
+
+/**
+ * One-level visual resource grouping. Grouping is ordering and labels only:
+ * the group never filters, selects or constrains its members, and it has no
+ * children by design — one level is the whole contract.
+ *
+ * @typedef {object} CalendarResourceGroup
+ * @property {string} id
+ * @property {string} [title]
+ */
+
+/**
+ * @typedef {Required<Pick<CalendarResourceGroup, "id" | "title">> & CalendarResourceGroup} NormalizedResourceGroup
+ */
+
+/**
+ * @typedef {object} ResourceGroupInput
+ * @property {unknown} [id]
+ * @property {string} [title]
+ */
+
+/**
+ * @param {ResourceGroupInput} resourceGroup
+ * @returns {NormalizedResourceGroup}
+ */
+export function normalizeResourceGroup(resourceGroup) {
+  if (!resourceGroup || resourceGroup.id == null) {
+    throw new TypeError("Resource group requires id");
+  }
+  return /** @type {NormalizedResourceGroup} */ ({
+    ...resourceGroup,
+    id: String(resourceGroup.id),
+    title: String(resourceGroup.title ?? resourceGroup.id),
   });
 }
 

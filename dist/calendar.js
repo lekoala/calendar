@@ -3993,15 +3993,26 @@
     if (!resource || resource.id == null) {
       throw new TypeError("Resource requires id");
     }
-    const { classNames, extendedProps, ...rest } = resource;
+    const { classNames, extendedProps, groupId, ...rest } = resource;
     return {
       title: String(resource.id),
       selectable: true,
       droppable: true,
       ...rest,
+      ...groupId == null ? {} : { groupId: String(groupId) },
       id: String(resource.id),
       classNames: Array.from(classNames ?? []),
       extendedProps: { ...extendedProps ?? {} }
+    };
+  }
+  function normalizeResourceGroup(resourceGroup) {
+    if (!resourceGroup || resourceGroup.id == null) {
+      throw new TypeError("Resource group requires id");
+    }
+    return {
+      ...resourceGroup,
+      id: String(resourceGroup.id),
+      title: String(resourceGroup.title ?? resourceGroup.id)
     };
   }
   function normalizeBackground(background) {
@@ -4562,6 +4573,23 @@
   function getResourceColumns(resources, dates) {
     return resources.flatMap((resource) => dates.map((date) => ({ date, resource })));
   }
+  function groupResources(resources, resourceGroups = []) {
+    const seen = new Set;
+    const sections = [];
+    for (const group of resourceGroups) {
+      const id = String(group.id);
+      if (seen.has(id))
+        continue;
+      seen.add(id);
+      const members = resources.filter((resource) => resource.groupId != null && String(resource.groupId) === id);
+      if (members.length > 0)
+        sections.push({ group, resources: members });
+    }
+    const leftover = resources.filter((resource) => resource.groupId == null || !seen.has(String(resource.groupId)));
+    if (leftover.length > 0)
+      sections.push({ group: null, resources: leftover });
+    return sections;
+  }
   function eventBelongsToColumn(event, column) {
     if (!column.resource)
       return true;
@@ -4618,6 +4646,7 @@
     dates,
     resources,
     view = "week",
+    resourceGroups,
     events,
     backgrounds,
     options,
@@ -4626,15 +4655,44 @@
     eventContent,
     dayHeaderContent,
     resourceHeaderContent,
+    resourceGroupContent,
     slotLabelContent
   }) {
     const fragment = document.createDocumentFragment();
     const locale = options.locale;
     const labels = options.labels ?? DEFAULT_LABELS;
     const resourceView = isResourceView(view);
-    const columns = resourceView ? getResourceColumns(resources, dates) : getTimeGridColumns(dates);
+    const sections = resourceView ? groupResources(resources, resourceGroups) : [];
+    const orderedResources = resourceView && sections.length > 0 ? sections.flatMap((section) => section.resources) : resources;
+    const columns = resourceView ? getResourceColumns(orderedResources, dates) : getTimeGridColumns(dates);
     const gridTemplate = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
     if (resourceView) {
+      const declaredSections = sections.filter((section) => section.group != null);
+      if (declaredSections.length > 0) {
+        const groupRow = document.createElement("div");
+        groupRow.className = "cv-group-row";
+        groupRow.style.gridTemplateColumns = gridTemplate;
+        const corner = document.createElement("div");
+        corner.className = "cv-group-corner";
+        corner.setAttribute("aria-hidden", "true");
+        groupRow.append(corner);
+        for (const section of declaredSections) {
+          const group = section.group;
+          const header = document.createElement("div");
+          header.className = "cv-group-header";
+          header.dataset.groupId = group.id;
+          header.style.gridColumn = `span ${Math.max(1, section.resources.length * dates.length)}`;
+          const custom = resourceGroupContent?.({ group, resources: section.resources, element: header });
+          if (custom instanceof Node)
+            header.append(custom);
+          else if (custom != null)
+            header.textContent = String(custom);
+          else
+            header.textContent = group.title ?? group.id;
+          groupRow.append(header);
+        }
+        fragment.append(groupRow);
+      }
       const resourceRow = document.createElement("div");
       resourceRow.className = "cv-resource-row";
       resourceRow.style.gridTemplateColumns = gridTemplate;
@@ -4642,7 +4700,7 @@
       corner.className = "cv-resource-corner";
       corner.setAttribute("aria-hidden", "true");
       resourceRow.append(corner);
-      for (const resource of resources) {
+      for (const resource of orderedResources) {
         const header = document.createElement("div");
         header.className = "cv-resource-header";
         header.dataset.resourceId = resource.id;
@@ -6108,6 +6166,7 @@
     static dates = dates;
     #events = [];
     #resources = [];
+    #resourceGroups = [];
     #backgrounds = [];
     #externalDrops = new Map;
     #dragExternal = null;
@@ -6180,6 +6239,13 @@
     }
     set resources(value) {
       this.#resources = Array.from(value ?? [], normalizeResource);
+      this.#queueRender();
+    }
+    get resourceGroups() {
+      return [...this.#resourceGroups];
+    }
+    set resourceGroups(value) {
+      this.#resourceGroups = Array.from(value ?? [], normalizeResourceGroup);
       this.#queueRender();
     }
     get backgrounds() {
@@ -6721,6 +6787,7 @@
         scroller.append(renderTimeGrid({
           dates: dates2,
           resources,
+          resourceGroups: this.#resourceGroups,
           view: this.view,
           events: this.#events,
           backgrounds: this.#backgrounds,
@@ -6744,6 +6811,7 @@
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,
           resourceHeaderContent: this.#config.resourceHeaderContent,
+          resourceGroupContent: this.#config.resourceGroupContent,
           slotLabelContent: this.#config.slotLabelContent
         }));
       }

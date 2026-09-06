@@ -49,6 +49,7 @@ export type CalendarConfig = {
     eventContent?: (info: object) => unknown;
     dayHeaderContent?: (info: object) => unknown;
     resourceHeaderContent?: (info: object) => unknown;
+    resourceGroupContent?: (info: object) => unknown;
     slotLabelContent?: (info: object) => unknown;
     moreLinkContent?: (info: object) => unknown;
     /**
@@ -190,6 +191,9 @@ export declare class CalendarViewElement extends HTMLElement {
     get resources(): import("./core/model.js").ResourceInput[] | null | undefined;
     /** @param {import("./core/model.js").ResourceInput[] | null | undefined} value */
     set resources(value: import("./core/model.js").ResourceInput[] | null | undefined);
+    get resourceGroups(): import("./core/model.js").ResourceGroupInput[] | null | undefined;
+    /** @param {import("./core/model.js").ResourceGroupInput[] | null | undefined} value */
+    set resourceGroups(value: import("./core/model.js").ResourceGroupInput[] | null | undefined);
     get backgrounds(): import("./core/model.js").BackgroundInput[] | null | undefined;
     /** @param {import("./core/model.js").BackgroundInput[] | null | undefined} value */
     set backgrounds(value: import("./core/model.js").BackgroundInput[] | null | undefined);

@@ -18,6 +18,7 @@ import {
   eventBelongsToColumn,
   getResourceColumns,
   getTimeGridColumns,
+  groupResources,
 } from "../core/resources.js";
 import {
   describeEvent,
@@ -101,6 +102,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @param {Temporal.PlainDate[]} input.dates
  * @param {import("../core/model.js").CalendarResource[]} input.resources
  * @param {string} [input.view] view name; resource columns derive only when it is a resource view
+ * @param {import("../core/model.js").CalendarResourceGroup[]} [input.resourceGroups] one-level visual grouping; group order wins over the `resources` array order
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {import("../core/model.js").NormalizedBackground[]} input.backgrounds
  * @param {TimeGridOptions} input.options
@@ -109,6 +111,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
  * @param {(info: object) => unknown} [input.resourceHeaderContent]
+ * @param {(info: object) => unknown} [input.resourceGroupContent]
  * @param {(info: object) => unknown} [input.slotLabelContent]
  * @returns {DocumentFragment}
  */
@@ -116,6 +119,7 @@ export function renderTimeGrid({
   dates,
   resources,
   view = "week",
+  resourceGroups,
   events,
   backgrounds,
   options,
@@ -124,6 +128,7 @@ export function renderTimeGrid({
   eventContent,
   dayHeaderContent,
   resourceHeaderContent,
+  resourceGroupContent,
   slotLabelContent,
 }) {
   const fragment = document.createDocumentFragment();
@@ -137,14 +142,47 @@ export function renderTimeGrid({
   // solo renders one column per date, resource views render resource x dates
   // (possibly zero columns when no resource is selected).
   const resourceView = isResourceView(view);
-  const columns = resourceView ? getResourceColumns(resources, dates) : getTimeGridColumns(dates);
+  // Grouping is a visual derivation, never canonical state: sections and the
+  // ordered resource list are computed once here and consumed by both the
+  // group/resource rows and the column list, so headers and hit testing
+  // always agree on the rendered order.
+  const sections = resourceView ? groupResources(resources, resourceGroups) : [];
+  const orderedResources =
+    resourceView && sections.length > 0 ? sections.flatMap((section) => section.resources) : resources;
+  const columns = resourceView ? getResourceColumns(orderedResources, dates) : getTimeGridColumns(dates);
   // One axis track plus one per date column, so the all-day lane can mirror
   // the exact same tracks when it spans them.
   const gridTemplate = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
 
-  // Grouped resource header row: one header per resource spanning its date
-  // columns. Solo views render no resource row at all.
+  // Grouped resource headers row: one header per group spanning its member
+  // columns, above the resource row. Rendered only when at least one real
+  // (non-empty) group exists — ungrouped trailing columns get no header, and
+  // `resourceGroups` configured with no matching resource reserves no space.
+  // Solo views render no group or resource row at all.
   if (resourceView) {
+    const declaredSections = sections.filter((section) => section.group != null);
+    if (declaredSections.length > 0) {
+      const groupRow = document.createElement("div");
+      groupRow.className = "cv-group-row";
+      groupRow.style.gridTemplateColumns = gridTemplate;
+      const corner = document.createElement("div");
+      corner.className = "cv-group-corner";
+      corner.setAttribute("aria-hidden", "true");
+      groupRow.append(corner);
+      for (const section of declaredSections) {
+        const group = /** @type {{ id: string, title?: string }} */ (section.group);
+        const header = document.createElement("div");
+        header.className = "cv-group-header";
+        header.dataset.groupId = group.id;
+        header.style.gridColumn = `span ${Math.max(1, section.resources.length * dates.length)}`;
+        const custom = resourceGroupContent?.({ group, resources: section.resources, element: header });
+        if (custom instanceof Node) header.append(custom);
+        else if (custom != null) header.textContent = String(custom);
+        else header.textContent = group.title ?? group.id;
+        groupRow.append(header);
+      }
+      fragment.append(groupRow);
+    }
     const resourceRow = document.createElement("div");
     resourceRow.className = "cv-resource-row";
     resourceRow.style.gridTemplateColumns = gridTemplate;
@@ -152,7 +190,7 @@ export function renderTimeGrid({
     corner.className = "cv-resource-corner";
     corner.setAttribute("aria-hidden", "true");
     resourceRow.append(corner);
-    for (const resource of resources) {
+    for (const resource of orderedResources) {
       const header = document.createElement("div");
       header.className = "cv-resource-header";
       header.dataset.resourceId = resource.id;

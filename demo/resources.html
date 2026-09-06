@@ -10,7 +10,7 @@
 </head>
 <body>
 <h1>Resource time grid</h1>
-<p>Acceptance fixtures: grouped <code>resource → dates</code> headers, one column per resource and day. Columns keep a minimum width and scroll horizontally; resources are never hidden automatically.</p>
+<p>Acceptance fixtures: grouped <code>resource → dates</code> headers, one column per resource and day. Columns keep a minimum width and scroll horizontally; resources are never hidden automatically. resourceGroups demo M16: rooms carry a suite/hall <code>groupId</code>.</p>
 <nav>
   <button type="button" data-fixture="1x7">1 × 7</button>
   <button type="button" data-fixture="2x3">2 × 3</button>
@@ -34,8 +34,12 @@
     },
     "2x3": () => {
       calendar.resources = [
-        { id: "room-a", title: "Room A" },
-        { id: "room-b", title: "Room B" },
+        { id: "room-a", title: "Room A", groupId: "suite" },
+        { id: "room-b", title: "Room B", groupId: "hall" },
+      ];
+      calendar.resourceGroups = [
+        { id: "suite", title: "Suite" },
+        { id: "hall", title: "Hall" },
       ];
       calendar.setView("resourceThreeDays");
     },

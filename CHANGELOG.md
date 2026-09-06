@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.2.0 — 2026
+
+The planned 0.2 operational-trace (`docs/ROADMAP.md`, milestones 10–16). Each
+entry consumes the previous one; no new interaction engine, clock service,
+query subsystem, resource tree or source cache was added.
+
+### Added
+
+* A single private `afterRender` lifecycle primitive, so focus, live-region
+  announcements and the reveal highlight land once the pending render has
+  inserted its subtree, instead of nesting `requestAnimationFrame` dances.
+* Live temporal state: rendered event nodes carry
+  `data-temporal-state="past|current|future"`, content hooks receive
+  `info.temporalState`, and the state ages with a single one-shot timer to
+  the next visible event boundary — no clock service or periodic tick.
+* `getRangeContext({ start, end, resourceId })` as the one definition of
+  range context, delivered by `calendar:select`, `eventmove`, `eventresize`
+  and `externaldrop`.
+* `configure({ interactionPolicy })`: a synchronous permission gate
+  (`action ∈ move | resize | select`, plus `external`) at gesture entry and
+  on snapped-target change, sharing one evaluation path with the external
+  drop `validate`. Programmatic mutations never consult it.
+* `revealEvent(id, { focus, highlight })` for in-range reveals and an
+  awaitable `reveal({ eventId, date | start })` that navigates once, then
+  focuses/highlights — the search-result navigation primitive.
+* `previewRange({ start, end, resourceId })` / `clearPreview()`: a
+  read-only, `pointer-events: none` render overlay for application-proposed
+  ranges, painted with the same slice/geometry primitives as events.
+* One-level resource grouping (`resourceGroups`, `resource.groupId`,
+  `resourceGroupContent`): a group-header row above the resource headers,
+  group order winning over the `resources` array order, ungrouped resources
+  trailing without a header, and the first duplicate group id winning.
+  Hierarchy/expand/collapse stays out of scope by design.
+
+### Notes
+
+The 0.2 concurrency matrix (pending → commit/revert/supersede, realtime echo
+mid-pending, 409-style conflicts, no stale render) remains the milestone-§19
+exit condition, carried forward as explicitly planned work.
+
 ## 0.1.0 — 2026
 
 First public release of the calendar.

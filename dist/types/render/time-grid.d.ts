@@ -174,6 +174,7 @@ export type ActiveSelection = {
  * @param {Temporal.PlainDate[]} input.dates
  * @param {import("../core/model.js").CalendarResource[]} input.resources
  * @param {string} [input.view] view name; resource columns derive only when it is a resource view
+ * @param {import("../core/model.js").CalendarResourceGroup[]} [input.resourceGroups] one-level visual grouping; group order wins over the `resources` array order
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {import("../core/model.js").NormalizedBackground[]} input.backgrounds
  * @param {TimeGridOptions} input.options
@@ -182,13 +183,15 @@ export type ActiveSelection = {
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
  * @param {(info: object) => unknown} [input.resourceHeaderContent]
+ * @param {(info: object) => unknown} [input.resourceGroupContent]
  * @param {(info: object) => unknown} [input.slotLabelContent]
  * @returns {DocumentFragment}
  */
-export declare function renderTimeGrid({ dates, resources, view, events, backgrounds, options, now, host, eventContent, dayHeaderContent, resourceHeaderContent, slotLabelContent, }: {
+export declare function renderTimeGrid({ dates, resources, view, resourceGroups, events, backgrounds, options, now, host, eventContent, dayHeaderContent, resourceHeaderContent, resourceGroupContent, slotLabelContent, }: {
     dates: Temporal.PlainDate[];
     resources: import("../core/model.js").CalendarResource[];
     view?: string;
+    resourceGroups?: import("../core/model.js").CalendarResourceGroup[];
     events: import("../core/model.js").NormalizedEvent[];
     backgrounds: import("../core/model.js").NormalizedBackground[];
     options: TimeGridOptions;
@@ -197,6 +200,7 @@ export declare function renderTimeGrid({ dates, resources, view, events, backgro
     eventContent?: (info: object) => unknown;
     dayHeaderContent?: (info: object) => unknown;
     resourceHeaderContent?: (info: object) => unknown;
+    resourceGroupContent?: (info: object) => unknown;
     slotLabelContent?: (info: object) => unknown;
 }): DocumentFragment;
 //# sourceMappingURL=time-grid.d.ts.map

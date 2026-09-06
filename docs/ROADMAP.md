@@ -2,7 +2,7 @@
 
 The milestones below are the construction trace of the project: each lists
 what landed, in the order it landed. 0.1 is feature-complete for its scope.
-Milestones 10–16 are the planned 0.2 trace, driven by the use cases in
+Milestones 10–16 are the shipped 0.2 trace, driven by the use cases in
 `docs/USE_CASES.md` (§8, §14–§19); the deferred and candidate lists at the
 bottom are revisit-only-with-a-use-case entries.
 
@@ -259,19 +259,30 @@ own layout math or a lifecycle distinct from render state, stop and
 re-scope. Met: no new layout math, no renderer awareness in other views,
 one state slot and one seam (`getPreview()`).
 
-## Milestone 16 — resource grouping, one level
+## Milestone 16 — resource grouping, one level (shipped)
 
 - `calendar.resourceGroups = [{ id, title }]` plus `resource.groupId`; a
   group-header row above `resourceHeaderContent`; array order defines group
-  order, the `resources` array defines order within a group;
+  order, the `resources` array defines order within a group, and resources
+  with a missing/unknown `groupId` trail in an ungrouped block with no
+  header — the first declaration of a group id wins, so a resource is never
+  rendered twice;
 - `resourceGroupContent({ group, resources, element })` joins the
   content-hook family;
-- group filtering stays application-side over `resourceIds`;
-- an architectural test prevents regression into `parentId`, nested groups,
-  expand/collapse or tree state: grouping lands in 0.2, resource
-  hierarchy/tree is **not planned**. Use case §18.
+- grouping is a visual derivation in the time-grid only: `calendar.resources`
+  keeps its application order, group filtering stays application-side over
+  `resourceIds`, and hit testing/slicing follow the reordered columns
+  exactly like headers do;
+- presence is honest: a real `.cv-group-row` (`.cv-group-row ~ .cv-grid`)
+  drives the sticky offsets, so `resourceGroups` configured with no matching
+  resource reserves no header space and a solo view is not affected;
+- an architectural test keeps the one-level contract: `parentId`/children
+  payloads are inert by lack of hierarchy mechanics, not by name blacklist.
+  Use case §18.
 
-Lean guardrail: hard one-level limit. If nesting, collapse or tree-grid
+Lean guardrail: hard one-level limit, met. `groupResources()` is a single
+pure helper, the renderer derives `sections`/`orderedResources` once, and no
+interaction, store or source code changed. If nesting, collapse or tree-grid
 requirements appear, that is the signal to stop and re-scope, not to extend
 the milestone.
 

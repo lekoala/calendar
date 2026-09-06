@@ -55,6 +55,45 @@ export function getResourceColumns(resources, dates) {
 }
 
 /**
+ * One-level resource grouping: labels and order only.
+ *
+ * Declared group order defines the section order, the `resources` array
+ * defines the order within a section, and the first declaration of an id
+ * wins — later duplicates are ignored. Resources without a `groupId`, or
+ * whose group id was not declared, collect in a trailing `group: null`
+ * section so nothing is ever hidden or duplicated. A declared group with no
+ * members produces no section.
+ *
+ * Principles: a declared group id that is never used only claims nothing,
+ * and an unknown `resource.groupId` only makes that resource trailing. The
+ * helper reads nothing else — no nesting, no children, no collapse.
+ *
+ * @param {Array<import("./model.js").CalendarResource>} resources
+ * @param {Array<{ id: string, title?: string }>} [resourceGroups]
+ * @returns {Array<{ group: { id: string, title?: string } | null, resources: Array<import("./model.js").CalendarResource> }>}
+ */
+export function groupResources(resources, resourceGroups = []) {
+  /** @type {Set<string>} */
+  const seen = new Set();
+  /** @type {Array<{ group: { id: string, title?: string } | null, resources: Array<import("./model.js").CalendarResource> }>} */
+  const sections = [];
+  for (const group of resourceGroups) {
+    const id = String(group.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const members = resources.filter(
+      (resource) => resource.groupId != null && String(resource.groupId) === id,
+    );
+    if (members.length > 0) sections.push({ group, resources: members });
+  }
+  const leftover = resources.filter(
+    (resource) => resource.groupId == null || !seen.has(String(resource.groupId)),
+  );
+  if (leftover.length > 0) sections.push({ group: null, resources: leftover });
+  return sections;
+}
+
+/**
  * An event belongs to a column when the resource matches. Solo columns
  * (`resource: null`) accept every event; resource columns require an exact
  * `resourceId` match, so unassigned events stay hidden in resource grids.

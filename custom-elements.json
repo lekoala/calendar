@@ -75,6 +75,14 @@
             },
             {
               "kind": "getter",
+              "name": "resourceGroups"
+            },
+            {
+              "kind": "setter",
+              "name": "resourceGroups"
+            },
+            {
+              "kind": "getter",
               "name": "backgrounds"
             },
             {

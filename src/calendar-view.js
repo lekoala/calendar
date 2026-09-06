@@ -18,6 +18,7 @@ import {
   normalizeEvent,
   normalizeRangeBound,
   normalizeResource,
+  normalizeResourceGroup,
   sameRange,
 } from "./core/model.js";
 import { queryOverlaps, queryRangeContext } from "./core/overlaps.js";
@@ -56,6 +57,7 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {(info: object) => unknown} [eventContent]
  * @property {(info: object) => unknown} [dayHeaderContent]
  * @property {(info: object) => unknown} [resourceHeaderContent]
+ * @property {(info: object) => unknown} [resourceGroupContent]
  * @property {(info: object) => unknown} [slotLabelContent]
  * @property {(info: object) => unknown} [moreLinkContent]
  * @property {(decision: InteractionPolicyInput) => boolean | string | null | undefined} [interactionPolicy] synchronous gate for user-originated interactions (pointer, keyboard, external drop, selection); programmatic mutations never consult it
@@ -163,6 +165,8 @@ export class CalendarViewElement extends HTMLElement {
   #events = [];
   /** @type {Array<import("./core/model.js").NormalizedResource>} */
   #resources = [];
+  /** @type {Array<import("./core/model.js").NormalizedResourceGroup>} */
+  #resourceGroups = [];
   /** @type {Array<import("./core/model.js").NormalizedBackground>} */
   #backgrounds = [];
   /**
@@ -292,6 +296,16 @@ export class CalendarViewElement extends HTMLElement {
   /** @param {import("./core/model.js").ResourceInput[] | null | undefined} value */
   set resources(value) {
     this.#resources = Array.from(value ?? [], normalizeResource);
+    this.#queueRender();
+  }
+
+  get resourceGroups() {
+    return [...this.#resourceGroups];
+  }
+
+  /** @param {import("./core/model.js").ResourceGroupInput[] | null | undefined} value */
+  set resourceGroups(value) {
+    this.#resourceGroups = Array.from(value ?? [], normalizeResourceGroup);
     this.#queueRender();
   }
 
@@ -1195,6 +1209,7 @@ export class CalendarViewElement extends HTMLElement {
         renderTimeGrid({
           dates,
           resources,
+          resourceGroups: this.#resourceGroups,
           view: this.view,
           events: this.#events,
           backgrounds: this.#backgrounds,
@@ -1219,6 +1234,7 @@ export class CalendarViewElement extends HTMLElement {
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,
           resourceHeaderContent: this.#config.resourceHeaderContent,
+          resourceGroupContent: this.#config.resourceGroupContent,
           slotLabelContent: this.#config.slotLabelContent,
         }),
       );

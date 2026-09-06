@@ -61,14 +61,17 @@ A solo `timeGrid` with resources in state still renders date-only columns; a `re
 
 ### Grouped headers
 
-Resource views render two header rows:
+Resource views render up to three header rows, from top to bottom:
 
 ```text
-Room A (spans its date columns) | Room B (spans its date columns)
-Mon | Tue | Wed                 | Mon | Tue | Wed
+Suite (spans its room columns)        | Hall (spans its room columns)
+Room A         | Room B               | Room C
+Mon | Tue | Wed | Mon | Tue | Wed    | Mon | Tue | Wed
 ```
 
-`resourceHeaderContent()` runs once per resource; `dayHeaderContent()` runs once per date/resource column and renders only the date (resource context is passed through for hooks). Solo views render the day row only.
+- `resourceGroupContent({ group, resources, element })` runs once per non-empty group; `resourceHeaderContent({ resource, dates, element })` once per resource; `dayHeaderContent({ date, resource, element })` once per column.
+- Groups order the columns: `resourceGroups` array order wins, `resources` order holds inside a group. Resources with a missing/unknown `groupId` trail ungrouped with no group header, and a group without members renders no row.
+- Solo views render the day row only.
 
 ### Unassigned events and global backgrounds
 

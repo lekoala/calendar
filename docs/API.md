@@ -46,7 +46,7 @@ isResourceView(view)
 
 A `resourceTimeGrid` with no resources renders an explicit empty state.
 
-Resource views use grouped headers: `resourceHeaderContent({ resource, dates, element })` runs once per resource in a row spanning its date columns; `dayHeaderContent({ date, resource, element })` runs once per column.
+Resource views use grouped headers: a `resourceGroupContent({ group, resources, element })` row spans each group's member columns, then `resourceHeaderContent({ resource, dates, element })` runs once per resource in a row spanning its date columns; `dayHeaderContent({ date, resource, element })` runs once per column.
 
 ## Event model
 
@@ -119,12 +119,31 @@ Month and list render all-day events as their civil-day chips/rows already;
   title: "Resource A",
   selectable: true,
   droppable: true,
+  groupId: "suite",     // optional single-level visual group
   classNames: [],
   extendedProps: {}
 }
 ```
 
-Potential future fields: `groupId`, `order`, rendering metadata. Avoid hierarchy API until a concrete workflow exists.
+Potential future fields: `order`, rendering metadata. Avoid hierarchy API until a concrete workflow exists.
+
+## Resource groups
+
+One-level visual grouping for resource views. Groups label and order columns only: they never select, filter or constrain their members, so filtering stays application-side through `resourceIds`.
+
+```js
+calendar.resourceGroups = [
+  { id: "suite", title: "Suite" },
+  { id: "hall", title: "Hall" },
+];
+```
+
+- `resource.groupId` binds a resource to a group; an id not declared in `resourceGroups` or a missing `groupId` trails in an ungrouped block with no group header.
+- Group order is the `resourceGroups` array order, and the `resources` array order is preserved within a group. Columns are ordered accordingly in resource views; `calendar.resources` itself keeps the application-provided order.
+- The first declaration of a group id wins; later duplicates are ignored, so a resource is never rendered twice.
+- A declared group with no matching resource renders nothing.
+- `resourceGroupContent({ group, resources, element })` joins the content-hook family, once per rendered (non-empty) group.
+- Single level by design: no nesting, no expand/collapse, no tree grid. `resourceGroups` configured while a solo view is active are inert.
 
 ## Background model
 
@@ -640,7 +659,7 @@ eventContent({ event, date, resource, temporalState, element }) {
 }
 ```
 
-Hooks: `eventContent`, `dayHeaderContent`, `resourceHeaderContent`, `slotLabelContent`, `moreLinkContent`. Do not add further hooks before a use case requires them. Do not add `innerHTML`/`allowHtml` configuration.
+Hooks: `eventContent`, `dayHeaderContent`, `resourceHeaderContent`, `resourceGroupContent`, `slotLabelContent`, `moreLinkContent`. Do not add further hooks before a use case requires them. Do not add `innerHTML`/`allowHtml` configuration.
 
 Every rendered event node carries `data-temporal-state="past|current|future"`, derived from its canonical range against the render's `now` (`end <= now` is past, `start <= now < end` is current). `eventContent` receives the same value as `info.temporalState`. The fact ages live without refetch: the render arms a single one-shot timer to the next visible start/end boundary, which triggers the next render. The core never derives `editable`/`movable`/`resizable` from it; policy stays application-side. Style the fact from the application with plain attribute selectors (`[data-temporal-state="past"]`); the core ships no temporal styling.
 

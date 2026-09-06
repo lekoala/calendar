@@ -133,11 +133,10 @@ export async function setView(page, view) {
  */
 export async function emptyDayFrom(page, date) {
   const busy = new Set(
-    await page.evaluate(() =>
-      /** @type {any} */ ((document.querySelector("calendar-view")).events ?? []).map(
-        (/** @type {any} */ event) => String(event.start).slice(0, 10),
-      ),
-    ),
+    await page.evaluate(() => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      return (calendar.events ?? []).map((/** @type {any} */ event) => String(event.start).slice(0, 10));
+    }),
   );
   let cursor = openDayFrom(date);
   for (let guard = 0; guard < 400; guard += 1) {

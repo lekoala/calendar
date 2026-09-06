@@ -34,6 +34,10 @@ export type CalendarResource = {
     title?: string;
     selectable?: boolean;
     droppable?: boolean;
+    /**
+     * id of the single-level visual group this resource belongs to
+     */
+    groupId?: string;
     classNames?: string[];
     extendedProps?: Record<string, unknown>;
 };
@@ -89,6 +93,7 @@ export type CalendarBackground = {
  * @property {string} [title]
  * @property {boolean} [selectable]
  * @property {boolean} [droppable]
+ * @property {string} [groupId] id of the single-level visual group this resource belongs to
  * @property {string[]} [classNames]
  * @property {Record<string, unknown>} [extendedProps]
  */
@@ -155,6 +160,7 @@ export type ResourceInput = {
     title?: string;
     selectable?: boolean;
     droppable?: boolean;
+    groupId?: string;
     classNames?: string[];
     extendedProps?: Record<string, unknown>;
 };
@@ -167,6 +173,7 @@ export type ResourceInput = {
  * @property {string} [title]
  * @property {boolean} [selectable]
  * @property {boolean} [droppable]
+ * @property {string} [groupId]
  * @property {string[]} [classNames]
  * @property {Record<string, unknown>} [extendedProps]
  */
@@ -175,6 +182,37 @@ export type ResourceInput = {
  * @returns {NormalizedResource}
  */
 export declare function normalizeResource(resource: ResourceInput): NormalizedResource;
+export type CalendarResourceGroup = {
+    id: string;
+    title?: string;
+};
+export type NormalizedResourceGroup = Required<Pick<CalendarResourceGroup, "id" | "title">> & CalendarResourceGroup;
+export type ResourceGroupInput = {
+    id?: unknown;
+    title?: string;
+};
+/**
+ * One-level visual resource grouping. Grouping is ordering and labels only:
+ * the group never filters, selects or constrains its members, and it has no
+ * children by design — one level is the whole contract.
+ *
+ * @typedef {object} CalendarResourceGroup
+ * @property {string} id
+ * @property {string} [title]
+ */
+/**
+ * @typedef {Required<Pick<CalendarResourceGroup, "id" | "title">> & CalendarResourceGroup} NormalizedResourceGroup
+ */
+/**
+ * @typedef {object} ResourceGroupInput
+ * @property {unknown} [id]
+ * @property {string} [title]
+ */
+/**
+ * @param {ResourceGroupInput} resourceGroup
+ * @returns {NormalizedResourceGroup}
+ */
+export declare function normalizeResourceGroup(resourceGroup: ResourceGroupInput): NormalizedResourceGroup;
 export type NormalizedBackground = Required<Pick<CalendarBackground, "id" | "allDay" | "classNames" | "extendedProps">> & CalendarBackground;
 export type BackgroundInput = {
     id?: unknown;
