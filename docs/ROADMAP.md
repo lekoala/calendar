@@ -117,20 +117,30 @@ Exit condition: a coherent starting point.
   `getEventById` / `moveEvent` / `addEvent`, `getEventOverlaps` as paste
   validation).
 
-0.2 milestones add seams and small pure helpers over the existing engine;
-none may grow a second interaction engine, a live-clock service, a query
-subsystem or a resource tree. Known debt (keyed reconciliation, consolidated
-pointer engine, source-range cache) stays refactor-only debt unless a
-milestone is explicitly scoped to it. Each milestone below carries a **lean
-guardrail** to re-evaluate at implementation time: if the work needs more
-than the guardrail allows, stop and re-scope instead of growing the core.
+0.2 adds **operational scheduling seams** over the existing rendering and
+interaction engines. Milestones may add small pure helpers and decision
+hooks; they must not introduce a new interaction engine, clock service,
+query subsystem, resource tree, source cache, or reconciliation strategy.
+Existing structural debt (keyed DOM reconciliation, the consolidated pointer
+engine, source-range caching) remains independent refactor work. Each
+milestone carries a **lean guardrail** to re-evaluate at implementation
+time: if the work needs more than the guardrail allows, stop and re-scope.
+
+The 0.2 trace is ordered so every milestone consumes the primitive of the
+previous one instead of inventing its own seam, in three blocks:
+
+| Block                | Milestones            | Purpose                                              |
+| -------------------- | --------------------- | ---------------------------------------------------- |
+| Lifecycle            | M10 + M11             | state, focus and now survive re-renders correctly    |
+| Interaction context  | M12 + M13 + M14 + M15 | where we act, in what context, if it is allowed, then reveal/preview |
+| Scheduling surface   | M16                   | multi-resource workday actually usable               |
 
 ## Milestone 10 — render seams
 
-- a single private `afterRender(callback)` seam executed once the pending
-  render has inserted its subtree, drained on `disconnectedCallback`; focus
-  and announcement work land on it instead of nesting
-  `requestAnimationFrame`;
+- a single private `#afterRender(callback)` lifecycle primitive executed
+  once the pending render has inserted its subtree, drained on
+  `disconnectedCallback`; focus and announcement work land on it instead of
+  nesting `requestAnimationFrame`;
 - `#announce` and `#refocusEvent` collapse their two-frame dance onto that
   seam (the `.cv-status` live region already survives `replaceChildren`); a
   separate cancellable announce frame where a11y timing demands it;
@@ -138,119 +148,139 @@ than the guardrail allows, stop and re-scope instead of growing the core.
   "Planned" — already implemented and browser-tested; `revealEvent` stays
   the only future entry until Milestone 14.
 
-Lean guardrail: pure refactor, net reduction in lines. The seam is one
-queued callback list drained on disconnect; if announce timing needs more
-than the after-render queue, keep it a single cancellable frame. No new
-machinery.
+Lean guardrail: `afterRender` is a private **lifecycle primitive, not a
+generic scheduler** — no retries, promises or priorities. Pure refactor,
+net reduction in lines; announce timing is at most one cancellable frame. No
+new machinery.
 
-## Milestone 11 — temporal state as an observed fact
+## Milestone 11 — temporal state + one-shot aging
 
-- rendered event nodes carry `data-temporal-state="past|current|future"`,
-  derived from `end <= now`, `start <= now < end`, `now < start`; content
-  hooks receive `info.isPast` / `info.isCurrent` / `info.isFuture`;
-- the fact recomputes as `now` advances without a refetch, so a long open
-  page ages correctly;
-- the core never derives `editable`/`movable`/`resizable` from it; policy
-  stays application-side (retroactive edit, lock-after-start,
+- rendered event nodes carry `data-temporal-state="past|current|future"`
+  and content hooks receive `info.temporalState`, derived from
+  `end <= now`, `start <= now < end`, `now < start` via a pure
+  `temporalState(start, end, now)` helper;
+- the fact ages live: the render schedules **one** `setTimeout` to the next
+  visible `start`/`end` boundary, fires `queueRender()`, and the next render
+  recomputes the following boundary; the timer is cancelled/replaced on every
+  render, on `disconnectedCallback`, and on refetch/navigation;
+- the core never derives `editable`/`movable`/`resizable` from the fact;
+  policy stays application-side (retroactive edit, lock-after-start,
   lock-after-close). Use case §14.
 
-Lean guardrail: one pure `temporalState(start, end, now)` helper reused by
-the renderers' existing `eventContent`/chip call sites; `now` is whatever
-the render already computes — never a global clock. Live boundary aging is
-at most a single `setTimeout` to the next `start`/`end` boundary, cancelled
-on disconnect. If a "now service" or timer-driven recompute is required to
-make it testable, the milestone is oversized.
+Lean guardrail: one pure helper + one render-derived, one-shot timer. No
+global clock, no periodic tick, no observable "now service" — `now` is
+whatever the render already computes. If implementing this needs a
+timer-driven recompute subsystem, the milestone is oversized.
 
-## Milestone 12 — dynamic interaction policy
+## Milestone 12 — range context
 
-- `configure({ interactionPolicy({ action, event?, target, now }) })`
-  returning `true | reason`, with `action ∈ move | resize | select`;
+- public primitive `getRangeContext({ start, end, resourceId })`:
+  `{ events: { overlapping: [...] }, backgrounds: { overlapping: [...],
+  covering: [...] } }` — `covering` fully wraps the range, `overlapping` is
+  a plain intersection;
+- one definition of "context", consumed everywhere: `calendar:select` /
+  `eventmove` / `eventresize` / `externaldrop` deliver `detail.context`,
+  and Milestones 13 and 15 read the same shape through the same primitive;
+- geometry only: the core never picks "the" background — interpreting
+  schedule vs blocker stays application-side. Use case §16.
+
+Lean guardrail: small pure helpers in the overlap module; context is computed
+at dispatch/commit time in `calendar-view.js` and attached to existing
+detail payloads — never recomputed per `pointermove`. Live feedback during a
+gesture reuses this primitive only when the logically snapped target changes
+(Milestone 13).
+
+## Milestone 13 — dynamic interaction policy
+
+- `configure({ interactionPolicy({ action, event, target, context, now }) })`
+  → `true | false | reason`, `action ∈ move | resize | select`; strictly
+  synchronous — server validation stays in the existing commit/revert path;
 - gates before the gesture (no resize handle, no drag start) and validates
-  the destination during the gesture with the existing
-  invalid-ghost/`data-reason` model;
+  the destination **when the snapped target changes** (existing hit/snap run
+  first, then resolve context and evaluate once) with the existing
+  invalid-ghost/`data-reason` visuals;
 - one evaluation path shared with `addExternalDrop`'s `validate`;
 - interaction is a permission: `moveEvent`/`resizeEvent`/`removeEvent`
   stay authoritative, so realtime/server removal of locked or past items is
   not blocked. Use case §15.
 
-Lean guardrail: one decision seam (`policy(action, event, target)` evaluated
-in `calendar-view.js`, `now` cached per render) with thin checks at the
-gesture entry points, reusing the existing `cv-invalid`/`data-reason`
-visuals. Non-goals while implementing: do not unify the pointer engines, do
-not import an `eventConstraint`/`businessHours` taxonomy. This is the
-milestone most at risk of a code monster; if the seam cannot stay a
-decision-only callback, stop and re-scope.
+Lean guardrail: M13 may add policy calls to existing interaction paths. It
+MUST NOT change pointer ownership, gesture state machines, hit testing or
+commit mechanics, and must not import an `eventConstraint`/`businessHours`
+taxonomy. One decision seam evaluated in `calendar-view.js` (`now` cached
+per render), thin checks at the gesture entry points.
 
-## Milestone 13 — range context
-
-- `getRangeContext({ start, end, resourceId })` →
-  `{ events, backgrounds: { covering, overlapping } }`;
-- `calendar:select` / `eventmove` / `eventresize` / `externaldrop` append
-  `backgrounds: { covering, overlapping }`, computed through the same
-  primitive;
-- geometry only: the core never picks "the" background — interpreting
-  schedule vs blocker stays application-side. Use case §16.
-
-Lean guardrail: small `covering`/`overlapping` helpers in the overlap
-module, context computed at dispatch/commit time in `calendar-view.js` and
-attached to the existing detail payloads — never recomputed per
-`pointermove`. If a gesture needs live feedback from this context, reuse the
-Milestone 12 policy seam instead of wiring context into the renderer.
-
-## Milestone 14 — reveal and programmatic preview
+## Milestone 14 — reveal
 
 - `revealEvent(id, { focus, highlight })` — in-range reveal with
   scroll-to-time, optional highlight and focus;
-- `reveal({ eventId, date, time, resourceId })` — out-of-range reveal for
-  search results: `gotoDate`, await the async source (stale guards
-  unchanged), then scroll/highlight/focus;
+- `reveal({ eventId, date, resourceId, start })` — out-of-range reveal for
+  search results: `gotoDate`, `await refetchEvents()` (stale guards
+  unchanged), `scrollToTime()`, then highlight/focus on the Milestone 10
+  `afterRender` queue;
+- the search result provides the anchor, so the calendar knows where to go —
+  **no generic data waiter** and no scanning of unseen periods. Use case §8.
+
+Lean guardrail: composes existing pieces only (`gotoDate`, async
+`refetchEvents()`, `scrollToTime()`, `afterRender`). No load-tracking
+subsystem, no retry logic.
+
+## Milestone 15 — previewRange
+
 - `previewRange({ start, end, resourceId })` + `clearPreview()` — evidence
-  for application-proposed ranges, `pointer-events: none`, independent of
-  the pointer select ghost. Use cases §8, §17.
+  for application-proposed ranges (server slot proposals),
+  `pointer-events: none`, independent of the pointer select ghost;
+- the preview is a **render state, not a synthetic drag**: private state in
+  `calendar-view.js`, the renderer reads `host.getPreview()`, painted with
+  the same geometry primitive as the existing ghosts;
+- pairing with reveal (Milestone 14) supports the navigate → preview →
+  confirm workflow. Use case §17.
 
-Lean guardrail: reuse `gotoDate`/`await refetchEvents()`/`scrollToTime()`
-and the proven external-drop host seam — the preview mirrors
-`getExternalDrag` as a read-only `getPreview` ghost painted with the
-existing geometry helpers; no new layout or load-tracking subsystem. Focus
-and highlight land on the Milestone 10 `afterRender` queue.
+Lean guardrail: shares the host-seam shape with external drop but stays a
+read-only render overlay reusing existing geometry helpers. If it needs its
+own layout math or a lifecycle distinct from render state, stop and
+re-scope.
 
-## Milestone 15 — resource grouping, one level
+## Milestone 16 — resource grouping, one level
 
 - `calendar.resourceGroups = [{ id, title }]` plus `resource.groupId`; a
   group-header row above `resourceHeaderContent`; array order defines group
   order, the `resources` array defines order within a group;
 - `resourceGroupContent({ group, resources, element })` joins the
   content-hook family;
-- no nesting, expand/collapse or tree grid; grouping and hierarchy stay
-  separate concerns — hierarchy remains a revisit-only candidate; group
-  filtering stays application-side over `resourceIds`. Use case §18.
+- group filtering stays application-side over `resourceIds`;
+- an architectural test prevents regression into `parentId`, nested groups,
+  expand/collapse or tree state: grouping lands in 0.2, resource
+  hierarchy/tree is **not planned**. Use case §18.
 
-Lean guardrail: hard one-level limit — `groupId` normalized in the model, a
-group-header row over the existing resource headers, one
-`resourceGroupContent` hook. If nesting, collapse or tree-grid requirements
-appear, that is the signal to stop and re-scope, not to extend the
-milestone.
+Lean guardrail: hard one-level limit. If nesting, collapse or tree-grid
+requirements appear, that is the signal to stop and re-scope, not to extend
+the milestone.
 
-## Milestone 16 — view duration + concurrency hardening
+## 0.2.x / later — view duration (`dayCount`)
 
-- a generic day count for time grids (`dayCount`/`duration`) replacing the
-  closed `threeDays`/`resourceThreeDays` catalogue without new names; week
-  views keep week anchoring, rolling views keep filling visible days
-  (`getVisibleDates`/`stepAnchor` semantics unchanged);
-- hardening, not new API: browser tests for pending/conflict/revert, a
-  second mutation while the first is in flight, and a realtime echo during
-  a pending commit — over the existing `revision`/`mutationId`/`revert()`
-  contract. Use case §19.
+Not in the 0.2 core: lower value for the immediate scheduling goal, and a
+few semantics to settle first. When taken:
 
-Lean guardrail: a single `dayCount`/`duration` option overriding the
-time-grid view names; the concurrency matrix is browser tests only — zero
-net core surface. If arbitrary named views or a view-plugin system start to
-look attractive, that is the signal to pause and re-scope.
+- `dayCount`/`duration` is an **override** of the existing time-grid views;
+  `threeDays`/`resourceThreeDays`/`week` remain the public presets and are
+  not replaced in 0.x;
+- open questions to resolve before implementing: does `view="week"` +
+  `dayCount=4` stay a week? what does `next()` advance by? with
+  `hiddenDays`, does `dayCount=3` mean 3 civil or 3 visible days? and does
+  the option deserve a documented contract rather than a shortcut inside
+  `getVisibleDates()`?
+
+## 0.2 exit conditions
+
+Cross-cutting, tests only (zero net core surface): the concurrency matrix
+over the existing `revision`/`mutationId`/`revert()` contract — pending →
+commit, pending → revert, pending → superseded move, realtime echo during a
+pending commit, 409-style conflict, no stale render. Use case §19.
 
 ## Post-0.x candidates (revisit only with a use case)
 
 - generic mini-calendar package;
-- resource hierarchy (grouping landed in Milestone 15);
 - optional recurrence adapter;
 - framework adapters;
 - print/export helpers;
@@ -268,7 +298,7 @@ neutral mini-month state when no resource is active, a policy-threshold
 "nearly full" marker and per-day accessible names for the mini-month.
 
 Deliberately never planned: virtualization, Gantt, resource
-timeline/tree-grid.
+hierarchy/timeline/tree-grid.
 
 ## Audited and not ours
 

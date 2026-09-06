@@ -303,13 +303,15 @@ the model: `editable`/`movable`/`resizable` remain application-owned.
 
 Core stress:
 
-- `data-temporal-state="past|current|future"` computed from canonical ranges
-  and `now`: `end <= now` → `past`, `start <= now < end` → `current`,
-  `now < start` → `future`;
-- `info.isPast` / `info.isCurrent` / `info.isFuture` in content hooks;
-- the fact recomputes as `now` advances without a source refetch, so a long
-  open page stays correct;
-- no write to `editable`/`movable`/`resizable` from the core.
+- `data-temporal-state="past|current|future"` on rendered nodes and
+  `info.temporalState` in content hooks (the single contract), derived from
+  canonical ranges and `now`: `end <= now` → `past`, `start <= now < end` →
+  `current`, `now < start` → `future`;
+- the fact ages live without a source refetch: one one-shot timer to the
+  next visible `start`/`end` boundary triggers the next render, which
+  recomputes both the state and the following boundary;
+- no write to `editable`/`movable`/`resizable` from the core; boolean
+  conveniences, if any, stay derived from the same single value.
 
 ## 15. Guarded interaction
 
@@ -326,10 +328,15 @@ preventing the dispatch at commit.
 
 Core stress:
 
-- `interactionPolicy({ action, event?, target, now })` → `true | reason`,
-  with `action ∈ move | resize | select`;
-- gates handle availability, drag start and the destination during the
-  gesture, using the existing invalid-ghost/`data-reason` model;
+- `interactionPolicy({ action, event, target, context, now })` →
+  `true | false | reason`, with `action ∈ move | resize | select`, strictly
+  synchronous;
+- gates handle availability and drag start before the gesture, and validates
+  the destination when the logically snapped target changes, using the
+  existing invalid-ghost/`data-reason` model;
+- destination validation consumes the same range context as the interaction
+  events (`getRangeContext`, Milestone 12) instead of its own notion of
+  "under this range";
 - one evaluation path shared with `addExternalDrop`'s `validate`;
 - separation: user interaction goes through the policy, the mutation API
   stays authoritative — `removeEvent()` may still delete locked/past items
@@ -348,13 +355,15 @@ can cover the same range and the core must not pick one.
 
 Core stress:
 
-- `getRangeContext({ start, end, resourceId })` → `{ events,
-  backgrounds: { covering, overlapping } }`;
+- `getRangeContext({ start, end, resourceId })` →
+  `{ events: { overlapping: [...] }, backgrounds: { overlapping: [...],
+  covering: [...] } }`;
 - `covering` = `background.start <= range.start && background.end >=
   range.end`; `overlapping` = plain intersection;
 - interaction intents (`calendar:select`, `eventmove`, `eventresize`,
-  `externaldrop`) deliver `backgrounds: { covering, overlapping }` through
-  the same primitive;
+  `externaldrop`) deliver `detail.context` through the same primitive; the
+  interaction policy and the programmatic preview read the same shape from
+  the same source;
 - no arbitrary background selection, no semantic type invented by the core.
 
 ## 17. Proposed-slot preview

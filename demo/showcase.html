@@ -1727,6 +1727,10 @@
        tokens are declared on the popover itself. */
     .cb-popover {
       --cb-picker-bg: var(--surface-raised);
+      /* The ink matters as much as the ground: the library defaults
+         --cb-color to a near-black, so a picker that only remaps the
+         background prints dark titles on a dark surface. Rows inherit it. */
+      --cb-color: var(--text);
       --cb-muted-color: var(--text-muted);
       --cb-error-color: var(--danger);
       border-color: var(--border);
@@ -2219,6 +2223,13 @@
           </button>
         </li>
         <li>
+          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="true" data-grid="allday">
+            <span class="menu-item-icon"><i class="ti ti-layout-navbar" aria-hidden="true"></i></span>
+            <span class="menu-item-text">All-day lane</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
           <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-grid="dense">
             <span class="menu-item-icon"><i class="ti ti-baseline-density-medium" aria-hidden="true"></i></span>
             <span class="menu-item-text">Compact rows</span>
@@ -2592,33 +2603,62 @@
     return cursor;
   }
 
+  /** How far back and forward the fixture reaches, in days from the anchor. */
+  const SEED_BACK = 21;
+  const SEED_AHEAD = 112;
+
   /**
-   * Six weeks of bookings around the anchor date, so month view is as
-   * populated as the time grids. Dates come from the element's own
-   * Temporal.PlainDate: the demo needs no date library of its own.
+   * Four and a half months of bookings around the anchor date, so navigating
+   * out of the current week still lands on a populated calendar. Dates come
+   * from the element's own Temporal.PlainDate: the demo needs no date library
+   * of its own.
+   *
+   * Density falls off with distance, the way a real diary does: the fortnight
+   * around today is busy, the following weeks thin out, and the far end is
+   * scattered with whole days left empty. A flat rate everywhere would read
+   * as generated data and would say nothing about how the grid copes with a
+   * sparse month.
    */
   function seedStore() {
     const random = makeRandom(20260903);
     const store = [];
-    const first = calendar.date.subtract({ days: 10 });
+    const first = calendar.date.subtract({ days: SEED_BACK });
     let n = 0;
-    for (let index = 0; index < 42; index += 1) {
+    for (let index = 0; index < SEED_BACK + 1 + SEED_AHEAD; index += 1) {
       const date = first.add({ days: index });
       if (date.dayOfWeek === 7) continue;
-      const perRoom = date.dayOfWeek === 6 ? 1 : 3 + Math.floor(random() * 3);
+      const away = Math.abs(index - SEED_BACK);
+      // Saturday is staffed for viewing only, so it never fills up.
+      const perRoom =
+        date.dayOfWeek === 6
+          ? Math.floor(random() * 2)
+          : away <= 12
+            ? 3 + Math.floor(random() * 3)
+            : away <= 45
+              ? 2 + Math.floor(random() * 3)
+              : 1 + Math.floor(random() * 2);
       for (const room of ROOMS) {
-        let minutes = 8 * 60 + Math.floor(random() * 4) * 30;
+        // Out there a room is often simply unused that day. Without this the
+        // three rooms fill and empty together and no day ever reads quiet.
+        if (away > 12 && random() < 0.35) continue;
+        // Far days also start later and leave wider gaps, so "sparse" reads
+        // as a quiet diary rather than a short morning.
+        const spread = away <= 12 ? 4 : 12;
+        let minutes = 8 * 60 + Math.floor(random() * spread) * 30;
         for (let slot = 0; slot < perRoom; slot += 1) {
           const duration = [30, 45, 60, 90][Math.floor(random() * 4)];
           if (minutes + duration > 18 * 60) break;
           const kind = KINDS[Math.floor(random() * KINDS.length)].id;
           const titles = TITLES[kind];
           n += 1;
-          // Deterministic flag markers for the card icon cluster: every
-          // fourth booking is remote, every seventh is priority.
+          // Flag markers for the card icon cluster. They ride the duration as
+          // well as the counter, because the cluster has two states to show:
+          // a card with room prints it, a short one drops it rather than
+          // clipping it. Keyed on the counter alone, a reseed can put every
+          // flag on a half-hour booking and the roomy case disappears.
           const flags = {
-            ...(n % 4 === 0 ? { remote: true } : null),
-            ...(n % 7 === 0 ? { priority: true } : null),
+            ...(n % 4 === 0 || (duration >= 60 && n % 3 === 0) ? { remote: true } : null),
+            ...(n % 7 === 0 || (duration >= 90 && n % 5 === 0) ? { priority: true } : null),
           };
           store.push({
             id: `seed-${n}`,
@@ -2628,7 +2668,9 @@
             resourceId: room.id,
             extendedProps: { kind, seats: 2 + Math.floor(random() * 10), ...flags },
           });
-          minutes += duration + [0, 15, 30, 60, 90][Math.floor(random() * 5)];
+          minutes +=
+            duration +
+            (away <= 12 ? [0, 15, 30, 60, 90] : [30, 60, 90, 120, 180])[Math.floor(random() * 5)];
         }
       }
     }
@@ -2656,6 +2698,26 @@
         end: stamp(fullDay, POLICY.closesAt),
         resourceId: room.id,
         extendedProps: { kind: "maintenance", seats: 0 },
+      });
+    }
+    // One deterministic nearly-full day, so the mini-month's amber marker is
+    // on screen from the first load like its green and red neighbours. Every
+    // room is busy from opening to 45 minutes before closing, which is under
+    // `nearFullFreeMinutes`; the random seeds for that day are dropped first,
+    // because one of them landing on that last slot would turn the day red.
+    const nearDay = openDayFrom(calendar.date.add({ days: 9 }));
+    const nearIso = nearDay.toString();
+    for (let index = store.length - 1; index >= 0; index -= 1) {
+      if (String(store[index].start).startsWith(nearIso)) store.splice(index, 1);
+    }
+    for (const room of ROOMS) {
+      store.push({
+        id: `seed-near-${room.id}`,
+        title: "Sprint week",
+        start: stamp(nearDay, POLICY.opensAt),
+        end: stamp(nearDay, POLICY.closesAt - 45),
+        resourceId: room.id,
+        extendedProps: { kind: "workshop", seats: 8 },
       });
     }
     // Stable target for search and realtime stand-ins, on the next opening
@@ -4893,6 +4955,10 @@
       calendar.configure({ hiddenDays: on ? [7] : [] });
       backgroundKey = "";
       refreshChrome();
+    } else if (option === "allday") {
+      // The core already hides the lane when nothing is in it; this says
+      // "never show it", which is a display choice, not a data one.
+      calendar.configure({ allDaySlot: on });
     } else if (option === "dense") {
       calendar.configure({ pxPerMinute: on ? 1 : 1.5 });
     } else if (option === "halfhour") {

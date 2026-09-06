@@ -80,7 +80,11 @@ async function pxPerMinute(page) {
       const hour = Number.parseInt(label.textContent ?? "", 10);
       if (Number.isFinite(hour)) byHour.set(hour, label.getBoundingClientRect().y);
     }
-    const [earlier, later] = [...byHour.entries()].sort((a, b) => a[1] - b[1]).slice(0, 2);
+    // The pitch is the distance between two labels anchored the same way.
+    // The first one is not: it sits below its hour line instead of straddling
+    // it, so that it does not hang outside the grid. Measure past it.
+    const rows = [...byHour.entries()].sort((a, b) => a[1] - b[1]).slice(1);
+    const [earlier, later] = rows;
     return later && earlier ? (later[1] - earlier[1]) / 60 : 1.8;
   });
 }

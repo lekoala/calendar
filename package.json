@@ -56,10 +56,11 @@
     "test:browser:headed": "playwright test test/browser --project chromium --headed",
     "test:browser:all": "playwright test test/browser",
     "test:dist": "playwright test test/dist --project chromium",
+    "test:shell": "playwright test test/shell --project chromium",
     "check": "bun run test:syntax && bun run lint && bun run typecheck && bun run test",
     "check:package": "bun scripts/check-package.js",
     "check:generated": "bun scripts/check-generated.js",
-    "check:all": "bun run verify && bun run test:browser:all && bun run test:dist",
+    "check:all": "bun run verify && bun run test:browser:all && bun run test:dist && bun run test:shell",
     "verify": "bun run check && bun run sync && bun run test:types && bun run check:generated && bun run check:package",
     "prepack": "bun run sync",
     "prepublishOnly": "bun run verify"

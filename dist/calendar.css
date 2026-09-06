@@ -54,6 +54,14 @@
   transform: translateY(-0.5em);
 }
 
+/* The lift above centres a label on its own hour line, which hangs the
+   first one outside the grid: over the all-day lane's border when there is
+   one, under the day headers when there is not. That one label sits below
+   its line instead, keeping the same optical gap. */
+.cv-axis-label:first-child {
+  transform: translateY(0.2em);
+}
+
 .cv-day {
   min-width: var(--calendar-column-min);
   border-inline-start: 1px solid var(--calendar-line);

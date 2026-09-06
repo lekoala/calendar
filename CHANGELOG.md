@@ -14,7 +14,6 @@ First public release of the calendar.
 * Accessibility support including keyboard navigation, live announcements, reduced motion, forced colors, and touch/pen interactions.
 * Public civil-date helpers for building surrounding UI such as mini calendars.
 * ESM, classic IIFE, standalone, CSS, TypeScript declarations, and `custom-elements.json` distributions.
-* Showcase application demonstrating room scheduling, availability backgrounds, mini-month navigation, search, clipboard operations, overlays, localization, and responsive layouts.
 * Documented client/server synchronization contract for optimistic updates, revisions, conflicts, and realtime updates.
 
 ### Fixed
@@ -22,6 +21,7 @@ First public release of the calendar.
 * A deferred `revert()` now addresses its event by id and only undoes the placement it applied, instead of writing back at a captured array index: removing the event, or moving it again, before the application answers no longer overwrites a neighbouring event or resurrects deleted state.
 * Event normalization no longer injects `editable: true`, which outranked `configure({ editable: false })` and left the calendar editable through `moveEvent()`, `resizeEvent()`, drag, resize and the keyboard path.
 * `refetchEvents()` lets each source replace only the collection it owns, so `addEvent()` and the `backgrounds` setter applied while a request is in flight survive its resolution.
+* The first axis label no longer hangs outside the time grid, where it collided with the all-day lane's border above it; only that label is anchored below its own hour line, the rest stay centred on theirs.
 * Drag autoscroll stops when its scroller leaves the document, instead of leaving a `requestAnimationFrame` loop running after the calendar is removed mid-drag.
 
 ### Notes
