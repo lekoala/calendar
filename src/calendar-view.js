@@ -22,7 +22,7 @@ import {
 } from "./core/model.js";
 import { queryOverlaps, queryRangeContext } from "./core/overlaps.js";
 import { normalizePolicyDecision } from "./core/policy.js";
-import { toZonedDateTime } from "./core/slicing.js";
+import { describeEvent, toZonedDateTime } from "./core/slicing.js";
 import { nextStateChangeMs } from "./core/temporal.js";
 import { renderList } from "./render/list.js";
 import { renderMonthGrid } from "./render/month-grid.js";
@@ -193,6 +193,14 @@ export class CalendarViewElement extends HTMLElement {
   #announceFrame = null;
   /** One-shot aging timer to the next visible event boundary. @type {number | null} */
   #agingTimer = null;
+  /**
+   * Single timer clearing the reveal highlight. The highlight itself lives
+   * on the rendered node, so a re-render removes it for free; the timer only
+   * handles the quiet case where nothing else re-renders within the delay.
+   *
+   * @type {number | null}
+   */
+  #revealTimer = null;
 
   connectedCallback() {
     this.classList.add("calendar-view");
@@ -216,6 +224,10 @@ export class CalendarViewElement extends HTMLElement {
     if (this.#agingTimer !== null) {
       clearTimeout(this.#agingTimer);
       this.#agingTimer = null;
+    }
+    if (this.#revealTimer !== null) {
+      clearTimeout(this.#revealTimer);
+      this.#revealTimer = null;
     }
   }
 
@@ -298,17 +310,22 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Moves the anchor date, then returns the source reload it triggered, so
+   * callers that must act on the loaded state (like `reveal()`) can await a
+   * single load instead of firing a second one. Ignoring the return keeps
+   * the previous fire-and-forget behavior.
+   *
    * @param {Temporal.PlainDate | string} value
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  gotoDate(value) {
+  async gotoDate(value) {
     const next = toPlainDate(value).toString();
     const previous = this.getAttribute("date");
     if (previous === next) return;
     this.setAttribute("date", next);
     this.dispatchEvent(new CustomEvent("calendar:datechange", { detail: { date: toPlainDate(next) } }));
     this.#announce(`${this.view}, ${next}`);
-    void this.refetchEvents();
+    return this.refetchEvents();
   }
 
   getVisibleRange() {
@@ -348,6 +365,193 @@ export class CalendarViewElement extends HTMLElement {
    */
   getEventById(id) {
     return this.#events.find((event) => event.id === String(id)) ?? null;
+  }
+
+  /**
+   * In-range reveal: scrolls to an event that belongs to the current
+   * rendered state, optionally highlights it and moves focus to it. Never
+   * navigates and never reloads sources — out-of-range anchors are the
+   * `reveal()` job.
+   *
+   * `true` means the event exists in canonical state, its date belongs to
+   * the current rendered range, and the reveal has been scheduled (the
+   * visuals ride the `afterRender` seam when a render is still pending). It
+   * does not guarantee that the current view renders a DOM node for the
+   * event; for example, a month event hidden behind `+n more` remains
+   * hidden. `false` means the event is unknown or its date is outside the
+   * current rendered range.
+   *
+   * @param {string | number} id
+   * @param {{ focus?: boolean, highlight?: boolean }} [options]
+   * @returns {boolean}
+   */
+  revealEvent(id, options = {}) {
+    const key = String(id);
+    if (this.#revealNode(key, options)) return true;
+    // A render may still be pending after a mutation just applied: retry
+    // once on the render seam instead of reporting a settled miss.
+    const event = this.getEventById(key);
+    if (!event || !this.isConnected) return false;
+    if (!this.#isDateRendered(targetDate(event.start, this.#config.timeZone ?? DEFAULTS.timeZone))) {
+      return false;
+    }
+    this.#afterRender(() => {
+      this.#revealNode(key, options);
+    });
+    return true;
+  }
+
+  /**
+   * Out-of-range reveal for external anchors such as search results: the
+   * anchor knows where the event lives, so the calendar navigates there
+   * (`gotoDate`, awaited as a single load), waits for sources, then reveals
+   * through the same node path as `revealEvent()`. No data waiter and no
+   * scanning of unseen periods. It shares `revealEvent()`'s boolean
+   * contract once navigation and loading settled: `true` means the
+   * navigation/loading won and the reveal was scheduled, not that the view
+   * necessarily renders a node (a month event behind `+n more` stays
+   * hidden — opening it is application business). A concurrent navigation
+   * winning meanwhile resolves `false`.
+   *
+   * @param {{ eventId: string | number, date?: Temporal.PlainDate | string, start?: unknown, focus?: boolean, highlight?: boolean }} input
+   * @returns {Promise<boolean>}
+   */
+  async reveal(input) {
+    const eventId = input?.eventId;
+    if (eventId === undefined || eventId === null || String(eventId) === "") {
+      throw new TypeError("reveal() requires an eventId; range-only navigation is gotoDate().");
+    }
+    const anchorInput = input?.date ?? input?.start;
+    if (anchorInput === undefined || anchorInput === null) {
+      throw new TypeError("reveal() requires a date or start anchor.");
+    }
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    const requested = toPlainDate(
+      anchorInput instanceof Temporal.PlainDate || typeof anchorInput === "string"
+        ? anchorInput
+        : targetDate(anchorInput, timeZone),
+    ).toString();
+    const key = String(eventId);
+    const options = { focus: input?.focus ?? false, highlight: input?.highlight ?? true };
+    // Fast path: already on the date with the event in state.
+    if (this.date.toString() === requested && this.getEventById(key) && this.#revealNode(key, options)) {
+      return true;
+    }
+    if (!this.isConnected) return false;
+    if (this.date.toString() !== requested) {
+      // Awaited as the single load `gotoDate` triggered; a concurrent
+      // navigation winning meanwhile is detected by the anchor check below.
+      await this.gotoDate(requested);
+    } else if (!this.getEventById(key)) {
+      await this.refetchEvents();
+    }
+    if (!this.isConnected || this.date.toString() !== requested) return false;
+    if (this.#revealNode(key, options)) return true;
+    // The load queued its render but the DOM is still stale: settle on the
+    // post-render state, after the announce-triggered render flushed. Same
+    // scheduled-not-guaranteed contract as `revealEvent()`: visuals apply
+    // only when the view renders a node, a month event behind `+n more`
+    // stays hidden without flipping the boolean.
+    return new Promise((resolve) => {
+      this.#afterRender(() => {
+        const zone = this.#config.timeZone ?? DEFAULTS.timeZone;
+        const event = this.getEventById(key);
+        if (!this.isConnected || !event) {
+          resolve(false);
+          return;
+        }
+        this.#announce(describeEvent(event, zone, this.#options().labels.untitledEvent));
+        this.#afterRender(() => {
+          if (!this.isConnected) {
+            resolve(false);
+            return;
+          }
+          const fresh = this.querySelector(`[data-event-id="${CSS.escape(key)}"]`);
+          if (fresh instanceof HTMLElement) this.#applyRevealVisuals(event, fresh, options);
+          resolve(true);
+        });
+      });
+    });
+  }
+
+  /**
+   * Synchronous node reveal against the current DOM. Checks that a node
+   * exists now, announces through the render seam (last message wins, so a
+   * `gotoDate` announcement is superseded), and applies the visuals once
+   * the pending render has flushed — the announcement itself queues a
+   * render that would otherwise replace a synchronously highlighted node.
+   * Returns whether a reveal was queued.
+   *
+   * @param {string} id
+   * @param {{ focus?: boolean, highlight?: boolean }} [options]
+   * @returns {boolean}
+   */
+  #revealNode(id, options = {}) {
+    if (!this.isConnected) return false;
+    const event = this.getEventById(id);
+    if (!event) return false;
+    const node = this.querySelector(`[data-event-id="${CSS.escape(id)}"]`);
+    if (!(node instanceof HTMLElement)) return false;
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    this.#announce(describeEvent(event, timeZone, this.#options().labels.untitledEvent));
+    this.#afterRender(() => {
+      if (!this.isConnected) return;
+      const fresh = this.querySelector(`[data-event-id="${CSS.escape(id)}"]`);
+      if (!(fresh instanceof HTMLElement)) return;
+      this.#applyRevealVisuals(event, fresh, options);
+    });
+    return true;
+  }
+
+  /**
+   * Post-render reveal visuals against a freshly inserted node: precise
+   * `scrollToTime` first in time grids, `scrollIntoView` in every view
+   * (notably the horizontal axis of resource views), then the temporary
+   * highlight and the optional focus.
+   *
+   * @param {import("./core/model.js").NormalizedEvent} event
+   * @param {HTMLElement} node
+   * @param {{ focus?: boolean, highlight?: boolean }} [options]
+   * @returns {void}
+   */
+  #applyRevealVisuals(event, node, options = {}) {
+    const { focus = false, highlight = true } = options;
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    if (this.view !== "month" && this.view !== "list" && event.allDay !== true) {
+      this.scrollToTime(toZonedDateTime(event.start, timeZone).toPlainTime());
+    }
+    node.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (highlight) {
+      if (this.#revealTimer !== null) {
+        clearTimeout(this.#revealTimer);
+        this.#revealTimer = null;
+      }
+      node.classList.add("cv-reveal");
+      node.dataset.revealed = "true";
+      this.#revealTimer = window.setTimeout(() => {
+        this.#revealTimer = null;
+        // A re-render replaces the node first; only touch it when it is
+        // still the connected one this reveal highlighted.
+        if (!node.isConnected) return;
+        node.classList.remove("cv-reveal");
+        delete node.dataset.revealed;
+      }, 2000);
+    }
+    if (focus) node.focus({ preventScroll: true });
+  }
+
+  /**
+   * Whether a civil date is part of what the current view renders (month
+   * spill weeks included, hidden days excluded).
+   *
+   * @param {Temporal.PlainDate} date
+   * @returns {boolean}
+   */
+  #isDateRendered(date) {
+    const wanted = date.toString();
+    return getVisibleDates(this.date, this.view, this.#dateOptions()).some(
+      (rendered) => rendered.toString() === wanted,
+    );
   }
 
   /**

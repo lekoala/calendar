@@ -122,12 +122,12 @@ completions (see DATA_AND_REALTIME.md).
 Search happens outside the core. The result contains an event/date/resource. The application composes:
 
 ```js
-calendar.gotoDate(result.date)
-// select/show resource in application state
-calendar.revealEvent(result.id, { focus: true, highlight: true }) // Milestone 14
-// search results that carry { eventId, date, time, resourceId } reveal
-// events that are not in the loaded range (Milestone 14: gotoDate, await
-// the async source, scroll/highlight/focus).
+// select/show resource in application state, then reveal through the anchor
+// the search result carries (Milestone 14: gotoDate awaited as a single
+// load, then scroll/highlight/focus on the post-render node).
+await calendar.reveal({ eventId: result.id, date: result.date, focus: true })
+// In-range events reveal without navigating or reloading:
+calendar.revealEvent(result.id, { focus: true, highlight: true })
 ```
 
 ## 9. Recurring events

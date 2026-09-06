@@ -3,7 +3,9 @@ import { CalendarViewElement, dates, defineCalendarView } from "../../dist/types
 const element = document.createElement("calendar-view") as CalendarViewElement;
 element.configure({ timeZone: "Europe/Brussels", monthEventLimit: 3 });
 element.setView("week");
-element.gotoDate("2026-09-03");
+void element.gotoDate("2026-09-03");
+void element.revealEvent("event-1", { focus: true, highlight: true });
+void element.reveal({ eventId: "event-1", date: "2026-09-03" });
 element.prev();
 element.next();
 element.today();

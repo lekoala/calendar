@@ -5335,15 +5335,18 @@
   });
 
   /** @param {string} id */
-  function revealBooking(id) {
+  async function revealBooking(id) {
     const item = store.find((entry) => entry.id === id);
     if (!item) return;
-    calendar.gotoDate(String(item.start).slice(0, 10));
-    calendar.scrollToTime(wallClock(String(item.start)));
-    record(`search → ${id}`);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      calendar.querySelector(`[data-event-id="${CSS.escape(id)}"]`)?.focus();
-    }));
+    // The search result carries the anchor; the calendar navigates, loads,
+    // scrolls, highlights and focuses through its own reveal path.
+    const revealed = await calendar.reveal({
+      eventId: id,
+      date: String(item.start).slice(0, 10),
+      start: String(item.start),
+      focus: true,
+    });
+    record(revealed ? `search → ${id}` : `search → ${id} (not shown)`);
   }
 
   // --- Realtime stand-ins --------------------------------------------------

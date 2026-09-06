@@ -307,6 +307,18 @@
   outline-offset: 1px;
 }
 
+/* Reveal highlight: a temporary outline applied by `revealEvent()`/`reveal()`
+   alongside `data-revealed="true"`. The core removes both after ~2s; any
+   re-render removes them sooner by replacing the node. */
+.cv-event.cv-reveal,
+.cv-month-event.cv-reveal,
+.cv-list-event.cv-reveal,
+.cv-allday-event.cv-reveal {
+  outline: 2px solid var(--calendar-accent);
+  outline-offset: 2px;
+  transition: outline-color 0.2s ease;
+}
+
 .cv-status {
   position: absolute;
   width: 1px;
@@ -353,6 +365,13 @@
   .cv-month-more:focus-visible,
   .cv-list-event:focus-visible,
   .cv-allday-event:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .cv-event.cv-reveal,
+  .cv-month-event.cv-reveal,
+  .cv-list-event.cv-reveal,
+  .cv-allday-event.cv-reveal {
     outline-color: Highlight;
   }
 

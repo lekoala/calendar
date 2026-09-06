@@ -87,7 +87,8 @@
             },
             {
               "kind": "method",
-              "name": "gotoDate"
+              "name": "gotoDate",
+              "description": "Moves the anchor date, then returns the source reload it triggered, so callers that must act on the loaded state (like `reveal()`) can await a single load instead of firing a second one."
             },
             {
               "kind": "method",
@@ -112,6 +113,16 @@
             {
               "kind": "method",
               "name": "getEventById"
+            },
+            {
+              "kind": "method",
+              "name": "revealEvent",
+              "description": "In-range reveal: scrolls to an event that belongs to the current rendered state, optionally highlights it and moves focus to it."
+            },
+            {
+              "kind": "method",
+              "name": "reveal",
+              "description": "Out-of-range reveal for external anchors such as search results: the anchor knows where the event lives, so the calendar navigates there (`gotoDate`, awaited as a single load), waits for sources, then reveals through the same node path as `revealEvent()`."
             },
             {
               "kind": "method",

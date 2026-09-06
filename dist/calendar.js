@@ -6093,6 +6093,7 @@
     #pendingAnnounce = null;
     #announceFrame = null;
     #agingTimer = null;
+    #revealTimer = null;
     connectedCallback() {
       this.classList.add("calendar-view");
       if (!this.hasAttribute("date")) {
@@ -6112,6 +6113,10 @@
       if (this.#agingTimer !== null) {
         clearTimeout(this.#agingTimer);
         this.#agingTimer = null;
+      }
+      if (this.#revealTimer !== null) {
+        clearTimeout(this.#revealTimer);
+        this.#revealTimer = null;
       }
     }
     attributeChangedCallback() {
@@ -6165,7 +6170,7 @@
       this.#announce(`${view}, ${this.getAttribute("date")}`);
       this.refetchEvents();
     }
-    gotoDate(value) {
+    async gotoDate(value) {
       const next = toPlainDate(value).toString();
       const previous = this.getAttribute("date");
       if (previous === next)
@@ -6173,7 +6178,7 @@
       this.setAttribute("date", next);
       this.dispatchEvent(new CustomEvent("calendar:datechange", { detail: { date: toPlainDate(next) } }));
       this.#announce(`${this.view}, ${next}`);
-      this.refetchEvents();
+      return this.refetchEvents();
     }
     getVisibleRange() {
       return getViewRange(this.date, this.view, this.#dateOptions());
@@ -6200,6 +6205,120 @@
     }
     getEventById(id) {
       return this.#events.find((event) => event.id === String(id)) ?? null;
+    }
+    revealEvent(id, options = {}) {
+      const key = String(id);
+      if (this.#revealNode(key, options))
+        return true;
+      const event = this.getEventById(key);
+      if (!event || !this.isConnected)
+        return false;
+      if (!this.#isDateRendered(targetDate(event.start, this.#config.timeZone ?? DEFAULTS.timeZone))) {
+        return false;
+      }
+      this.#afterRender(() => {
+        this.#revealNode(key, options);
+      });
+      return true;
+    }
+    async reveal(input) {
+      const eventId = input?.eventId;
+      if (eventId === undefined || eventId === null || String(eventId) === "") {
+        throw new TypeError("reveal() requires an eventId; range-only navigation is gotoDate().");
+      }
+      const anchorInput = input?.date ?? input?.start;
+      if (anchorInput === undefined || anchorInput === null) {
+        throw new TypeError("reveal() requires a date or start anchor.");
+      }
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      const requested = toPlainDate(anchorInput instanceof Temporal2.PlainDate || typeof anchorInput === "string" ? anchorInput : targetDate(anchorInput, timeZone)).toString();
+      const key = String(eventId);
+      const options = { focus: input?.focus ?? false, highlight: input?.highlight ?? true };
+      if (this.date.toString() === requested && this.getEventById(key) && this.#revealNode(key, options)) {
+        return true;
+      }
+      if (!this.isConnected)
+        return false;
+      if (this.date.toString() !== requested) {
+        await this.gotoDate(requested);
+      } else if (!this.getEventById(key)) {
+        await this.refetchEvents();
+      }
+      if (!this.isConnected || this.date.toString() !== requested)
+        return false;
+      if (this.#revealNode(key, options))
+        return true;
+      return new Promise((resolve) => {
+        this.#afterRender(() => {
+          const zone = this.#config.timeZone ?? DEFAULTS.timeZone;
+          const event = this.getEventById(key);
+          if (!this.isConnected || !event) {
+            resolve(false);
+            return;
+          }
+          this.#announce(describeEvent(event, zone, this.#options().labels.untitledEvent));
+          this.#afterRender(() => {
+            if (!this.isConnected) {
+              resolve(false);
+              return;
+            }
+            const fresh = this.querySelector(`[data-event-id="${CSS.escape(key)}"]`);
+            if (fresh instanceof HTMLElement)
+              this.#applyRevealVisuals(event, fresh, options);
+            resolve(true);
+          });
+        });
+      });
+    }
+    #revealNode(id, options = {}) {
+      if (!this.isConnected)
+        return false;
+      const event = this.getEventById(id);
+      if (!event)
+        return false;
+      const node = this.querySelector(`[data-event-id="${CSS.escape(id)}"]`);
+      if (!(node instanceof HTMLElement))
+        return false;
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      this.#announce(describeEvent(event, timeZone, this.#options().labels.untitledEvent));
+      this.#afterRender(() => {
+        if (!this.isConnected)
+          return;
+        const fresh = this.querySelector(`[data-event-id="${CSS.escape(id)}"]`);
+        if (!(fresh instanceof HTMLElement))
+          return;
+        this.#applyRevealVisuals(event, fresh, options);
+      });
+      return true;
+    }
+    #applyRevealVisuals(event, node, options = {}) {
+      const { focus = false, highlight = true } = options;
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      if (this.view !== "month" && this.view !== "list" && event.allDay !== true) {
+        this.scrollToTime(toZonedDateTime(event.start, timeZone).toPlainTime());
+      }
+      node.scrollIntoView({ block: "nearest", inline: "nearest" });
+      if (highlight) {
+        if (this.#revealTimer !== null) {
+          clearTimeout(this.#revealTimer);
+          this.#revealTimer = null;
+        }
+        node.classList.add("cv-reveal");
+        node.dataset.revealed = "true";
+        this.#revealTimer = window.setTimeout(() => {
+          this.#revealTimer = null;
+          if (!node.isConnected)
+            return;
+          node.classList.remove("cv-reveal");
+          delete node.dataset.revealed;
+        }, 2000);
+      }
+      if (focus)
+        node.focus({ preventScroll: true });
+    }
+    #isDateRendered(date) {
+      const wanted = date.toString();
+      return getVisibleDates(this.date, this.view, this.#dateOptions()).some((rendered) => rendered.toString() === wanted);
     }
     getEventOverlaps(range, options = {}) {
       const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;

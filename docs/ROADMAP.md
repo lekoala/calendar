@@ -145,8 +145,8 @@ previous one instead of inventing its own seam, in three blocks:
   seam (the `.cv-status` live region already survives `replaceChildren`); a
   separate cancellable announce frame where a11y timing demands it;
 - `docs/API.md`: `prev()`, `next()`, `today()`, `scrollToTime()` leave
-  "Planned" — already implemented and browser-tested; `revealEvent` stays
-  the only future entry until Milestone 14.
+  "Planned" — already implemented and browser-tested; `revealEvent` was
+  the only future entry until Milestone 14 shipped it.
 
 Lean guardrail: `afterRender` is a private **lifecycle primitive, not a
 generic scheduler** — no retries, promises or priorities. Pure refactor,
@@ -210,16 +210,25 @@ commit mechanics, and must not import an `eventConstraint`/`businessHours`
 taxonomy. One decision seam evaluated in `calendar-view.js` (`now` cached
 per render), thin checks at the gesture entry points.
 
-## Milestone 14 — reveal
+## Milestone 14 — reveal (shipped)
 
-- `revealEvent(id, { focus, highlight })` — in-range reveal with
-  scroll-to-time, optional highlight and focus;
-- `reveal({ eventId, date, resourceId, start })` — out-of-range reveal for
-  search results: `gotoDate`, `await refetchEvents()` (stale guards
-  unchanged), `scrollToTime()`, then highlight/focus on the Milestone 10
-  `afterRender` queue;
-- the search result provides the anchor, so the calendar knows where to go —
-  **no generic data waiter** and no scanning of unseen periods. Use case §8.
+- `revealEvent(id, { focus = false, highlight = true }) → boolean` —
+  in-range reveal: never navigates, never reloads; true when the event is
+  in canonical state and its date is rendered, false on any miss (unknown
+  id, date not rendered, node behind month `+n more`) — no refusal
+  taxonomy;
+- `reveal({ eventId, date, start, focus, highlight }) → Promise<boolean>` —
+  out-of-range reveal for search results: `eventId` required (range-only
+  navigation stays `gotoDate()`), `date || start` required, no `resourceId`
+  (the shell owns resource selection; `data-event-id` + `inline: nearest`
+  reach the column). `gotoDate()` is awaitable and returns the single load
+  it triggered, so `reveal()` never fires a second one; a concurrent
+  navigation winning meanwhile resolves false;
+- view-agnostic: precise `scrollToTime` first in time grids, then
+  `scrollIntoView({ block: "nearest", inline: "nearest" })` in every view;
+  temporary `.cv-reveal` + `data-revealed` highlight cleared after ~2 s or
+  sooner by re-render; success announces even with `focus: false`. Use
+  case §8.
 
 Lean guardrail: composes existing pieces only (`gotoDate`, async
 `refetchEvents()`, `scrollToTime()`, `afterRender`). No load-tracking

@@ -199,10 +199,15 @@ export declare class CalendarViewElement extends HTMLElement {
      */
     setView(view: string): void;
     /**
+     * Moves the anchor date, then returns the source reload it triggered, so
+     * callers that must act on the loaded state (like `reveal()`) can await a
+     * single load instead of firing a second one. Ignoring the return keeps
+     * the previous fire-and-forget behavior.
+     *
      * @param {Temporal.PlainDate | string} value
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    gotoDate(value: Temporal.PlainDate | string): void;
+    gotoDate(value: Temporal.PlainDate | string): Promise<void>;
     getVisibleRange(): {
         start: Temporal.PlainDate;
         end: Temporal.PlainDate;
@@ -220,6 +225,50 @@ export declare class CalendarViewElement extends HTMLElement {
      * @returns {import("./core/model.js").NormalizedEvent | null}
      */
     getEventById(id: string | number): import("./core/model.js").NormalizedEvent | null;
+    /**
+     * In-range reveal: scrolls to an event that belongs to the current
+     * rendered state, optionally highlights it and moves focus to it. Never
+     * navigates and never reloads sources — out-of-range anchors are the
+     * `reveal()` job.
+     *
+     * `true` means the event exists in canonical state, its date belongs to
+     * the current rendered range, and the reveal has been scheduled (the
+     * visuals ride the `afterRender` seam when a render is still pending). It
+     * does not guarantee that the current view renders a DOM node for the
+     * event; for example, a month event hidden behind `+n more` remains
+     * hidden. `false` means the event is unknown or its date is outside the
+     * current rendered range.
+     *
+     * @param {string | number} id
+     * @param {{ focus?: boolean, highlight?: boolean }} [options]
+     * @returns {boolean}
+     */
+    revealEvent(id: string | number, options?: {
+        focus?: boolean;
+        highlight?: boolean;
+    }): boolean;
+    /**
+     * Out-of-range reveal for external anchors such as search results: the
+     * anchor knows where the event lives, so the calendar navigates there
+     * (`gotoDate`, awaited as a single load), waits for sources, then reveals
+     * through the same node path as `revealEvent()`. No data waiter and no
+     * scanning of unseen periods. It shares `revealEvent()`'s boolean
+     * contract once navigation and loading settled: `true` means the
+     * navigation/loading won and the reveal was scheduled, not that the view
+     * necessarily renders a node (a month event behind `+n more` stays
+     * hidden — opening it is application business). A concurrent navigation
+     * winning meanwhile resolves `false`.
+     *
+     * @param {{ eventId: string | number, date?: Temporal.PlainDate | string, start?: unknown, focus?: boolean, highlight?: boolean }} input
+     * @returns {Promise<boolean>}
+     */
+    reveal(input: {
+        eventId: string | number;
+        date?: Temporal.PlainDate | string;
+        start?: unknown;
+        focus?: boolean;
+        highlight?: boolean;
+    }): Promise<boolean>;
     /**
      * Public read surface over canonical state: events (and optionally
      * backgrounds) overlapping `{ start, end }`, in paint order, or `[]`.

@@ -243,11 +243,43 @@ calendar.today()
 calendar.scrollToTime("10:00")
 ```
 
-Planned (Milestone 14):
+`gotoDate()` returns the source reload it triggered, so callers that must
+act on the loaded state can await a single load instead of firing a second
+one. Ignoring the return keeps the previous fire-and-forget behavior.
+
+## Reveal
+
+Search happens outside the core; the result carries the anchor, so the
+calendar knows where to go — no data waiter, no scanning of unseen periods:
 
 ```js
-calendar.revealEvent("event-1")
+// In-range: never navigates, never reloads. `true` means the event exists
+// in canonical state, its date belongs to the current rendered range, and
+// the reveal has been scheduled — not that the view renders a node (a month
+// event behind `+n more` stays hidden). `false` means the event is unknown
+// or its date is outside the current rendered range.
+const shown = calendar.revealEvent("event-1", { focus: false, highlight: true });
+
+// Out-of-range: gotoDate (awaited as its single load) + refetch, then the
+// same contract. `true` means navigation/loading won and the reveal was
+// scheduled; a concurrent navigation winning meanwhile resolves `false`.
+const found = await calendar.reveal({
+  eventId: "event-1", // required: range-only navigation is gotoDate()
+  date: "2026-09-20", // date || start required
+  start: "2026-09-20T10:00:00+02:00[Europe/Brussels]",
+  focus: false, // default: scroll + highlight, focus stays where it is
+  highlight: true,
+});
 ```
+
+Reveal is view-agnostic: time grids scroll precisely (`scrollToTime`, then
+`scrollIntoView`), the all-day lane, month and list scroll the node into
+view with `{ block: "nearest", inline: "nearest" }`. The highlight is a
+temporary `.cv-reveal` + `data-revealed="true"` on the node, cleared after
+~2 s or sooner by any re-render (full replacement removes the node). A
+successful reveal announces the event through the live region even with
+`focus: false`. There is no refusal taxonomy: `false` covers every miss
+(unknown event, date outside the rendered range).
 
 ## Civil date helpers
 
