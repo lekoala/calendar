@@ -468,8 +468,13 @@
     color: Highlight;
   }
 
-  .cv-drag-mirror.cv-invalid {
+  .cv-drag-mirror.cv-invalid,
+  .cv-event.cv-invalid {
     outline-color: Mark;
+  }
+
+  .cv-select-ghost.cv-invalid {
+    border-color: LinkText;
   }
 
   .cv-axis-label {
@@ -530,9 +535,17 @@
   box-shadow: 0 0.5rem 1.5rem rgb(15 23 42 / 0.25);
 }
 
-.cv-drag-mirror.cv-invalid {
+.cv-drag-mirror.cv-invalid,
+.cv-event.cv-invalid {
   outline: 2px dashed #dc2626;
   outline-offset: -2px;
+}
+
+/* A refused selection drag: the ghost keeps its geometry so the user still
+   reads the range being drawn, and turns red like every other refusal. */
+.cv-select-ghost.cv-invalid {
+  border-color: #dc2626;
+  background: color-mix(in srgb, #dc2626 12%, transparent);
 }
 
 /* Preview of an external placement (app-owned drag source): shows the real

@@ -135,7 +135,7 @@ previous one instead of inventing its own seam, in three blocks:
 | Interaction context  | M12 + M13 + M14 + M15 | where we act, in what context, if it is allowed, then reveal/preview |
 | Scheduling surface   | M16                   | multi-resource workday actually usable               |
 
-## Milestone 10 — render seams
+## Milestone 10 — render seams (shipped)
 
 - a single private `#afterRender(callback)` lifecycle primitive executed
   once the pending render has inserted its subtree, drained on
@@ -153,7 +153,7 @@ generic scheduler** — no retries, promises or priorities. Pure refactor,
 net reduction in lines; announce timing is at most one cancellable frame. No
 new machinery.
 
-## Milestone 11 — temporal state + one-shot aging
+## Milestone 11 — temporal state + one-shot aging (shipped)
 
 - rendered event nodes carry `data-temporal-state="past|current|future"`
   and content hooks receive `info.temporalState`, derived from
@@ -172,7 +172,7 @@ global clock, no periodic tick, no observable "now service" — `now` is
 whatever the render already computes. If implementing this needs a
 timer-driven recompute subsystem, the milestone is oversized.
 
-## Milestone 12 — range context
+## Milestone 12 — range context (shipped)
 
 - public primitive `getRangeContext({ start, end, resourceId })`:
   `{ events: { overlapping: [...] }, backgrounds: { overlapping: [...],
@@ -190,10 +190,10 @@ detail payloads — never recomputed per `pointermove`. Live feedback during a
 gesture reuses this primitive only when the logically snapped target changes
 (Milestone 13).
 
-## Milestone 13 — dynamic interaction policy
+## Milestone 13 — dynamic interaction policy (shipped)
 
 - `configure({ interactionPolicy({ action, event, target, context, now }) })`
-  → `true | false | reason`, `action ∈ move | resize | select`; strictly
+  → `true | false | reason`, `action ∈ move | resize | select | external`; strictly
   synchronous — server validation stays in the existing commit/revert path;
 - gates before the gesture (no resize handle, no drag start) and validates
   the destination **when the snapped target changes** (existing hit/snap run
@@ -329,7 +329,48 @@ M15 the keyboard placement target (`lastSlot`) became visible via
 `previewRange()`, and it is now cleared on navigation, resource changes,
 disarm and commit instead of lingering as a stale `Ctrl+V` destination.
 
-Deliberately never planned: virtualization, Gantt, resource
+The showcase then took the 0.2 seams it was still ignoring. Its `violation()`
+is wired as `interactionPolicy` (M13), so a refused destination is red under
+the pointer instead of being accepted, snapped back and explained by a toast;
+the commit-time guard stays as the authority for programmatic moves and owns
+the asynchronous desk round-trip. The same function reads `detail.context`
+(M12) for the two rules that are actually drawn — `backgrounds.overlapping`
+for a blocker, `backgrounds.covering` for the extended-desk exemption — so
+the refusal names the rectangle under the pointer; the constants remain the
+fallback for the days and views that paint no wash. And the cockpit counts
+what the core marks `data-temporal-state="current"` (M11), which ages on the
+one-shot boundary render with no clock application-side. Still application
+choices, still not core work.
+
+Wiring M12 into the refusals exposed a rule the shell had wrong, and the
+demo was aligned on the principle rather than the principle on the demo: a
+proposal that names a room asks whether *that* room is blocked, while one
+that names none — a combined view, a paste with no column — asks whether
+*every* room is. The shell answered the second question with a union across
+rooms, so a slot two of the three rooms were free for was refused, and the
+grid contradicted the availability dot `miniDayState()` had just drawn from
+the correct rule. The blocker check is now per-room and scoped to
+`activeRooms` (no room selected stays no verdict), a building-wide
+(`resourceId: null`) range applies to every room the way `forRoom()` and the
+core's own resource-less backgrounds already assumed, and one such closure
+joined the fixture: it is the only blocker a combined view can honestly
+hatch, so there the drawn rule and the enforced rule are the same rectangle
+again. A room-scoped range still has no column of its own in a combined
+view, and now refuses nothing there.
+
+M16 landed in the showcase last: the rooms carry a `groupId`, the shell
+declares `Main building` / `Annexe`, and `resourceGroupContent` counts each
+section from the resources the hook is handed. Grouping stays a declaration
+— `calendar.resources` keeps the application's order and the core derives
+the sections — so a Tools toggle can drop the declaration and watch every
+column fall back into the headerless block with the row reserving no space,
+which is the same path an unknown `groupId` takes. The sidebar filter
+mirrors the same sections with a per-group master, because filtering by
+group is application work: the core is only ever handed fewer
+`resourceIds`, and an emptied group's section disappears on its own. The
+compressed header rows needed a group-row twin of the sticky-offset
+workaround the resource row already had — the same hardcoded-3rem seam
+listed as 0.1 debt, not new debt.
 
 Deliberately never planned: virtualization, Gantt, resource
 hierarchy/timeline/tree-grid.

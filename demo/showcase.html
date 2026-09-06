@@ -488,6 +488,22 @@
       font-weight: var(--font-weight-bold);
     }
 
+    /* Group heading inside the room filter: the same check shape, quieter,
+       with its rooms indented under it. Filtering by group never reaches
+       the core - it only changes which `resourceIds` it is handed. */
+    .sc-check-group {
+      margin-block-start: var(--space-10);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .sc-checks[data-grouped="true"] .sc-check:not(.sc-check-group) {
+      padding-inline-start: var(--space-40, 1rem);
+    }
+
     /* Move workbench rows: the persistent queue of bookings to place.
        Rows are the same "check" shape as rooms, with the armed item
        highlighted instead of checked. */
@@ -857,6 +873,7 @@
       /* The core sticks day headers below the resource row at a fixed
          3rem. Both live here so shrinking one shrinks the other. */
       --sc-resource-row: 2rem;
+      --sc-group-row: 1.5rem;
       --calendar-background-bg:
         repeating-linear-gradient(
           135deg,
@@ -953,6 +970,30 @@
 
     .actual-calendar[data-view^="resource"] .cv-day-header {
       top: var(--sc-resource-row);
+    }
+
+    /* One-level room groups. The core draws the row and owns the column
+       spans; this only skins it and re-points the sticky offsets, because
+       the shell compressed the header rows below the core's 3rem seam (the
+       same workaround the resource row already needed - roadmap debt). The
+       selectors key off a real `.cv-group-row`, so nothing shifts when no
+       group matches and the row is not rendered at all. */
+    .actual-calendar .cv-group-header {
+      gap: 0.4rem;
+      min-height: var(--sc-group-row);
+      padding-block: 2px;
+      color: var(--text-muted);
+      font-size: var(--font-size-xs);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .actual-calendar .cv-group-row + .cv-resource-row {
+      top: var(--sc-group-row);
+    }
+
+    .actual-calendar .cv-group-row ~ .cv-grid .cv-day-header {
+      top: calc(var(--sc-group-row) + var(--sc-resource-row));
     }
 
     .sc-dow {
@@ -1075,10 +1116,50 @@
     }
 
     /* Archived rule: past events never arm a drag/resize either, so the card
-       just drops the grab affordance and reads slightly faded. */
+       just drops the grab affordance and reads slightly faded. This is the
+       application's editability rule and it is day-granular on purpose (the
+       whole of today stays draggable), which is why it is a separate
+       attribute from the core's temporal fact below. */
     .actual-calendar .cv-event[data-archived="true"] {
       cursor: default;
       filter: saturate(0.85);
+    }
+
+    /* The core's temporal fact (M11): every event node carries
+       `data-temporal-state="past|current|future"`, derived from its own
+       range against the render's `now`. The core ships no styling for it
+       and never turns it into a permission - this is the application
+       deciding what past and running should look like.
+
+       It ages without a refetch and without a clock here: the render arms a
+       single timer to the next visible boundary, so a booking crosses from
+       `current` to `past` on screen while nobody touches the page. */
+    .actual-calendar .cv-event[data-temporal-state="past"] {
+      opacity: 0.72;
+    }
+
+    .actual-calendar .cv-event[data-temporal-state="current"] {
+      border-inline-start-width: 5px;
+      border-inline-start-color: var(--success, #16a34a);
+      box-shadow:
+        0 1px 2px rgb(0 0 0 / 0.16),
+        0 0 0 2px color-mix(in oklab, var(--success, #16a34a), transparent 55%);
+    }
+
+    /* Running bookings in the list view get the same edge, where there is no
+       geometry to read the now-indicator against. */
+    .actual-calendar .cv-list-event[data-temporal-state="current"] {
+      border-inline-start: 3px solid var(--success, #16a34a);
+    }
+
+    .actual-calendar .cv-list-event[data-temporal-state="past"] {
+      opacity: 0.72;
+    }
+
+    /* The cockpit counter for the same fact, so the aging is legible even
+       when the running booking is scrolled out of view. */
+    .sc-cockpit .sc-now-chip .sc-dot {
+      background: var(--success, #16a34a);
     }
 
     /* Parked state: queued events keep their place in the grid until a
@@ -2244,6 +2325,13 @@
           </button>
         </li>
         <li>
+          <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="true" data-grid="groups">
+            <span class="menu-item-icon"><i class="ti ti-building" aria-hidden="true"></i></span>
+            <span class="menu-item-text">Group rooms by building</span>
+            <span class="menu-item-end"><i class="ti ti-check sc-tick" aria-hidden="true"></i></span>
+          </button>
+        </li>
+        <li>
           <button type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-grid="viewer">
             <span class="menu-item-icon"><i class="ti ti-user-share" aria-hidden="true"></i></span>
             <span class="menu-item-text">External booking view</span>
@@ -2481,9 +2569,22 @@
 
   // --- Fictitious generic dataset: rooms × bookings ---------------------
   const ROOMS = [
-    { id: "room-a", title: "Room A · Atrium" },
-    { id: "room-b", title: "Room B · Loft" },
-    { id: "room-c", title: "Room C · Studio" },
+    { id: "room-a", title: "Room A · Atrium", groupId: "main" },
+    { id: "room-b", title: "Room B · Loft", groupId: "main" },
+    { id: "room-c", title: "Room C · Studio", groupId: "annexe" },
+  ];
+
+  /**
+   * One level, on purpose (M16): the array order is the section order, the
+   * `ROOMS` order is the order inside a section, and a room whose `groupId`
+   * matches nothing declared here simply trails without a header. Grouping
+   * is a visual derivation in the resource grids - `calendar.resources`
+   * keeps this application's own order, and filtering by group stays here,
+   * over `resourceIds`, because the core never filters by group.
+   */
+  const ROOM_GROUPS = [
+    { id: "main", title: "Main building" },
+    { id: "annexe", title: "Annexe" },
   ];
 
   const KINDS = [
@@ -2550,6 +2651,11 @@
     { resourceId: "room-c", dayOfWeek: null, from: 12 * 60, to: 13 * 60, label: "Daily reset" },
     { resourceId: "room-a", dayOfWeek: 3, from: 15 * 60, to: 17 * 60, label: "AV maintenance" },
     { resourceId: "room-b", dayOfWeek: 5, from: 8 * 60, to: 10 * 60, label: "Facilities audit" },
+    // Building-wide (`resourceId: null`), so it applies to every room and is
+    // the one blocker a proposal that names no room can be refused by. It is
+    // also the only one a combined view can honestly draw: a room-scoped
+    // range has no column of its own there.
+    { resourceId: null, dayOfWeek: 2, from: 8 * 60, to: 9 * 60, label: "Safety round" },
   ];
 
   /**
@@ -2826,6 +2932,8 @@
   /** @type {Array<any>} */
   let store = [];
   const activeRooms = new Set(ROOMS.map((room) => room.id));
+  /** Whether the shell declares its room groups to the core. */
+  let groupRooms = true;
   const activeKinds = new Set(KINDS.map((kind) => kind.id));
   /** Bookings created in this session, so the aura only ever plays once. */
   const fresh = new Set();
@@ -2875,7 +2983,11 @@
     return BLOCKED.filter(
       (range) =>
         (range.dayOfWeek === null || range.dayOfWeek === weekday) &&
-        (resourceId === null || range.resourceId === resourceId),
+        // A `null` query means "every room's entries", for painting. A named
+        // room means its own entries *plus* the building-wide ones, which is
+        // the rule `miniDayState` already applies and the one the core uses
+        // to decide which columns a resource-less background covers.
+        (resourceId === null || range.resourceId === null || range.resourceId === resourceId),
     );
   }
 
@@ -2892,18 +3004,54 @@
     return EXTRA.filter(
       (range) =>
         (range.dayOfWeek === null || range.dayOfWeek === weekday) &&
-        (resourceId === null || range.resourceId === resourceId),
+        (resourceId === null || range.resourceId === null || range.resourceId === resourceId),
     );
+  }
+
+  /**
+   * Backgrounds of one kind out of a `getRangeContext()` snapshot. The two
+   * buckets the core reports are exactly the two the rules need:
+   * `overlapping` is a plain intersection - the shape of a blocker - and
+   * `covering` fully wraps the proposed range, which is the shape of an
+   * exemption.
+   *
+   * @param {any} context a `getRangeContext()` snapshot, or null
+   * @param {"overlapping" | "covering"} bucket
+   * @param {string} className the wash this shell painted the rule with
+   */
+  function contextBackgrounds(context, bucket, className) {
+    const list = context?.backgrounds?.[bucket];
+    if (!Array.isArray(list)) return [];
+    return list.filter((range) => range.classNames?.includes(className));
   }
 
   /**
    * The single source of truth for every refusal: pointer drags, keyboard
    * moves, commands and range selection all ask this.
    *
+   * Two families of rule live here, and they are answered differently.
+   * Opening hours, the maximum duration and the closed weekday are pure
+   * policy - nothing is drawn for them beyond a wash, and they hold for
+   * days the grid never rendered. The non-bookable ranges and the extended
+   * desk windows *are* drawn, so when the proposal names a room and the
+   * caller carries a range context, the answer comes from the core's own
+   * report of what the range touches rather than from a second walk over
+   * the constants: the rule enforced is then literally the rectangle under
+   * the pointer.
+   *
+   * Which room the question is about decides everything. A proposal that
+   * names one asks about that room. A proposal without one - a combined
+   * view, a paste with no column - asks whether *any* room can take the
+   * slot, which is the question `miniDayState()` already answers when it
+   * marks a day: only "every active room is blocked" closes it. A range
+   * context built without a `resourceId` is a union across rooms and
+   * cannot answer that, so the room-scoped constants do.
+   *
    * @param {{ start: string, end: string, resourceId: string | null }} slot
+   * @param {any} [context] `detail.context` / the policy's context, when the caller has one
    * @returns {string | null} the reason, or null when the slot is bookable
    */
-  function violation({ start, end, resourceId }) {
+  function violation({ start, end, resourceId }, context = null) {
     const day = start.slice(0, 10);
     const from = wallMinutesOf(start);
     const to = wallMinutesOf(end);
@@ -2914,19 +3062,61 @@
       return "Saturdays are staffed for viewing only.";
     }
     // Extended desk hours widen the official range: a slot fully inside one
-    // of them is bookable even past closing time.
-    const extra = extraRangesOn(resourceId, day).find((range) => from >= range.from && to <= range.to);
+    // of them is bookable even past closing time. "Fully inside" is what
+    // `backgrounds.covering` means, so the core answers it directly.
+    const extra =
+      contextBackgrounds(context, "covering", "sc-extra").length > 0 ||
+      extraRangesOn(resourceId, day).some((range) => from >= range.from && to <= range.to);
     if (!extra && (from < POLICY.opensAt || to > POLICY.closesAt || to <= from)) {
       return `Bookings stay inside ${clock(POLICY.opensAt)}–${clock(POLICY.closesAt)}.`;
     }
     if (to - from > POLICY.maxMinutes) {
       return `A single booking cannot exceed ${POLICY.maxMinutes / 60} hours.`;
     }
-    const hit = blockedRangesOn(resourceId, day).find((range) => from < range.to && to > range.from);
-    if (hit) {
-      return `${hit.label} blocks ${clock(hit.from)}–${clock(hit.to)} in ${roomTitle(hit.resourceId)}.`;
+    // A blocker is any intersection, which is `backgrounds.overlapping` -
+    // authoritative as soon as the proposal is scoped to one room, because
+    // the context is then scoped to that room too.
+    const painted = resourceId
+      ? contextBackgrounds(context, "overlapping", "sc-blocked")[0]
+      : undefined;
+    if (painted) {
+      return blockedReason(
+        String(painted.extendedProps?.label ?? painted.title),
+        wallClock(String(painted.start)),
+        wallClock(String(painted.end)),
+        painted.resourceId == null ? null : String(painted.resourceId),
+      );
+    }
+    // Without a room the slot is refused only when nowhere is left to put
+    // it. `activeRooms` is the scope the user is actually looking at, and no
+    // room selected is no verdict - the same rule the mini-month follows.
+    const scope = resourceId ? [String(resourceId)] : [...activeRooms];
+    const blocking = scope.map((room) =>
+      blockedRangesOn(room, day).find((range) => from < range.to && to > range.from),
+    );
+    if (scope.length > 0 && blocking.every(Boolean)) {
+      const hit = /** @type {{ label: string, from: number, to: number, resourceId: string | null }} */ (
+        blocking[0]
+      );
+      // One room named, or one building-wide range answering for all of
+      // them: the reason can name it. Several different ranges happening to
+      // cover every room cannot be summed up by any one of their labels.
+      return hit.resourceId === null || scope.length === 1
+        ? blockedReason(hit.label, clock(hit.from), clock(hit.to), hit.resourceId)
+        : "Every room is blocked at that time.";
     }
     return null;
+  }
+
+  /**
+   * @param {string} label
+   * @param {string} from wall clock, `HH:MM`
+   * @param {string} to wall clock, `HH:MM`
+   * @param {string | null} resourceId null for a building-wide range
+   */
+  function blockedReason(label, from, to, resourceId) {
+    const where = resourceId === null ? "in every room" : `in ${roomTitle(resourceId)}`;
+    return `${label} blocks ${from}–${to} ${where}.`;
   }
 
   /**
@@ -2984,13 +3174,18 @@
           classNames: ["sc-closed"],
         });
         // A room-scoped range has no column of its own in a combined view,
-        // where it would read as blocking every room at once.
-        for (const range of resourceView ? blockedRangesOn(null, iso) : []) {
-          if (!activeRooms.has(range.resourceId)) continue;
+        // where it would read as blocking every room at once - so it is only
+        // drawn in resource views, and only there does it refuse a drop. A
+        // building-wide range has no such problem: it is drawn in every view
+        // and refuses everywhere, which is exactly the difference the rule in
+        // `violation()` makes.
+        for (const range of blockedRangesOn(null, iso)) {
+          const global = range.resourceId === null;
+          if (!global && (!resourceView || !activeRooms.has(range.resourceId))) continue;
           ranges.push({
-            id: `blocked-${range.resourceId}-${iso}-${range.from}`,
+            id: `blocked-${range.resourceId ?? "all"}-${iso}-${range.from}`,
             title: range.label,
-            resourceId: range.resourceId,
+            ...(global ? null : { resourceId: range.resourceId }),
             start: stamp(date, range.from),
             end: stamp(date, range.to),
             classNames: ["sc-blocked"],
@@ -3152,7 +3347,10 @@
       start = stamp(target.date, target.minutes ?? POLICY.opensAt);
       end = stamp(target.date, (target.minutes ?? POLICY.opensAt) + duration);
     }
-    const reason = violation({ start, end, resourceId: target.resourceId });
+    const reason = violation(
+      { start, end, resourceId: target.resourceId },
+      allDay ? null : calendar.getRangeContext({ start, end, resourceId: target.resourceId }),
+    );
     if (reason) return reason;
     const conflicts = calendar
       .getEventOverlaps({ start, end }, { resourceIds: target.resourceId ? [target.resourceId] : [] })
@@ -3513,7 +3711,10 @@
     const item = calendar.getEventById(copyClipboard.id);
     const start = stamp(slot.date, slot.minutes);
     const end = stamp(slot.date, slot.minutes + copyClipboard.durationMin);
-    const reason = violation({ start, end, resourceId: slot.resourceId });
+    const reason = violation(
+      { start, end, resourceId: slot.resourceId },
+      calendar.getRangeContext({ start, end, resourceId: slot.resourceId }),
+    );
     if (reason) {
       record(`paste refused: ${reason}`);
       toast(reason);
@@ -3549,6 +3750,30 @@
     // Tools, which is where the precedence rule becomes visible.
     firstDay: 1,
     hiddenDays: [7],
+    // Prevention, not correction. `violation()` used to run only once the
+    // gesture had already committed: the booking was accepted, snapped
+    // back and explained by a toast. As an interaction policy the very
+    // same function runs while the pointer is still down, so the mirror,
+    // the resized card and the selection ghost turn red on the first
+    // refused destination and the drop never happens. The commit-time
+    // guard stays: it is the authority for programmatic moves, and it
+    // owns the asynchronous half nobody can answer synchronously.
+    interactionPolicy({ target, context }) {
+      // All-day bounds are civil dates with no wall clock; this shell's
+      // rules are all wall-clock, and the lane only carries closures it
+      // never lets the user move. The commit guard still sees them.
+      if (target.allDay) return true;
+      return (
+        violation(
+          {
+            start: String(target.start),
+            end: String(target.end),
+            resourceId: target.resourceId,
+          },
+          context,
+        ) ?? true
+      );
+    },
     eventContent({ event, element }) {
       const kind = event.extendedProps?.kind ?? "review";
       // The core hands the application its own node: the tone is set as
@@ -3639,6 +3864,23 @@
       badge.className = "sc-count";
       badge.textContent = String(count);
       node.append(dow, dom, badge);
+      return node;
+    },
+    resourceGroupContent({ group, resources, element }) {
+      element.dataset.group = group.id;
+      const node = document.createDocumentFragment();
+      node.append(icon("building"));
+      const label = document.createElement("span");
+      label.textContent = group.title;
+      // The hook is handed the group's own resources, so the count is the
+      // section's, not a second walk over `calendar.resources`.
+      const ids = new Set(resources.map((item) => item.id));
+      const count = document.createElement("span");
+      count.className = "sc-count";
+      count.textContent = String(
+        inCurrentRange(calendar.events.filter((item) => ids.has(String(item.resourceId)))).length,
+      );
+      node.append(label, count);
       return node;
     },
     resourceHeaderContent({ resource }) {
@@ -3809,6 +4051,23 @@
     renderCockpit();
   }
 
+  /**
+   * Bookings the core currently reports as running. The fact is read off
+   * the rendered nodes rather than recomputed: every event node carries
+   * `data-temporal-state` (M11), one event can occupy several nodes when it
+   * spans days, and the core re-renders by itself at the next start/end
+   * boundary. So this counter ages on its own - the shell owns no clock,
+   * no interval and no `now` of its own for it.
+   */
+  function inProgressCount() {
+    const ids = new Set();
+    for (const node of calendar.querySelectorAll('[data-temporal-state="current"]')) {
+      const id = /** @type {HTMLElement} */ (node).dataset.eventId;
+      if (id) ids.add(id);
+    }
+    return ids.size;
+  }
+
   function renderCockpit() {
     const inRange = inCurrentRange(calendar.events);
     const now = nowStamp();
@@ -3836,6 +4095,12 @@
       chip(busiest?.count > 0 ? ["Busiest: ", strong(busiest.room.title)] : ["No room loaded"]),
       lastChip(),
     );
+    const running = inProgressCount();
+    if (running > 0) {
+      const node = chip([dot(), strong(String(running)), " in progress"]);
+      node.className = "sc-now-chip";
+      cockpit.insertBefore(node, cockpit.children[1] ?? null);
+    }
   }
 
   /** The newest intent, so the log can stay closed without looking dead. */
@@ -4173,7 +4438,13 @@
   // The dots describe the events currently shown: the core already renders
   // on every mutation, so `calendar:render` is the one beat to watch.
   // `renderMiniMonth` only touches this shell's chrome, never the core.
-  calendar.addEventListener("calendar:render", () => renderMiniMonth());
+  // The one-shot aging timer (M11) re-renders at the next start/end
+  // boundary without any navigation, so the "in progress" counter has to
+  // ride `calendar:render` rather than the navigation beats.
+  calendar.addEventListener("calendar:render", () => {
+    renderMiniMonth();
+    renderCockpit();
+  });
 
   // --- Room checklist ------------------------------------------------------
   const roomList = document.getElementById("room-list");
@@ -4192,36 +4463,100 @@
     applyFilters();
   });
 
+  /**
+   * The sidebar sections, following the same rule the core applies to the
+   * columns: declared group order, `ROOMS` order inside a group, first
+   * declaration of an id wins, and anything left over trails in a section
+   * with no heading. The shell derives it itself because filtering by group
+   * is application work - the core only ever receives `resourceIds`.
+   *
+   * @returns {Array<{ group: { id: string, title: string } | null, rooms: typeof ROOMS }>}
+   */
+  function roomSections() {
+    const seen = new Set();
+    const sections = [];
+    for (const group of groupRooms ? ROOM_GROUPS : []) {
+      if (seen.has(group.id)) continue;
+      seen.add(group.id);
+      const rooms = ROOMS.filter((room) => room.groupId === group.id);
+      if (rooms.length > 0) sections.push({ group, rooms });
+    }
+    const leftover = ROOMS.filter((room) => !room.groupId || !seen.has(room.groupId));
+    if (leftover.length > 0) sections.push({ group: null, rooms: leftover });
+    return sections;
+  }
+
+  /**
+   * A whole group in one click. Nothing group-shaped reaches the core: this
+   * only ever ends up as a different set of `resourceIds`.
+   *
+   * @param {{ id: string, title: string }} group
+   * @param {typeof ROOMS} rooms
+   */
+  function groupHeadingRow(group, rooms) {
+    const item = document.createElement("li");
+    const label = document.createElement("label");
+    label.className = "sc-check sc-check-group";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "check";
+    input.dataset.groupId = group.id;
+    const active = rooms.filter((room) => activeRooms.has(room.id)).length;
+    input.checked = active === rooms.length;
+    input.indeterminate = active > 0 && active < rooms.length;
+    input.addEventListener("change", () => {
+      for (const room of rooms) {
+        if (input.checked) activeRooms.add(room.id);
+        else activeRooms.delete(room.id);
+      }
+      record(`rooms → ${group.title} ${input.checked ? "on" : "off"}`);
+      applyFilters();
+    });
+    const text = document.createElement("span");
+    text.textContent = group.title;
+    label.append(input, text, icon("building"));
+    item.append(label);
+    return item;
+  }
+
+  /** @param {(typeof ROOMS)[number]} room */
+  function roomRow(room) {
+    const item = document.createElement("li");
+    const label = document.createElement("label");
+    label.className = "sc-check";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "check";
+    input.dataset.roomId = room.id;
+    input.checked = activeRooms.has(room.id);
+    input.addEventListener("change", () => {
+      if (input.checked) activeRooms.add(room.id);
+      else activeRooms.delete(room.id);
+      record(`rooms → ${[...activeRooms].join(", ") || "none"}`);
+      applyFilters();
+    });
+    const text = document.createElement("span");
+    text.textContent = room.title;
+    const count = document.createElement("span");
+    count.className = "sc-count-mini";
+    count.textContent = String(
+      inCurrentRange(visibleStore().filter((event) => event.resourceId === room.id)).length,
+    );
+    label.append(input, text, count);
+    item.append(label);
+    return item;
+  }
+
   function renderRooms() {
     roomSummary.textContent = `${activeRooms.size}/${ROOMS.length}`;
     roomAll.checked = activeRooms.size === ROOMS.length;
     roomAll.indeterminate = activeRooms.size > 0 && activeRooms.size < ROOMS.length;
     roomList.replaceChildren();
-    for (const room of ROOMS) {
-      const item = document.createElement("li");
-      const label = document.createElement("label");
-      label.className = "sc-check";
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.className = "check";
-      input.checked = activeRooms.has(room.id);
-      input.addEventListener("change", () => {
-        if (input.checked) activeRooms.add(room.id);
-        else activeRooms.delete(room.id);
-        record(`rooms → ${[...activeRooms].join(", ") || "none"}`);
-        applyFilters();
-      });
-      const text = document.createElement("span");
-      text.textContent = room.title;
-      const count = document.createElement("span");
-      count.className = "sc-count-mini";
-      count.textContent = String(
-        inCurrentRange(visibleStore().filter((event) => event.resourceId === room.id)).length,
-      );
-      label.append(input, text, count);
-      item.append(label);
-      roomList.append(item);
+    for (const section of roomSections()) {
+      if (section.group) roomList.append(groupHeadingRow(section.group, section.rooms));
+      for (const room of section.rooms) roomList.append(roomRow(room));
     }
+    roomList.dataset.grouped = String(roomSections().some((section) => section.group !== null));
   }
 
   // --- Kind legend (also a filter) -----------------------------------------
@@ -4262,7 +4597,7 @@
       ["clock-hour-8", `Bookings run ${clock(POLICY.opensAt)} – ${clock(POLICY.closesAt)}; closed hours are shaded.`],
       ["sun", "Green bands are bookable hours; amber bands are extended desk hours, also bookable."],
       ["hourglass-low", `A booking cannot exceed ${POLICY.maxMinutes / 60} hours.`],
-      ["ban", "Hatched ranges are non-bookable; a drop landing on one is refused."],
+      ["ban", "Hatched ranges are non-bookable. A slot that names no room is only refused when every room is blocked."],
       ["beach", "Saturdays are view-only, Sundays are not rendered."],
       ["lock", "Maintenance is owned by facilities and cannot be dragged."],
       ["history", "Events that are over stay put — no drag, resize or rebooking into the past."],
@@ -4284,7 +4619,18 @@
   if (window.innerWidth < 640) calendar.setView("day");
   store = seedStore();
   calendar.resources = ROOMS;
+  applyRoomGroups();
   calendar.events = visibleStore();
+
+  /**
+   * Grouping is a declaration, not a reordering: `calendar.resources` keeps
+   * this application's own order and the core derives the sections. A group
+   * whose rooms are all filtered out produces no section at all, so nothing
+   * here has to prune the list.
+   */
+  function applyRoomGroups() {
+    calendar.resourceGroups = groupRooms ? ROOM_GROUPS : [];
+  }
 
   function applyFilters() {
     calendar.resources = ROOMS.filter((room) => activeRooms.has(room.id));
@@ -4385,7 +4731,7 @@
     const start = String(detail.current.start);
     const end = String(detail.current.end);
     const resourceId = detail.current.resourceId ?? detail.event?.resourceId ?? null;
-    const reason = violation({ start, end, resourceId });
+    const reason = violation({ start, end, resourceId }, detail.context);
     if (reason) {
       // Synchronous refusal: the core reverts the optimistic change itself.
       event.preventDefault();
@@ -4459,7 +4805,7 @@
     const resourceId = detail.resourceId;
     // A slot that cannot take a drop cannot take a booking either: the same
     // rule answers both, so the shell never offers what it will refuse.
-    const reason = violation({ start, end, resourceId });
+    const reason = violation({ start, end, resourceId }, detail.context);
     if (reason) {
       event.preventDefault();
       record(`select refused: ${reason}`);
@@ -4768,7 +5114,10 @@
     if (copyClipboard) {
       const pasteStart = stamp(date, minutes);
       const pasteEnd = stamp(date, minutes + copyClipboard.durationMin);
-      const pasteReason = violation({ start: pasteStart, end: pasteEnd, resourceId }) ??
+      const pasteReason = violation(
+        { start: pasteStart, end: pasteEnd, resourceId },
+        calendar.getRangeContext({ start: pasteStart, end: pasteEnd, resourceId }),
+      ) ??
         (calendar
           .getEventOverlaps({ start: pasteStart, end: pasteEnd }, { resourceIds: resourceId ? [resourceId] : [] })
           .some((entry) => entry.id !== copyClipboard?.id)
@@ -4815,7 +5164,10 @@
         run: () => {
           const start = stamp(date, minutes);
           const end = stamp(date, minutes + 30);
-          const reason = violation({ start, end, resourceId });
+          const reason = violation(
+            { start, end, resourceId },
+            calendar.getRangeContext({ start, end, resourceId }),
+          );
           if (reason) {
             record(`create refused: ${reason}`);
             toast(reason);
@@ -5033,6 +5385,15 @@
       calendar.configure({ pxPerMinute: on ? 1 : 1.5 });
     } else if (option === "halfhour") {
       calendar.configure({ slotLabelInterval: on ? 30 : 60 });
+    } else if (option === "groups") {
+      // Off is not "ungroup the rooms": the rooms keep their `groupId` and
+      // the core simply has no group declared to match, so every column
+      // trails in the headerless block. That is the same path an unknown
+      // `groupId` takes, and it is why the group row reserves no space when
+      // nothing matches.
+      groupRooms = on;
+      applyRoomGroups();
+      renderRooms();
     }
     record(`grid → ${option} ${on ? "on" : "off"}`);
   });

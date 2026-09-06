@@ -34,6 +34,13 @@ query subsystem, resource tree or source cache was added.
   trailing without a header, and the first duplicate group id winning.
   Hierarchy/expand/collapse stays out of scope by design.
 
+### Fixed
+
+* A policy-refused resize and a policy-refused selection drag now paint the
+  refusal: both already carried `cv-invalid` and `data-reason`, but only the
+  drag mirror and the external ghost had a stylesheet rule, so those two
+  looked identical to an accepted gesture.
+
 ### Notes
 
 The 0.2 concurrency matrix (pending → commit/revert/supersede, realtime echo

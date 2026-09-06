@@ -1,5 +1,6 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
+import { Temporal } from "temporal-polyfill";
 import {
   anchorDate,
   closePanel,
@@ -817,4 +818,391 @@ test("right-clicking a day header queues that day's bookings", async ({ page }) 
     ).length;
   });
   await expect(page.locator("#workbench-list li")).toHaveCount(expected);
+});
+
+/**
+ * M13 in the shell: `violation()` used to answer only once the drop had
+ * committed - the booking was accepted, snapped back, and explained by a
+ * toast. As an interaction policy the same function answers while the
+ * pointer is still down, so these tests assert the refusal is visible
+ * *during* the gesture and that nothing ever commits.
+ */
+
+/**
+ * The painted blocker's canonical range, the room it belongs to and the
+ * label the shell gave it. All of it is read rather than assumed: which
+ * room's non-bookable range is on screen depends on the weekday the suite
+ * runs on.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function describeBlocker(page) {
+  const node = page.locator(".cv-background.sc-blocked").first();
+  await expect(node).toBeVisible();
+  const range = await node.evaluate((element) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const resourceId = /** @type {HTMLElement | null} */ (element.closest(".cv-day"))?.dataset.resourceId;
+    const found = /** @type {Array<any>} */ (calendar.backgrounds).find(
+      (entry) => entry.classNames?.includes("sc-blocked") && String(entry.resourceId) === resourceId,
+    );
+    if (!found) return null;
+    return {
+      resourceId: String(resourceId),
+      start: String(found.start),
+      label: String(found.extendedProps?.label ?? found.title ?? ""),
+    };
+  });
+  if (!range?.label) throw new Error("expected a painted, labelled blocker on screen");
+  return range;
+}
+
+/**
+ * Its box, measured now. Kept separate from `describeBlocker` because every
+ * render moves it: the group row alone changes the header height, so a box
+ * read before seeding is already stale by the time the drag starts.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {boolean} [scroll] bring it into view first, when nothing else has to stay reachable
+ */
+async function blockerBox(page, scroll = false) {
+  const node = page.locator(".cv-background.sc-blocked").first();
+  await expect(node).toBeVisible();
+  if (scroll) await node.scrollIntoViewIfNeeded();
+  const box = await node.boundingBox();
+  if (!box) throw new Error("expected the blocker to be laid out");
+  return box;
+}
+
+test("a refused destination is red under the pointer, and never commits", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // One day, three rooms: every column fits the viewport, so the target is
+  // reachable without a horizontal scroll on any engine. Far enough out that
+  // the fixture has thinned to nothing, so the probe below is the only
+  // booking in that column.
+  await setView(page, "resourceDay");
+  await gotoDate(page, weekdayFrom((await anchorDate(page)).add({ days: 21 }), 3));
+  const { label, resourceId, start } = await describeBlocker(page);
+
+  // The rule is a rectangle on screen, so the drag source is placed relative
+  // to it rather than to a clock: 90 minutes earlier in the same room is
+  // open by every other rule the shell enforces.
+  const anchor = Temporal.ZonedDateTime.from(start);
+  await page.evaluate(
+    async ({ probeStart, probeEnd, room }) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      // Awaited: a load still in flight would replace the probe.
+      await calendar.refetchEvents();
+      calendar.addEvent({
+        id: "probe-drag",
+        title: "Drag me",
+        start: probeStart,
+        end: probeEnd,
+        resourceId: room,
+      });
+    },
+    {
+      probeStart: anchor.subtract({ minutes: 90 }).toString(),
+      probeEnd: anchor.subtract({ minutes: 60 }).toString(),
+      room: resourceId,
+    },
+  );
+  await flushRender(page);
+
+  // Scrolled so both ends of the drag are on screen at once, from the
+  // element's own API rather than by nudging the blocker into view - that
+  // scrolls the minimum needed and can push the source out the other side.
+  await page.evaluate(
+    (time) => /** @type {any} */ (document.querySelector("calendar-view")).scrollToTime(time),
+    anchor.subtract({ minutes: 120 }).toPlainTime().toString(),
+  );
+  // Both boxes measured after the last render that moves them.
+  const box = await blockerBox(page);
+  const source = await page.locator('.cv-event[data-event-id="probe-drag"]').boundingBox();
+  if (!source) throw new Error("expected the probe booking to be laid out");
+
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 });
+  const mirror = page.locator(".cv-drag-mirror");
+  await expect(mirror).toHaveClass(/cv-invalid/);
+  // The reason names the background the core reported as overlapping the
+  // proposed range, not a constant the shell looked up a second time.
+  await expect(mirror).toHaveAttribute("data-reason", new RegExp(label));
+  await page.mouse.up();
+  await flushRender(page);
+
+  // Prevention, not correction: the drop never happened, so the booking kept
+  // its place and the commit-time guard had no refusal to explain.
+  const after = await page.evaluate(() =>
+    String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById("probe-drag").start),
+  );
+  expect(Temporal.ZonedDateTime.compare(after, anchor.subtract({ minutes: 90 }))).toBe(0);
+  await expect(page.locator("#toast")).not.toHaveClass(/is-open/);
+});
+
+test("a refused selection drag paints its own ghost", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "resourceThreeDays");
+  // Far enough out that the fixture has thinned to nothing, so the space
+  // above the blocker is column background rather than a booking.
+  await gotoDate(page, weekdayFrom((await anchorDate(page)).add({ days: 21 }), 3));
+  await scrollToMorning(page);
+  const { label } = await describeBlocker(page);
+  const box = await blockerBox(page, true);
+  const x = box.x + box.width / 2;
+
+  // The press has to land on a legal anchor - a refused start arms no
+  // selection at all - so it begins clear of the blocker and grows into it.
+  await page.mouse.move(x, box.y - 80);
+  await page.mouse.down();
+  await page.mouse.move(x, box.y + box.height - 6, { steps: 10 });
+  const ghost = page.locator(".cv-select-ghost");
+  await expect(ghost).toHaveClass(/cv-invalid/);
+  await expect(ghost).toHaveAttribute("data-reason", new RegExp(label));
+  await page.mouse.up();
+  await flushRender(page);
+  // A refused selection arms no creation sheet.
+  await expect(page.locator("#create-dialog")).not.toBeVisible();
+});
+
+/**
+ * M11 in the shell: the core marks every rendered node past/current/future
+ * against the render's own `now`, and re-renders by itself at the next
+ * boundary. The cockpit counter reads that fact instead of keeping a clock.
+ */
+test("the cockpit counts what the core marks as running", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    // "Running" is about now, so today has to be on screen: the shell hides
+    // Sunday by policy and the anchor is not always rendered. Day bounds are
+    // widened for the same reason - the suite runs at any hour.
+    calendar.setAttribute("slot-min", "00:00");
+    calendar.setAttribute("slot-max", "23:59");
+    calendar.configure({ hiddenDays: [] });
+  });
+  await flushRender(page);
+  await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    // Awaited: the range change queued a load that would otherwise replace
+    // these two the moment it lands.
+    await calendar.refetchEvents();
+    // The instant comes from the clock and is handed over as a zoned ISO
+    // string; the element projects it into its own zone. No literal date,
+    // no hand-written offset.
+    const at = (/** @type {number} */ deltaMinutes) =>
+      new Date(Date.now() + deltaMinutes * 60000).toISOString().replace("Z", "+00:00[UTC]");
+    const resourceId = calendar.resources[0].id;
+    calendar.addEvent({ id: "probe-running", title: "Running now", start: at(-20), end: at(20), resourceId });
+    calendar.addEvent({ id: "probe-done", title: "Already over", start: at(-90), end: at(-60), resourceId });
+  });
+  await flushRender(page);
+
+  await expect(page.locator('[data-event-id="probe-running"]')).toHaveAttribute(
+    "data-temporal-state",
+    "current",
+  );
+  await expect(page.locator('[data-event-id="probe-done"]')).toHaveAttribute("data-temporal-state", "past");
+  // The chip counts events, not nodes: a booking spanning several days owns
+  // several nodes, and the fixture may already have something running.
+  const distinct = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const ids = new Set();
+    for (const node of calendar.querySelectorAll('[data-temporal-state="current"]')) {
+      if (node.dataset.eventId) ids.add(node.dataset.eventId);
+    }
+    return ids.size;
+  });
+  expect(distinct).toBeGreaterThan(0);
+  await expect(page.locator(".sc-now-chip")).toHaveText(`${distinct} in progress`);
+});
+
+/**
+ * A viewport point at a wall-clock minute inside a rendered column, derived
+ * from the column box and the element's own day bounds rather than from an
+ * axis label - the labels are localized, the geometry is not. Columns are
+ * scanned from `fromColumn` until one is free at that height, so the point
+ * is an empty-slot intent and not a hit on a booking.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number} minutes wall-clock minutes from midnight
+ */
+async function freeSlotPoint(page, minutes) {
+  return page.evaluate((target) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const toMinutes = (/** @type {string} */ value) =>
+      Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+    const min = toMinutes(calendar.getAttribute("slot-min") ?? "00:00");
+    const max = toMinutes(calendar.getAttribute("slot-max") ?? "24:00");
+    for (const body of calendar.querySelectorAll(".cv-day-body")) {
+      const rect = body.getBoundingClientRect();
+      const y = rect.top + (rect.height * (target - min)) / (max - min);
+      const x = rect.left + rect.width / 2;
+      const node = document.elementFromPoint(x, y);
+      if (node instanceof Element && node.classList.contains("cv-day-body")) return { x, y };
+    }
+    return null;
+  }, minutes);
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {{ x: number, y: number } | null} point
+ */
+async function bookHere(page, point) {
+  expect(point).not.toBeNull();
+  await page.mouse.move(point?.x ?? 0, point?.y ?? 0);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.up({ button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Book 30 minutes here" }).click();
+}
+
+/**
+ * The rule the shell draws has to be the rule it enforces, and a proposal
+ * that names no room asks a different question from one that does: not "is
+ * this room blocked" but "is every room blocked". That is already how the
+ * mini-month marks a day, and these two tests pin the grid to the same
+ * answer.
+ */
+test("a combined view no longer refuses a slot another room is free for", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // Combined: the columns are days, not rooms, so a slot names no room. The
+  // Wednesday three weeks out keeps the fixture thin and stays clear of the
+  // Tuesday building-wide range and of view-only Saturday.
+  await setView(page, "threeDays");
+  await gotoDate(page, weekdayFrom((await anchorDate(page)).add({ days: 21 }), 3));
+  await scrollToMorning(page);
+  // Room C is on its Daily reset at this hour - and rooms A and B are not.
+  await bookHere(page, await freeSlotPoint(page, 12 * 60 + 15));
+
+  await expect(page.locator("#create-dialog")).toBeVisible();
+  await expect(page.locator("#toast")).not.toHaveClass(/is-open/);
+});
+
+test("a building-wide closure is drawn in a combined view, and refuses there", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "threeDays");
+  await gotoDate(page, weekdayFrom((await anchorDate(page)).add({ days: 21 }), 2));
+  await scrollToMorning(page);
+  // A room-scoped range has no column to live in here; a building-wide one
+  // does, so it is the one thing a combined view can honestly hatch.
+  await expect(page.locator(".cv-background.sc-blocked").first()).toBeVisible();
+  await bookHere(page, await freeSlotPoint(page, 8 * 60 + 15));
+
+  await expect(page.locator("#create-dialog")).not.toBeVisible();
+  await expect(page.locator("#toast")).toContainText("in every room");
+});
+
+/**
+ * M16 in the shell: one level of room grouping. The core derives the
+ * sections and owns the column spans; the shell only declares the groups,
+ * skins the row and mirrors the same sections in its own filter - grouping
+ * never becomes a core filter.
+ */
+test("rooms are grouped by building, and the columns follow the sections", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "resourceDay");
+
+  const declared = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return {
+      groups: /** @type {Array<any>} */ (calendar.resourceGroups).map((group) => String(group.id)),
+      // `calendar.resources` keeps the application's own order: grouping is
+      // a visual derivation, not a reordering of what was handed over.
+      resources: /** @type {Array<any>} */ (calendar.resources).map((resource) => ({
+        id: String(resource.id),
+        groupId: resource.groupId == null ? null : String(resource.groupId),
+      })),
+    };
+  });
+  expect(declared.groups.length).toBeGreaterThan(1);
+
+  // One header per non-empty group, in the declared order.
+  const rendered = await page
+    .locator(".cv-group-header")
+    .evaluateAll((nodes) => nodes.map((node) => /** @type {HTMLElement} */ (node).dataset.groupId));
+  expect(rendered).toEqual(declared.groups.filter((id) => declared.resources.some((r) => r.groupId === id)));
+
+  // The resource columns are ordered by section, and every declared room is
+  // rendered exactly once - never twice, never dropped.
+  const columns = await page
+    .locator(".cv-resource-header")
+    .evaluateAll((nodes) => nodes.map((node) => /** @type {HTMLElement} */ (node).dataset.resourceId));
+  const bySection = declared.groups
+    .flatMap((id) => declared.resources.filter((r) => r.groupId === id).map((r) => r.id))
+    .concat(
+      declared.resources
+        .filter((r) => r.groupId === null || !declared.groups.includes(r.groupId))
+        .map((r) => r.id),
+    );
+  expect(columns).toEqual(bySection);
+  expect(new Set(columns).size).toBe(declared.resources.length);
+});
+
+test("dropping the group declaration reserves no header space", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "resourceDay");
+  await expect(page.locator(".cv-group-row")).toBeVisible();
+  const groupedTop = await page
+    .locator(".cv-day-header")
+    .first()
+    .evaluate((node) => node.getBoundingClientRect().top);
+
+  await openPanel(page);
+  await page.click("#tools-toggle");
+  await page.locator('[data-grid="groups"]').click();
+  await flushRender(page);
+
+  // The rooms keep their `groupId`; nothing matches it any more, so they all
+  // trail in the headerless block and the row is not rendered at all.
+  await expect(page.locator(".cv-group-row")).toHaveCount(0);
+  await expect(page.locator(".cv-resource-header")).toHaveCount(3);
+  const flatTop = await page
+    .locator(".cv-day-header")
+    .first()
+    .evaluate((node) => node.getBoundingClientRect().top);
+  expect(flatTop).toBeLessThan(groupedTop);
+});
+
+test("filtering a whole group only ever changes which rooms the core is given", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "resourceDay");
+  await openPanel(page);
+
+  const first = await page.evaluate(
+    () =>
+      /** @type {HTMLElement | null} */ (document.querySelector("#room-list input[data-group-id]"))?.dataset
+        .groupId ?? null,
+  );
+  expect(first).not.toBeNull();
+  const members = await page.evaluate((groupId) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return /** @type {Array<any>} */ (calendar.resources)
+      .filter((resource) => String(resource.groupId) === groupId)
+      .map((resource) => String(resource.id));
+  }, first);
+  expect(members.length).toBeGreaterThan(0);
+
+  await page.locator(`#room-list input[data-group-id="${first}"]`).uncheck();
+  await flushRender(page);
+
+  // The core was handed fewer resources - not a group filter - so the
+  // section disappears with its members instead of rendering empty.
+  const left = await page.evaluate(() =>
+    /** @type {Array<any>} */ (/** @type {any} */ (document.querySelector("calendar-view")).resources).map(
+      (resource) => String(resource.id),
+    ),
+  );
+  expect(left.some((id) => members.includes(id))).toBe(false);
+  await expect(page.locator(`.cv-group-header[data-group-id="${first}"]`)).toHaveCount(0);
+  await expect(page.locator("#room-summary")).toHaveText(`${left.length}/3`);
 });

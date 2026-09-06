@@ -412,14 +412,22 @@ test("the room master toggle reads indeterminate, and no room is no verdict", as
   expect(await isIndeterminate()).toBe(false);
 
   // One room off turns the master `indeterminate`; the demand stays 2/3.
-  await page.locator("#room-list input").nth(2).uncheck();
+  // Rooms are addressed by id: the list also carries group rows, and which
+  // row sits at which index is not what this test is about.
+  const rooms = await page.evaluate(() =>
+    [...document.querySelectorAll("#room-list input[data-room-id]")].map(
+      (input) => /** @type {HTMLElement} */ (input).dataset.roomId,
+    ),
+  );
+  expect(rooms.length).toBe(3);
+  await page.locator(`#room-list input[data-room-id="${rooms[2]}"]`).uncheck();
   await flushRender(page);
   await expect(page.locator("#room-summary")).toHaveText("2/3");
   await expect.poll(isIndeterminate).toBe(true);
 
   // No room at all: the mini-month must not read "none" as "full".
-  await page.locator("#room-list input").first().uncheck();
-  await page.locator("#room-list input").nth(1).uncheck();
+  await page.locator(`#room-list input[data-room-id="${rooms[0]}"]`).uncheck();
+  await page.locator(`#room-list input[data-room-id="${rooms[1]}"]`).uncheck();
   await flushRender(page);
   await expect(page.locator("#room-summary")).toHaveText("0/3");
   await expect(page.locator('.sc-mini-day[data-full="true"]')).toHaveCount(0);
@@ -585,10 +593,13 @@ test("the tools shelf filters the catalog and pins rows without breaking them", 
   await expect(page.locator("#tools-filter")).toHaveValue("");
 
   // Pinning moves a row to the pinned lane; a pinned option keeps working.
+  const gridRows = await page.locator("#grid-menu li").count();
   await page.locator('#grid-menu li [aria-label^="Pin Week numbers"]').click();
   await expect(page.locator("#tools-pinned")).toBeVisible();
   await expect(page.locator("#tools-pinned-list .menu-item-text").first()).toHaveText("Week numbers");
-  await expect(page.locator("#grid-menu li")).toHaveCount(6);
+  // One row left the catalog for the pinned lane - how many the catalog
+  // holds is fixture size, not the contract under test.
+  await expect(page.locator("#grid-menu li")).toHaveCount(gridRows - 1);
   await page.locator('#tools-pinned-list [data-grid="weeks"]').click();
   await flushRender(page);
   await expect(page.locator('#tools-pinned-list [data-grid="weeks"]')).toHaveAttribute(
@@ -623,7 +634,7 @@ test("the tools shelf filters the catalog and pins rows without breaking them", 
   await page.locator('#tools-pinned-list .sc-pin[aria-label^="Pin Week numbers"]').click();
   await expect(page.locator("#tools-pinned")).toBeHidden();
   await expect(page.locator("#tools-pinned-bar")).toBeHidden();
-  await expect(page.locator("#grid-menu li")).toHaveCount(7);
+  await expect(page.locator("#grid-menu li")).toHaveCount(gridRows);
   await expect(page.locator('#grid-menu [data-grid="weeks"]')).toHaveAttribute("aria-checked", "true");
 });
 test("the side panel is a popover below 64rem and a column above it", async ({ page }) => {
