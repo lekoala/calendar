@@ -178,6 +178,15 @@ export class CalendarViewElement extends HTMLElement {
   #externalDrops = new Map();
   /** The external drag in flight, read by the rendered grid to draw the preview. @type {{ payload: unknown, meta: ExternalDropMeta } | null} */
   #dragExternal = null;
+  /**
+   * Application-proposed range painted as a read-only overlay (server slot
+   * proposals, armed placement targets). Render state, re-painted on every
+   * render until replaced or cleared; paints only where the current view
+   * can represent it.
+   *
+   * @type {{ start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null}
+   */
+  #preview = null;
   /** @type {CalendarConfig} */
   #config = {};
   /** @type {AbortController | null} */
@@ -365,6 +374,48 @@ export class CalendarViewElement extends HTMLElement {
    */
   getEventById(id) {
     return this.#events.find((event) => event.id === String(id)) ?? null;
+  }
+
+  /**
+   * Paints an application-proposed timed range as a read-only overlay with
+   * the real event geometry (server slot proposals, an armed placement
+   * target). Timed bounds only — the exact same canonical normalization as
+   * events, so the preview accepts and rejects exactly what an event would.
+   * Read-only render state: no dispatch, no policy check, no focus; it
+   * repaints on every render until replaced or cleared, and paints nothing
+   * where the current view cannot represent it (other views, hidden
+   * resources, out-of-range days).
+   *
+   * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
+   * @returns {void}
+   */
+  previewRange(range) {
+    // Timed-only: `false` rejects civil input at runtime, the cast tells
+    // the type checker what the flag already guarantees.
+    const start = /** @type {Temporal.ZonedDateTime} */ (normalizeRangeBound(range?.start, false));
+    const end = /** @type {Temporal.ZonedDateTime} */ (normalizeRangeBound(range?.end, false));
+    if (Temporal.ZonedDateTime.compare(start, end) >= 0) {
+      throw new TypeError("previewRange() requires a non-empty timed range");
+    }
+    const resourceId = range?.resourceId ?? null;
+    this.#preview = {
+      start,
+      end,
+      resourceId: resourceId === null ? null : String(resourceId),
+    };
+    this.#queueRender();
+  }
+
+  /**
+   * Removes the range overlay set by `previewRange()`. No render when there
+   * is nothing to clear.
+   *
+   * @returns {void}
+   */
+  clearPreview() {
+    if (!this.#preview) return;
+    this.#preview = null;
+    this.#queueRender();
   }
 
   /**
@@ -1163,6 +1214,7 @@ export class CalendarViewElement extends HTMLElement {
             clearExternalDrag: () => {
               this.#dragExternal = null;
             },
+            getPreview: () => this.#preview,
           },
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,

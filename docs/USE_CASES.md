@@ -375,14 +375,24 @@ geometry. Because no interaction is running, the suggestion is a
 programmatic preview, distinct from the select ghost: it must not start a
 selection or fire `calendar:select`.
 
+The first shipped consumer is the showcase's own keyboard placement: an
+empty-slot right-click arms a target (`lastSlot`) that `Ctrl+V` later acts
+on. Before `previewRange()` that destination was invisible after the menu
+closed — the preview now shows exactly what the paste would create, for the
+armed workbench item or the copy clipboard (whichever `Ctrl+V` would run),
+and clears on navigation, resource changes, disarm and commit.
+
 Core stress:
 
-- `previewRange({ start, end, resourceId })` and `clearPreview()`;
+- `previewRange({ start, end, resourceId })` and `clearPreview()` — timed
+  ranges only, `void` returns, render state persisting until replaced or
+  cleared;
 - preview geometry obeys the same slice/layout rules as events and honors
-  resource scoping;
+  resource scoping (`null` paints nothing in resource views);
 - `pointer-events: none`; independent of the pointer selection lifecycle;
-- pairing with reveal (Milestone 14) for the navigate → preview → confirm
-  workflow.
+- pairing with reveal (Milestone 14) for the future navigate → preview →
+  confirm workflow (server slot proposals are a second natural consumer:
+  navigate with `reveal`, then `previewRange` the proposal, then commit).
 
 ## 18. Resource grouping to reduce visual load
 

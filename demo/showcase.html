@@ -3199,6 +3199,9 @@
     if (!moved) return; // guard() already explained and `revert()` kept it
     const title = String(item.title ?? "Booking");
     workbench.complete(eventId);
+    // The spent target goes with the placement; the next armed item (if any)
+    // has no target until the next empty-slot intent.
+    setLastSlot(null);
     record(`placed ${eventId} → ${allDay ? date : `${date} ${clock(minutes ?? POLICY.opensAt)}`}`);
     if (workbench.size === 0) {
       toast("All queued bookings placed.", "success");
@@ -3294,6 +3297,9 @@
     // Painted in place: queued events keep their position in the grid but
     // immediately read as waiting, no calendar re-render needed.
     syncWorkbenchMarkers();
+    // Arming, disarming, completing or emptying changes the paste payload,
+    // so the preview for the current target (if any) is re-derived.
+    syncPlacementPreview();
   });
   document.getElementById("workbench-clear").addEventListener("click", () => {
     workbench.clear();
@@ -3409,6 +3415,53 @@
   let copyClipboard = null;
   /** Last empty-slot intent, so `Ctrl+V` has a target. @type {{ date: string, minutes: number, resourceId: string | null } | null} */
   let lastSlot = null;
+
+  /**
+   * Repaints the placement preview for the current target + payload pair.
+   * The target (`lastSlot`) and the payload (`workbench.active` winning
+   * over the copy clipboard, exactly like `Ctrl+V`) change independently,
+   * so every change to either re-runs this — never just the slot setter.
+   * Armed wins even when it cannot preview (all-day): the preview must
+   * mirror the action `Ctrl+V` would run, not the fallback clipboard.
+   *
+   * @returns {void}
+   */
+  function syncPlacementPreview() {
+    if (!lastSlot) {
+      calendar.clearPreview();
+      return;
+    }
+    const armed = workbench.active;
+    if (armed) {
+      const live = calendar.getEventById(String(armed.eventId));
+      if (!live || live.allDay === true) {
+        calendar.clearPreview();
+        return;
+      }
+      const durationMin = Math.max(15, wallMinutesOf(String(live.end)) - wallMinutesOf(String(live.start)));
+      calendar.previewRange({
+        start: stamp(lastSlot.date, lastSlot.minutes),
+        end: stamp(lastSlot.date, lastSlot.minutes + durationMin),
+        resourceId: lastSlot.resourceId,
+      });
+      return;
+    }
+    if (copyClipboard) {
+      calendar.previewRange({
+        start: stamp(lastSlot.date, lastSlot.minutes),
+        end: stamp(lastSlot.date, lastSlot.minutes + copyClipboard.durationMin),
+        resourceId: lastSlot.resourceId,
+      });
+      return;
+    }
+    calendar.clearPreview();
+  }
+
+  /** @param {{ date: string, minutes: number, resourceId: string | null } | null} slot */
+  function setLastSlot(slot) {
+    lastSlot = slot;
+    syncPlacementPreview();
+  }
   const clipboardBar = document.getElementById("clipboard-bar");
 
   function renderClipboard() {
@@ -3436,6 +3489,7 @@
   function setCopyClipboard(entry) {
     copyClipboard = entry;
     renderClipboard();
+    syncPlacementPreview();
     record(`copy: ${entry.id} ready to paste`);
   }
 
@@ -3444,6 +3498,7 @@
     if (!copyClipboard) return;
     copyClipboard = null;
     renderClipboard();
+    syncPlacementPreview();
     record(`copy clipboard ${reason}`);
   }
 
@@ -3480,6 +3535,7 @@
     record(`pasted a copy of ${copyClipboard.id} → ${id}`);
     refreshChrome();
     clearCopyClipboard("pasted");
+    setLastSlot(null);
   }
 
   calendar.configure({
@@ -4234,6 +4290,9 @@
     calendar.resources = ROOMS.filter((room) => activeRooms.has(room.id));
     calendar.events = visibleStore();
     backgroundKey = "";
+    // A target in a now-hidden resource stays a stale `Ctrl+V` destination
+    // otherwise; the preview going dark is the visible half of that cleanup.
+    setLastSlot(null);
     refreshChrome();
   }
 
@@ -4243,8 +4302,16 @@
   document.getElementById("nav-today").addEventListener("click", () => calendar.today());
 
   // The core announces its own state changes; the shell just follows.
-  calendar.addEventListener("calendar:viewchange", () => refreshChrome());
-  calendar.addEventListener("calendar:datechange", () => refreshChrome());
+  // Navigation also spends the keyboard target: a preview for another date
+  // must not linger, and `Ctrl+V` must not reuse a stale slot.
+  calendar.addEventListener("calendar:viewchange", () => {
+    setLastSlot(null);
+    refreshChrome();
+  });
+  calendar.addEventListener("calendar:datechange", () => {
+    setLastSlot(null);
+    refreshChrome();
+  });
   calendar.addEventListener("calendar:loading", (event) => {
     busy = event.detail.loading;
     shell.dataset.busy = String(busy);
@@ -4678,7 +4745,7 @@
     // off positions 11-16 (`wallClock` relies on the same layout).
     const minutes = detail.time ? wallMinutesOf(String(detail.time)) : POLICY.opensAt;
     const resourceId = detail.resourceId ?? null;
-    lastSlot = { date, minutes, resourceId };
+    setLastSlot({ date, minutes, resourceId });
     const slotActions = [];
     // Paste places the armed workbench item into this slot — the keyboard
     // twin of dragging the sidebar row onto the grid. Both run the same
@@ -5448,7 +5515,7 @@
     [["/"], "search loaded bookings"],
     [["Ctrl+X"], "park the focused booking (workbench)"],
     [["Ctrl+C"], "copy the focused booking"],
-    [["Ctrl+V"], "paste the copy into the last right-clicked slot"],
+    [["Ctrl+V"], "paste into the last right-clicked slot (previewed in the grid)"],
     [["Esc"], "disarm the workbench / clear the copy"],
     [["A"], "activity log"],
     [["F"], "focus mode (hide the side panel)"],

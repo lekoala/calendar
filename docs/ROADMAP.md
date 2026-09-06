@@ -234,21 +234,30 @@ Lean guardrail: composes existing pieces only (`gotoDate`, async
 `refetchEvents()`, `scrollToTime()`, `afterRender`). No load-tracking
 subsystem, no retry logic.
 
-## Milestone 15 — previewRange
+## Milestone 15 — previewRange (shipped)
 
 - `previewRange({ start, end, resourceId })` + `clearPreview()` — evidence
-  for application-proposed ranges (server slot proposals),
-  `pointer-events: none`, independent of the pointer select ghost;
+  for application-proposed ranges while no calendar gesture runs, timed
+  ranges only (`void`; server slot proposals); `pointer-events: none`,
+  `aria-hidden`, never a dispatch source, never a policy check;
 - the preview is a **render state, not a synthetic drag**: private state in
   `calendar-view.js`, the renderer reads `host.getPreview()`, painted with
-  the same geometry primitive as the existing ghosts;
-- pairing with reveal (Milestone 14) supports the navigate → preview →
-  confirm workflow. Use case §17.
+  the same slice/geometry primitives as events (one overlay per touched
+  column, `slotMin`/`slotMax` clipping included). Resource scoping follows
+  `eventBelongsToColumn`: solo accepts any range, resource views need an
+  exact `resourceId`.
+- **first consumer is the showcase's keyboard placement**: the empty-slot
+  `lastSlot` target was invisible after the menu closed; the preview now
+  shows what `Ctrl+V` would create for the armed item/clipboard, and clears
+  on navigation, resource change, disarm and commit. Pairing with reveal
+  stays the future navigate → preview → confirm path for server proposals.
+  Use case §17.
 
 Lean guardrail: shares the host-seam shape with external drop but stays a
 read-only render overlay reusing existing geometry helpers. If it needs its
 own layout math or a lifecycle distinct from render state, stop and
-re-scope.
+re-scope. Met: no new layout math, no renderer awareness in other views,
+one state slot and one seam (`getPreview()`).
 
 ## Milestone 16 — resource grouping, one level
 
@@ -304,7 +313,12 @@ pending commit, 409-style conflict, no stale render. Use case §19.
 Showcase shell polish landed in 0.x, all application-side (application
 chrome, not core work): a room master checkbox with `indeterminate`, a
 neutral mini-month state when no resource is active, a policy-threshold
-"nearly full" marker and per-day accessible names for the mini-month.
+"nearly full" marker and per-day accessible names for the mini-month. With
+M15 the keyboard placement target (`lastSlot`) became visible via
+`previewRange()`, and it is now cleared on navigation, resource changes,
+disarm and commit instead of lingering as a stale `Ctrl+V` destination.
+
+Deliberately never planned: virtualization, Gantt, resource
 
 Deliberately never planned: virtualization, Gantt, resource
 hierarchy/timeline/tree-grid.

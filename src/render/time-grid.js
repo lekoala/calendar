@@ -62,6 +62,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * }) => import("../core/model.js").NormalizedEvent | null} commitEventResize
  * @property {() => { payload: unknown, meta: import("../calendar-view.js").ExternalDropMeta } | null} getExternalDrag
  * @property {() => void} clearExternalDrag
+ * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null} getPreview application-proposed range overlay, or null
  */
 
 /**
@@ -1712,6 +1713,39 @@ export function renderTimeGrid({
     day.append(body);
     bodies.push({ column, body });
     root.append(day);
+  }
+
+  // --- Range preview (application-proposed placement target) ---------------
+  // Read-only render state, not a synthetic drag: one overlay per column the
+  // range touches, painted with the same slice/geometry primitives as
+  // events. No dispatch, no policy check, no focus; interaction ghosts paint
+  // above it. Columns the range does not belong to (hidden resources,
+  // out-of-range days) simply paint nothing.
+  paintPreview();
+
+  /** @returns {void} */
+  function paintPreview() {
+    const preview = host.getPreview();
+    if (!preview) return;
+    const sliceOptions = { timeZone, slotMin: startMinutes, slotMax: endMinutes };
+    for (const { column, body } of bodies) {
+      if (!eventBelongsToColumn(preview, column)) continue;
+      const slice = sliceTimedEventForDay(preview, column.date, sliceOptions);
+      if (!slice) continue;
+      const geometry = eventGeometry({
+        startMinutes: slice.start,
+        endMinutes: slice.end,
+        dayStartMinutes: startMinutes,
+        pxPerMinute,
+        gap: 0,
+      });
+      const node = document.createElement("div");
+      node.className = "cv-preview";
+      node.setAttribute("aria-hidden", "true");
+      node.style.top = `${geometry.top}px`;
+      node.style.height = `${geometry.height}px`;
+      body.append(node);
+    }
   }
 
   // --- External placement (drag from an application source) ----------------

@@ -521,7 +521,26 @@
   margin: 1px 2px;
 }
 
+/* Application-proposed range overlay (`previewRange`): the real event
+   geometry for a placement target while no interaction is running. Read-only
+   by construction — `aria-hidden` in the DOM, never interactive, never a
+   dispatch source. Interaction ghosts paint above it. */
+.cv-preview {
+  position: absolute;
+  inset-inline: 2px;
+  z-index: 4;
+  border: 2px solid color-mix(in srgb, var(--calendar-accent) 75%, transparent);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--calendar-accent) 16%, transparent);
+  pointer-events: none;
+}
+
 @media (forced-colors: active) {
+  .cv-preview {
+    border-color: Highlight;
+    background: transparent;
+  }
+
   .cv-external-ghost {
     border-color: Highlight;
   }

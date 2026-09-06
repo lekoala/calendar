@@ -5864,6 +5864,33 @@
       bodies.push({ column, body });
       root.append(day);
     }
+    paintPreview();
+    function paintPreview() {
+      const preview = host.getPreview();
+      if (!preview)
+        return;
+      const sliceOptions = { timeZone, slotMin: startMinutes, slotMax: endMinutes };
+      for (const { column, body } of bodies) {
+        if (!eventBelongsToColumn(preview, column))
+          continue;
+        const slice = sliceTimedEventForDay(preview, column.date, sliceOptions);
+        if (!slice)
+          continue;
+        const geometry = eventGeometry({
+          startMinutes: slice.start,
+          endMinutes: slice.end,
+          dayStartMinutes: startMinutes,
+          pxPerMinute,
+          gap: 0
+        });
+        const node = document.createElement("div");
+        node.className = "cv-preview";
+        node.setAttribute("aria-hidden", "true");
+        node.style.top = `${geometry.top}px`;
+        node.style.height = `${geometry.height}px`;
+        body.append(node);
+      }
+    }
     let externalGhost = null;
     function removeExternalGhost() {
       externalGhost?.node.remove();
@@ -6084,6 +6111,7 @@
     #backgrounds = [];
     #externalDrops = new Map;
     #dragExternal = null;
+    #preview = null;
     #config = {};
     #abortController = null;
     #requestVersion = 0;
@@ -6205,6 +6233,26 @@
     }
     getEventById(id) {
       return this.#events.find((event) => event.id === String(id)) ?? null;
+    }
+    previewRange(range) {
+      const start = normalizeRangeBound(range?.start, false);
+      const end = normalizeRangeBound(range?.end, false);
+      if (Temporal2.ZonedDateTime.compare(start, end) >= 0) {
+        throw new TypeError("previewRange() requires a non-empty timed range");
+      }
+      const resourceId = range?.resourceId ?? null;
+      this.#preview = {
+        start,
+        end,
+        resourceId: resourceId === null ? null : String(resourceId)
+      };
+      this.#queueRender();
+    }
+    clearPreview() {
+      if (!this.#preview)
+        return;
+      this.#preview = null;
+      this.#queueRender();
     }
     revealEvent(id, options = {}) {
       const key = String(id);
@@ -6690,7 +6738,8 @@
             getExternalDrag: () => this.#dragExternal,
             clearExternalDrag: () => {
               this.#dragExternal = null;
-            }
+            },
+            getPreview: () => this.#preview
           },
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,

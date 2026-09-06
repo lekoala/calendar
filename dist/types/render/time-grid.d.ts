@@ -56,6 +56,14 @@ export type TimeGridHost = {
         meta: import("../calendar-view.js").ExternalDropMeta;
     } | null;
     clearExternalDrag: () => void;
+    /**
+     * application-proposed range overlay, or null
+     */
+    getPreview: () => {
+        start: Temporal.ZonedDateTime;
+        end: Temporal.ZonedDateTime;
+        resourceId: string | null;
+    } | null;
 };
 export type TimeGridColumn = {
     date: Temporal.PlainDate;
@@ -131,6 +139,7 @@ export type ActiveSelection = {
  * }) => import("../core/model.js").NormalizedEvent | null} commitEventResize
  * @property {() => { payload: unknown, meta: import("../calendar-view.js").ExternalDropMeta } | null} getExternalDrag
  * @property {() => void} clearExternalDrag
+ * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null} getPreview application-proposed range overlay, or null
  */
 /**
  * @typedef {object} TimeGridColumn

@@ -599,6 +599,113 @@ test("pasting the armed item places it, and an occupied slot keeps it", async ({
   expect(refused.start).not.toContain(String(empty));
   await page.keyboard.press("Escape");
 });
+test("an armed placement previews its target until pasted or cleared", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  const anchor = await anchorDate(page);
+  const empty = await emptyDayFrom(page, anchor.add({ days: 21 }));
+  // Park a timed booking: it is armed, so a later empty-slot target previews
+  // at the real duration once the context menu closes (the keyboard target
+  // was invisible before M15).
+  const node = page.locator('.cv-event[data-kind="planning"]').first();
+  await node.click({ button: "right" });
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
+  await expect(page.locator("#workbench-list li")).toHaveCount(1);
+
+  await gotoDate(page, empty);
+  await scrollToMorning(page);
+  const point = await page.evaluate(() => {
+    const body = document.querySelector(".cv-day-body");
+    const rect = /** @type {HTMLElement} */ (body).getBoundingClientRect();
+    const ten = [...document.querySelectorAll(".cv-axis-label")].find((label) =>
+      label.textContent?.trim().startsWith("10"),
+    );
+    return { x: rect.left + rect.width / 2, y: (ten?.getBoundingClientRect().y ?? rect.top + 220) + 12 };
+  });
+  await page.mouse.click(point.x, point.y, { button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  // The preview stays while the menu is open and after light-dismiss closes it
+  // (Escape disarms instead), so `Ctrl+V` no longer acts on an invisible
+  // destination. Clicking the inert anchor label only light-dismisses.
+  await expect(page.locator(".cv-preview")).toHaveCount(1);
+  await page.locator("#anchor-label").click();
+  await expect(page.locator("#context-menu")).toBeHidden();
+  await flushRender(page);
+  await expect(page.locator(".cv-preview")).toHaveCount(1);
+
+  // Disarming with Escape clears the target and the preview with it.
+  await page.keyboard.press("Escape");
+  await flushRender(page);
+  await expect(page.locator(".cv-preview")).toHaveCount(0);
+});
+test("the placement preview tracks the active payload, not the last click", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  const anchor = await anchorDate(page);
+  const empty = await emptyDayFrom(page, anchor.add({ days: 21 }));
+  await gotoDate(page, empty);
+  await scrollToMorning(page);
+  // Two injected bookings with known durations: the preview must show the
+  // payload that would act *now* — clipboard first, then the armed item
+  // winning over it — at the same 10:00 target.
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const day = calendar.date.toString();
+    calendar.addEvent({
+      id: "ev-copy",
+      title: "30 min",
+      resourceId: "room-a",
+      start: `${day}T09:00:00[Europe/Brussels]`,
+      end: `${day}T09:30:00[Europe/Brussels]`,
+    });
+    calendar.addEvent({
+      id: "ev-arm",
+      title: "120 min",
+      resourceId: "room-a",
+      start: `${day}T13:00:00[Europe/Brussels]`,
+      end: `${day}T15:00:00[Europe/Brussels]`,
+    });
+  });
+  await flushRender(page);
+
+  const point = await page.evaluate(() => {
+    const body = document.querySelector(".cv-day-body");
+    const rect = /** @type {HTMLElement} */ (body).getBoundingClientRect();
+    const ten = [...document.querySelectorAll(".cv-axis-label")].find((label) =>
+      label.textContent?.trim().startsWith("10"),
+    );
+    return { x: rect.left + rect.width / 2, y: (ten?.getBoundingClientRect().y ?? rect.top + 220) + 12 };
+  });
+
+  const previewHeight = () =>
+    page.evaluate(() => /** @type {any} */ (document.querySelector(".cv-preview"))?.style.height ?? null);
+
+  // A target with no payload paints nothing: nothing would happen on Ctrl+V.
+  await page.mouse.click(point.x, point.y, { button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  await expect(page.locator(".cv-preview")).toHaveCount(0);
+  await page.locator("#anchor-label").click();
+  await expect(page.locator("#context-menu")).toBeHidden();
+
+  // Copying a 30-minute booking previews 30 minutes at the target.
+  await page.locator('[data-event-id="ev-copy"]').click({ button: "right" });
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Copy" }).click();
+  await flushRender(page);
+  await expect(page.locator(".cv-preview")).toHaveCount(1);
+  expect(await previewHeight()).toBe("45px");
+
+  // Arming a 120-minute booking swaps the preview, same target.
+  await page.locator('[data-event-id="ev-arm"]').click({ button: "right" });
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
+  await flushRender(page);
+  await expect(page.locator(".cv-preview")).toHaveCount(1);
+  expect(await previewHeight()).toBe("180px");
+  await page.keyboard.press("Escape");
+  await flushRender(page);
+  await expect(page.locator(".cv-preview")).toHaveCount(0);
+});
 test("dragging a booking out of the grid parks it, glows the zone and opens no modal", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();

@@ -281,6 +281,43 @@ successful reveal announces the event through the live region even with
 `focus: false`. There is no refusal taxonomy: `false` covers every miss
 (unknown event, date outside the rendered range).
 
+## Range preview
+
+Evidence for an application-proposed placement — server slot proposals, an
+armed workbench target — while **no calendar gesture is running**. Where a
+pointer drag has its internal ghost, an external drag its placement ghost
+and a selection its select ghost, `previewRange()` is the programmatic
+counterpart: an app-owned target without a synthetic drag. Non-pointer
+workflows ("I know where I want it, show me before I commit") are exactly
+what makes this primitive public.
+
+```js
+// Timed range only, the exact same canonical normalization as events (a
+// civil or empty range throws). `void`: the paint rides the next render.
+calendar.previewRange({
+  start: "2026-09-20T14:00:00+02:00[Europe/Brussels]",
+  end: "2026-09-20T14:30:00+02:00[Europe/Brussels]",
+  resourceId: "room-b", // optional
+});
+calendar.clearPreview();
+```
+
+- Painted with the same slice/geometry primitives as events: one overlay
+  per touched column, so a multi-day range draws one per day, clipped to
+  `slotMin`/`slotMax` like an event. `pointer-events: none`, `aria-hidden`,
+  never focusable, never a dispatch source (`calendar:select` is untouched)
+  and never a policy check — this is already-validated evidence, not an
+  interaction.
+- Resource scoping follows the event rule (`eventBelongsToColumn`): solo
+  columns accept any range (even one carrying a `resourceId`); resource
+  views require an exact `resourceId`, so `null` paints nothing there.
+- It is `void` and it is render state: it persists across navigation and
+  re-renders until replaced or cleared, and paints nothing where the
+  current view cannot represent it (month/list have no time geometry;
+  out-of-range days and hidden resources draw nothing). Interaction ghosts
+  paint above it.
+- `clearPreview()` is a no-op when nothing is set.
+
 ## Civil date helpers
 
 External navigators (mini-calendars, custom headers) reuse the same civil

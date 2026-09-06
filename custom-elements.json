@@ -116,6 +116,16 @@
             },
             {
               "kind": "method",
+              "name": "previewRange",
+              "description": "Paints an application-proposed timed range as a read-only overlay with the real event geometry (server slot proposals, an armed placement target)."
+            },
+            {
+              "kind": "method",
+              "name": "clearPreview",
+              "description": "Removes the range overlay set by `previewRange()`."
+            },
+            {
+              "kind": "method",
               "name": "revealEvent",
               "description": "In-range reveal: scrolls to an event that belongs to the current rendered state, optionally highlights it and moves focus to it."
             },

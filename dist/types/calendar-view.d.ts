@@ -226,6 +226,31 @@ export declare class CalendarViewElement extends HTMLElement {
      */
     getEventById(id: string | number): import("./core/model.js").NormalizedEvent | null;
     /**
+     * Paints an application-proposed timed range as a read-only overlay with
+     * the real event geometry (server slot proposals, an armed placement
+     * target). Timed bounds only — the exact same canonical normalization as
+     * events, so the preview accepts and rejects exactly what an event would.
+     * Read-only render state: no dispatch, no policy check, no focus; it
+     * repaints on every render until replaced or cleared, and paints nothing
+     * where the current view cannot represent it (other views, hidden
+     * resources, out-of-range days).
+     *
+     * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
+     * @returns {void}
+     */
+    previewRange(range: {
+        start: unknown;
+        end: unknown;
+        resourceId?: string | null;
+    }): void;
+    /**
+     * Removes the range overlay set by `previewRange()`. No render when there
+     * is nothing to clear.
+     *
+     * @returns {void}
+     */
+    clearPreview(): void;
+    /**
      * In-range reveal: scrolls to an event that belongs to the current
      * rendered state, optionally highlights it and moves focus to it. Never
      * navigates and never reloads sources — out-of-range anchors are the
