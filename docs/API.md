@@ -229,15 +229,15 @@ calendar.setView("week")
 calendar.gotoDate("2026-09-03")
 calendar.getVisibleRange()
 calendar.refetchEvents()
-```
-
-Planned:
-
-```js
 calendar.prev()
 calendar.next()
 calendar.today()
 calendar.scrollToTime("10:00")
+```
+
+Planned (Milestone 14):
+
+```js
 calendar.revealEvent("event-1")
 ```
 

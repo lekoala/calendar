@@ -136,6 +136,12 @@ export class CalendarViewElement extends HTMLElement {
   #requestVersion = 0;
   #batchDepth = 0;
   #renderQueued = false;
+  /** Post-render callbacks, drained once the pending render inserted its subtree. @type {Array<() => void>} */
+  #afterRenderQueue = [];
+  /** Latest pending live-region message; last write wins. @type {string | null} */
+  #pendingAnnounce = null;
+  /** Single cancellable announce frame for a11y timing. @type {number | null} */
+  #announceFrame = null;
 
   connectedCallback() {
     this.classList.add("calendar-view");
@@ -148,6 +154,14 @@ export class CalendarViewElement extends HTMLElement {
 
   disconnectedCallback() {
     this.#abortController?.abort();
+    // No work survives a disconnect: drop queued post-render callbacks and
+    // cancel the single pending announce frame, if any.
+    this.#afterRenderQueue = [];
+    this.#pendingAnnounce = null;
+    if (this.#announceFrame !== null) {
+      cancelAnimationFrame(this.#announceFrame);
+      this.#announceFrame = null;
+    }
   }
 
   attributeChangedCallback() {
@@ -627,38 +641,57 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Post-render lifecycle primitive (Milestone 10). Runs `callback` once the
+   * pending render has inserted its subtree, after the `calendar:render`
+   * dispatch. Not a scheduler: no retries, promises or priorities. Callbacks
+   * queued from inside a drain run on the next render, and the queue is
+   * dropped on `disconnectedCallback`.
+   *
+   * @param {() => void} callback
+   * @returns {void}
+   */
+  #afterRender(callback) {
+    this.#afterRenderQueue.push(callback);
+    this.#queueRender();
+  }
+
+  /**
    * Polite announcement for view/date changes and keyboard commits. The
-   * status node persists across renders, so the message is written after
-   * the next frame flush; the last message wins.
+   * status node is reused across renders, so the write lands on the
+   * `#afterRender` seam with at most one cancellable frame for a11y timing;
+   * the last message wins.
    *
    * @param {string} message
    * @returns {void}
    */
   #announce(message) {
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
+    this.#pendingAnnounce = message;
+    this.#afterRender(() => {
+      if (this.#announceFrame !== null) cancelAnimationFrame(this.#announceFrame);
+      this.#announceFrame = requestAnimationFrame(() => {
+        this.#announceFrame = null;
         if (!this.isConnected) return;
+        const pending = this.#pendingAnnounce;
+        this.#pendingAnnounce = null;
+        if (pending === null) return;
         const status = this.querySelector(".cv-status");
-        if (status) status.textContent = message;
-      }),
-    );
+        if (status) status.textContent = pending;
+      });
+    });
   }
 
   /**
-   * Refocus an event after an optimistic commit re-rendered the grid.
+   * Refocus an event once the pending render re-inserted the grid. The node
+   * exists synchronously after `#render`, so no extra frame is needed.
    *
    * @param {string} id
    * @returns {void}
    */
   #refocusEvent(id) {
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (!this.isConnected) return;
-        /** @type {HTMLElement | null} */ (
-          this.querySelector(`[data-event-id="${CSS.escape(id)}"]`)
-        )?.focus();
-      }),
-    );
+    this.#afterRender(() => {
+      if (!this.isConnected) return;
+      /** @type {HTMLElement | null} */ (this.querySelector(`[data-event-id="${CSS.escape(id)}"]`))?.focus();
+    });
   }
 
   /**
@@ -796,6 +829,13 @@ export class CalendarViewElement extends HTMLElement {
         detail: { view: this.view, dates, resources },
       }),
     );
+
+    // Post-render work (focus, announcements, future reveal highlight) runs
+    // after app decorators so it sees the final subtree. Snapshot-and-clear:
+    // callbacks queued from inside a drain run on the next render.
+    const pending = this.#afterRenderQueue;
+    this.#afterRenderQueue = [];
+    for (const callback of pending) callback();
 
     // Rendering is full replacement by design in 0.x; keyed reconciliation
     // and a consolidated pointer engine are roadmap debt (docs/ROADMAP.md).

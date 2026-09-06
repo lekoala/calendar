@@ -281,17 +281,6 @@ export function renderTimeGrid({
   }
 
   /**
-   * Refocus an event after an optimistic commit re-rendered the grid.
-   * Rendering is async, so the host resolves the fresh node itself.
-   *
-   * @param {string} id
-   * @returns {void}
-   */
-  function refocusEvent(id) {
-    host.refocusEvent(id);
-  }
-
-  /**
    * @param {TimeGridColumn} column
    * @param {HTMLDivElement} body
    * @param {number} clientX
@@ -1003,7 +992,7 @@ export function renderTimeGrid({
         const result = host.commitEventMove({ event, previous, current, nativeEvent });
         if (!result) return;
         host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-        refocusEvent(event.id);
+        host.refocusEvent(event.id);
       }
 
       /**
@@ -1032,7 +1021,7 @@ export function renderTimeGrid({
         });
         if (!result) return;
         host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-        refocusEvent(event.id);
+        host.refocusEvent(event.id);
       }
 
       node.addEventListener("keydown", onEventKeyDown);
