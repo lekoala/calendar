@@ -26,6 +26,7 @@ import {
   toZonedDateTime,
   wallMinutes,
 } from "../core/slicing.js";
+import { temporalState } from "../core/temporal.js";
 import { createAutoscroller } from "./autoscroll.js";
 
 /**
@@ -93,6 +94,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {import("../core/model.js").NormalizedBackground[]} input.backgrounds
  * @param {TimeGridOptions} input.options
+ * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @param {TimeGridHost} input.host
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
@@ -107,6 +109,7 @@ export function renderTimeGrid({
   events,
   backgrounds,
   options,
+  now,
   host,
   eventContent,
   dayHeaderContent,
@@ -164,6 +167,14 @@ export function renderTimeGrid({
   const endMinutes = minutesFromMidnight(options.slotMax);
   const pxPerMinute = options.pxPerMinute;
   const timeZone = options.timeZone ?? "UTC";
+  // Shared render instant: the now indicator, temporal states and interaction
+  // policy all read the same value, so one render never disagrees with itself.
+  const renderNow = now ?? Temporal.Now.zonedDateTimeISO(timeZone);
+  /**
+   * @param {import("../core/model.js").NormalizedEvent} event
+   * @returns {import("../core/temporal.js").TemporalState}
+   */
+  const stateOf = (event) => temporalState(event.start, event.end, renderNow, timeZone);
   const snapStep = durationMinutes(options.snapDuration ?? { minutes: 15 });
   const defaultDuration = durationMinutes(options.defaultTimedEventDuration ?? { minutes: 30 });
   // Neighbor snapping (magnetism): a moving edge within half a snap step
@@ -563,6 +574,8 @@ export function renderTimeGrid({
       bar.type = "button";
       bar.className = ["cv-allday-event", ...(event.classNames ?? [])].join(" ");
       bar.dataset.eventId = event.id;
+      const barState = stateOf(event);
+      bar.dataset.temporalState = barState;
       bar.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
       bar.style.gridColumn = `${startDay + 2} / ${endDay + 2}`;
       bar.style.gridRow = String(segment.row + 1);
@@ -571,6 +584,7 @@ export function renderTimeGrid({
         event,
         date: column.date,
         resource: column.resource,
+        temporalState: barState,
         element: bar,
       });
       if (content instanceof Node) bar.append(content);
@@ -819,13 +833,21 @@ export function renderTimeGrid({
       node.type = "button";
       node.className = ["cv-event", ...(event.classNames ?? [])].join(" ");
       node.dataset.eventId = event.id;
+      const nodeState = stateOf(event);
+      node.dataset.temporalState = nodeState;
       node.style.top = `${geometry.top}px`;
       node.style.height = `${geometry.height}px`;
       node.style.insetInlineStart = `${item.left * 100}%`;
       node.style.width = `${item.width * 100}%`;
       node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
 
-      const content = eventContent?.({ event, date: column.date, resource: column.resource, element: node });
+      const content = eventContent?.({
+        event,
+        date: column.date,
+        resource: column.resource,
+        temporalState: nodeState,
+        element: node,
+      });
       if (content instanceof Node) node.append(content);
       else node.textContent = content == null ? (event.title ?? labels.untitledEvent) : String(content);
 
@@ -1453,7 +1475,7 @@ export function renderTimeGrid({
       );
     }
 
-    const now = Temporal.Now.zonedDateTimeISO(timeZone);
+    const now = renderNow;
     if (column.date.toString() === now.toPlainDate().toString()) {
       const nowMinutes = now.hour * 60 + now.minute + now.second / 60;
       if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {

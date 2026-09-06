@@ -235,7 +235,7 @@ export declare class CalendarViewElement extends HTMLElement {
     removeEvent(id: string | number): boolean;
     /**
      * Register an application-owned element as an external drop source
-     * (USE_CASES §12, "external placement"). The element becomes
+     * (external placement). The element becomes
      * `draggable`; while it is dragged over the rendered grid, the core draws
      * a placement preview from `meta` and, on a real drop, dispatches
      * `calendar:externaldrop` with the opaque `payload` and the resolved

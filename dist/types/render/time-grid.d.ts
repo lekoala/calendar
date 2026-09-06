@@ -140,6 +140,7 @@ export type ActiveSelection = {
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
  * @param {import("../core/model.js").NormalizedBackground[]} input.backgrounds
  * @param {TimeGridOptions} input.options
+ * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @param {TimeGridHost} input.host
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
@@ -147,13 +148,14 @@ export type ActiveSelection = {
  * @param {(info: object) => unknown} [input.slotLabelContent]
  * @returns {DocumentFragment}
  */
-export declare function renderTimeGrid({ dates, resources, view, events, backgrounds, options, host, eventContent, dayHeaderContent, resourceHeaderContent, slotLabelContent, }: {
+export declare function renderTimeGrid({ dates, resources, view, events, backgrounds, options, now, host, eventContent, dayHeaderContent, resourceHeaderContent, slotLabelContent, }: {
     dates: Temporal.PlainDate[];
     resources: import("../core/model.js").CalendarResource[];
     view?: string;
     events: import("../core/model.js").NormalizedEvent[];
     backgrounds: import("../core/model.js").NormalizedBackground[];
     options: TimeGridOptions;
+    now?: Temporal.ZonedDateTime;
     host: TimeGridHost;
     eventContent?: (info: object) => unknown;
     dayHeaderContent?: (info: object) => unknown;

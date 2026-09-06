@@ -4170,9 +4170,43 @@
     return hits;
   }
 
+  // src/core/temporal.js
+  function temporalState(start, end, now, timeZone = "UTC") {
+    const { start: startInstant, end: endInstant } = instantRangeOf(start, end, timeZone);
+    const nowMs = now.epochMilliseconds;
+    if (endInstant.epochMilliseconds <= nowMs)
+      return "past";
+    if (startInstant.epochMilliseconds <= nowMs)
+      return "current";
+    return "future";
+  }
+  function nextStateChangeMs(events, nowMs, timeZone = "UTC", visibleRange = null) {
+    let scope = null;
+    if (visibleRange) {
+      const projected = instantRangeOf(visibleRange.start, visibleRange.end, timeZone);
+      scope = { startMs: projected.start.epochMilliseconds, endMs: projected.end.epochMilliseconds };
+      if (!(scope.endMs > scope.startMs))
+        return null;
+    }
+    let next = null;
+    for (const event of events) {
+      const { start, end } = instantRangeOf(event.start, event.end, timeZone);
+      const startMs = start.epochMilliseconds;
+      const endMs = end.epochMilliseconds;
+      if (scope && (endMs <= scope.startMs || startMs >= scope.endMs))
+        continue;
+      if (startMs > nowMs && (next === null || startMs < next))
+        next = startMs;
+      if (endMs > nowMs && (next === null || endMs < next))
+        next = endMs;
+    }
+    return next;
+  }
+
   // src/render/list.js
-  function renderList({ dates, events, options, eventContent, dayHeaderContent }) {
+  function renderList({ dates, events, options, now, eventContent, dayHeaderContent }) {
     const timeZone = options.timeZone ?? "UTC";
+    const renderNow = now ?? Temporal2.Now.zonedDateTimeISO(timeZone);
     const locale = options.locale;
     const labels = options.labels ?? DEFAULT_LABELS;
     const fragment = document.createDocumentFragment();
@@ -4205,8 +4239,10 @@
         item.type = "button";
         item.className = ["cv-list-event", ...event.classNames ?? []].join(" ");
         item.dataset.eventId = event.id;
+        const state = temporalState(event.start, event.end, renderNow, timeZone);
+        item.dataset.temporalState = state;
         item.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-        const content = eventContent?.({ event, date, resource: null, element: item });
+        const content = eventContent?.({ event, date, resource: null, temporalState: state, element: item });
         if (content instanceof Node) {
           item.append(content);
         } else if (content != null) {
@@ -4233,8 +4269,9 @@
   }
 
   // src/render/month-grid.js
-  function renderMonthGrid({ weeks, month, events, options, eventContent, moreLinkContent }) {
+  function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent }) {
     const timeZone = options.timeZone ?? "UTC";
+    const renderNow = now ?? Temporal2.Now.zonedDateTimeISO(timeZone);
     const locale = options.locale;
     const labels = options.labels ?? DEFAULT_LABELS;
     const limit = Math.max(1, options.monthEventLimit ?? 3);
@@ -4272,8 +4309,10 @@
           chip.type = "button";
           chip.className = ["cv-month-event", ...event.classNames ?? []].join(" ");
           chip.dataset.eventId = event.id;
+          const state = temporalState(event.start, event.end, renderNow, timeZone);
+          chip.dataset.temporalState = state;
           chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-          const content = eventContent?.({ event, date, resource: null, element: chip });
+          const content = eventContent?.({ event, date, resource: null, temporalState: state, element: chip });
           if (content instanceof Node)
             chip.append(content);
           else
@@ -4522,6 +4561,7 @@
     events,
     backgrounds,
     options,
+    now,
     host,
     eventContent,
     dayHeaderContent,
@@ -4567,6 +4607,8 @@
     const endMinutes = minutesFromMidnight(options.slotMax);
     const pxPerMinute = options.pxPerMinute;
     const timeZone = options.timeZone ?? "UTC";
+    const renderNow = now ?? Temporal2.Now.zonedDateTimeISO(timeZone);
+    const stateOf = (event) => temporalState(event.start, event.end, renderNow, timeZone);
     const snapStep = durationMinutes(options.snapDuration ?? { minutes: 15 });
     const defaultDuration = durationMinutes(options.defaultTimedEventDuration ?? { minutes: 30 });
     const snapThreshold = defaultSnapThreshold(snapStep);
@@ -4634,9 +4676,6 @@
     function focusableEvents(body) {
       const nodes = [...body.querySelectorAll(".cv-event")];
       return nodes.sort((a, b) => Number.parseFloat(a.style.top) - Number.parseFloat(b.style.top));
-    }
-    function refocusEvent(id) {
-      host.refocusEvent(id);
     }
     function columnHit(column, body, clientX, clientY) {
       return hitTest({
@@ -4834,6 +4873,8 @@
         bar.type = "button";
         bar.className = ["cv-allday-event", ...event.classNames ?? []].join(" ");
         bar.dataset.eventId = event.id;
+        const barState = stateOf(event);
+        bar.dataset.temporalState = barState;
         bar.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
         bar.style.gridColumn = `${startDay + 2} / ${endDay + 2}`;
         bar.style.gridRow = String(segment.row + 1);
@@ -4842,6 +4883,7 @@
           event,
           date: column.date,
           resource: column.resource,
+          temporalState: barState,
           element: bar
         });
         if (content instanceof Node)
@@ -5098,7 +5140,7 @@
           if (!result)
             return;
           host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-          refocusEvent(event.id);
+          host.refocusEvent(event.id);
         }, keyboardResizeEvent = function(key, nativeEvent) {
           const startZoned = toZonedDateTime(event.start, timeZone);
           const endZoned = toZonedDateTime(event.end, timeZone);
@@ -5123,7 +5165,7 @@
           if (!result)
             return;
           host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-          refocusEvent(event.id);
+          host.refocusEvent(event.id);
         }, beginResize = function(nativeEvent, edge) {
           if (nativeEvent.button !== 0)
             return;
@@ -5332,12 +5374,20 @@
         node.type = "button";
         node.className = ["cv-event", ...event.classNames ?? []].join(" ");
         node.dataset.eventId = event.id;
+        const nodeState = stateOf(event);
+        node.dataset.temporalState = nodeState;
         node.style.top = `${geometry.top}px`;
         node.style.height = `${geometry.height}px`;
         node.style.insetInlineStart = `${item.left * 100}%`;
         node.style.width = `${item.width * 100}%`;
         node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-        const content = eventContent?.({ event, date: column.date, resource: column.resource, element: node });
+        const content = eventContent?.({
+          event,
+          date: column.date,
+          resource: column.resource,
+          temporalState: nodeState,
+          element: node
+        });
         if (content instanceof Node)
           node.append(content);
         else
@@ -5538,7 +5588,7 @@
           }, press);
         }, (press) => press.target instanceof Element && press.target.closest(".cv-event") !== null);
       }
-      const now = Temporal2.Now.zonedDateTimeISO(timeZone);
+      const now = renderNow;
       if (column.date.toString() === now.toPlainDate().toString()) {
         const nowMinutes = now.hour * 60 + now.minute + now.second / 60;
         if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {
@@ -5708,6 +5758,7 @@
     snapDuration: Temporal2.Duration.from({ minutes: 15 }),
     defaultTimedEventDuration: Temporal2.Duration.from({ minutes: 30 })
   };
+  var MAX_TIMEOUT_MS = 2147483647;
   var dates = { getMonthWeeks, startOfWeek, toPlainDate };
 
   class CalendarViewElement extends HTMLElement {
@@ -5723,6 +5774,11 @@
     #requestVersion = 0;
     #batchDepth = 0;
     #renderQueued = false;
+    #afterRenderQueue = [];
+    #pendingAnnounce = null;
+    #announceFrame = null;
+    #now = null;
+    #agingTimer = null;
     connectedCallback() {
       this.classList.add("calendar-view");
       if (!this.hasAttribute("date")) {
@@ -5733,6 +5789,16 @@
     }
     disconnectedCallback() {
       this.#abortController?.abort();
+      this.#afterRenderQueue = [];
+      this.#pendingAnnounce = null;
+      if (this.#announceFrame !== null) {
+        cancelAnimationFrame(this.#announceFrame);
+        this.#announceFrame = null;
+      }
+      if (this.#agingTimer !== null) {
+        clearTimeout(this.#agingTimer);
+        this.#agingTimer = null;
+      }
     }
     attributeChangedCallback() {
       if (this.isConnected)
@@ -6028,21 +6094,35 @@
         this.#render();
       });
     }
+    #afterRender(callback) {
+      this.#afterRenderQueue.push(callback);
+      this.#queueRender();
+    }
     #announce(message) {
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (!this.isConnected)
-          return;
-        const status = this.querySelector(".cv-status");
-        if (status)
-          status.textContent = message;
-      }));
+      this.#pendingAnnounce = message;
+      this.#afterRender(() => {
+        if (this.#announceFrame !== null)
+          cancelAnimationFrame(this.#announceFrame);
+        this.#announceFrame = requestAnimationFrame(() => {
+          this.#announceFrame = null;
+          if (!this.isConnected)
+            return;
+          const pending = this.#pendingAnnounce;
+          this.#pendingAnnounce = null;
+          if (pending === null)
+            return;
+          const status = this.querySelector(".cv-status");
+          if (status)
+            status.textContent = pending;
+        });
+      });
     }
     #refocusEvent(id) {
-      requestAnimationFrame(() => requestAnimationFrame(() => {
+      this.#afterRender(() => {
         if (!this.isConnected)
           return;
         this.querySelector(`[data-event-id="${CSS.escape(id)}"]`)?.focus();
-      }));
+      });
     }
     #dateOptions() {
       return {
@@ -6077,6 +6157,8 @@
       const dateOptions = this.#dateOptions();
       const dates2 = getVisibleDates(this.date, this.view, dateOptions);
       const resources = isResourceView(this.view) ? this.#resources : [];
+      this.#now = Temporal2.Now.zonedDateTimeISO(options.timeZone);
+      const now = this.#now;
       const scroll = this.querySelector(".cv-scroller");
       const scrollTop = scroll?.scrollTop ?? 0;
       const scrollLeft = scroll?.scrollLeft ?? 0;
@@ -6089,24 +6171,38 @@
       scroller.className = "cv-scroller";
       scroller.setAttribute("role", "region");
       scroller.setAttribute("aria-label", options.labels.calendarRegion);
+      let visibleScope = null;
       if (this.view === "month") {
+        const weeks = getMonthWeeks(this.date, dateOptions);
         scroller.append(renderMonthGrid({
-          weeks: getMonthWeeks(this.date, dateOptions),
+          weeks,
           month: this.date.month,
           events: this.#events,
           options,
+          now,
           eventContent: this.#config.eventContent,
           moreLinkContent: this.#config.moreLinkContent
         }));
+        visibleScope = {
+          start: weeks[0][0],
+          end: weeks[weeks.length - 1][weeks[weeks.length - 1].length - 1].add({ days: 1 })
+        };
       } else if (this.view === "list") {
+        if (dates2.length > 0) {
+          visibleScope = { start: dates2[0], end: dates2[dates2.length - 1].add({ days: 1 }) };
+        }
         scroller.append(renderList({
           dates: dates2,
           events: this.#events,
           options,
+          now,
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent
         }));
       } else {
+        if (dates2.length > 0) {
+          visibleScope = { start: dates2[0], end: dates2[dates2.length - 1].add({ days: 1 }) };
+        }
         scroller.append(renderTimeGrid({
           dates: dates2,
           resources,
@@ -6114,6 +6210,7 @@
           events: this.#events,
           backgrounds: this.#backgrounds,
           options,
+          now,
           host: {
             editable: this.#config.editable,
             isConnected: () => this.isConnected,
@@ -6141,6 +6238,26 @@
         composed: true,
         detail: { view: this.view, dates: dates2, resources }
       }));
+      const pending = this.#afterRenderQueue;
+      this.#afterRenderQueue = [];
+      for (const callback of pending)
+        callback();
+      if (this.#agingTimer !== null) {
+        clearTimeout(this.#agingTimer);
+        this.#agingTimer = null;
+      }
+      const nextBoundary = nextStateChangeMs(this.#events, now.epochMilliseconds, options.timeZone, visibleScope);
+      if (nextBoundary !== null) {
+        const delay = Math.min(Math.max(0, nextBoundary - now.epochMilliseconds), MAX_TIMEOUT_MS);
+        if (delay > 0) {
+          this.#agingTimer = window.setTimeout(() => {
+            this.#agingTimer = null;
+            if (!this.isConnected)
+              return;
+            this.#queueRender();
+          }, delay);
+        }
+      }
     }
   }
 

@@ -2,6 +2,7 @@ import { Temporal } from "temporal-polyfill";
 import { formatClock, formatDayHeader } from "../core/dates.js";
 import { DEFAULT_LABELS } from "../core/labels.js";
 import { describeEvent, eventOverlapsDate, instantRangeOf, wallMinutes } from "../core/slicing.js";
+import { temporalState } from "../core/temporal.js";
 
 /**
  * Minimal chronological list over the visible dates. Each day is a group
@@ -20,10 +21,12 @@ import { describeEvent, eventOverlapsDate, instantRangeOf, wallMinutes } from ".
  * @param {import("../core/labels.js").CalendarLabels} [input.options.labels] fixed UI strings, defaulting to English
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
+ * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @returns {DocumentFragment}
  */
-export function renderList({ dates, events, options, eventContent, dayHeaderContent }) {
+export function renderList({ dates, events, options, now, eventContent, dayHeaderContent }) {
   const timeZone = options.timeZone ?? "UTC";
+  const renderNow = now ?? Temporal.Now.zonedDateTimeISO(timeZone);
   const locale = options.locale;
   const labels = options.labels ?? DEFAULT_LABELS;
   const fragment = document.createDocumentFragment();
@@ -67,8 +70,10 @@ export function renderList({ dates, events, options, eventContent, dayHeaderCont
       item.type = "button";
       item.className = ["cv-list-event", ...(event.classNames ?? [])].join(" ");
       item.dataset.eventId = event.id;
+      const state = temporalState(event.start, event.end, renderNow, timeZone);
+      item.dataset.temporalState = state;
       item.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-      const content = eventContent?.({ event, date, resource: null, element: item });
+      const content = eventContent?.({ event, date, resource: null, temporalState: state, element: item });
       if (content instanceof Node) {
         item.append(content);
       } else if (content != null) {

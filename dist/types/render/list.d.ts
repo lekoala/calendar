@@ -16,9 +16,10 @@ import { Temporal } from "temporal-polyfill";
  * @param {import("../core/labels.js").CalendarLabels} [input.options.labels] fixed UI strings, defaulting to English
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
+ * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @returns {DocumentFragment}
  */
-export declare function renderList({ dates, events, options, eventContent, dayHeaderContent }: {
+export declare function renderList({ dates, events, options, now, eventContent, dayHeaderContent }: {
     dates: Temporal.PlainDate[];
     events: import("../core/model.js").NormalizedEvent[];
     options: {
@@ -28,5 +29,6 @@ export declare function renderList({ dates, events, options, eventContent, dayHe
     };
     eventContent?: (info: object) => unknown;
     dayHeaderContent?: (info: object) => unknown;
+    now?: Temporal.ZonedDateTime;
 }): DocumentFragment;
 //# sourceMappingURL=list.d.ts.map

@@ -21,6 +21,7 @@ import {
   sameRange,
 } from "./core/model.js";
 import { queryOverlaps } from "./core/overlaps.js";
+import { nextStateChangeMs } from "./core/temporal.js";
 import { renderList } from "./render/list.js";
 import { renderMonthGrid } from "./render/month-grid.js";
 import { renderTimeGrid } from "./render/time-grid.js";
@@ -86,6 +87,10 @@ const DEFAULTS = {
   defaultTimedEventDuration: Temporal.Duration.from({ minutes: 30 }),
 };
 
+// Largest delay a `setTimeout` accepts; aging boundaries beyond it simply
+// re-arm on the next render instead of overflowing.
+const MAX_TIMEOUT_MS = 2147483647;
+
 /**
  * Civil date helpers shared with the main grid, exposed for external
  * navigators (mini-calendars, custom headers). One object with two access
@@ -142,6 +147,10 @@ export class CalendarViewElement extends HTMLElement {
   #pendingAnnounce = null;
   /** Single cancellable announce frame for a11y timing. @type {number | null} */
   #announceFrame = null;
+  /** Last render's `now`, kept so interaction decisions reuse the instant the grid was painted with. Rewritten on every render, never read as a clock. @type {Temporal.ZonedDateTime | null} */
+  #now = null;
+  /** One-shot aging timer to the next visible event boundary. @type {number | null} */
+  #agingTimer = null;
 
   connectedCallback() {
     this.classList.add("calendar-view");
@@ -161,6 +170,10 @@ export class CalendarViewElement extends HTMLElement {
     if (this.#announceFrame !== null) {
       cancelAnimationFrame(this.#announceFrame);
       this.#announceFrame = null;
+    }
+    if (this.#agingTimer !== null) {
+      clearTimeout(this.#agingTimer);
+      this.#agingTimer = null;
     }
   }
 
@@ -496,7 +509,7 @@ export class CalendarViewElement extends HTMLElement {
 
   /**
    * Register an application-owned element as an external drop source
-   * (USE_CASES §12, "external placement"). The element becomes
+   * (external placement). The element becomes
    * `draggable`; while it is dragged over the rendered grid, the core draws
    * a placement preview from `meta` and, on a real drop, dispatches
    * `calendar:externaldrop` with the opaque `payload` and the resolved
@@ -641,7 +654,7 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
-   * Post-render lifecycle primitive (Milestone 10). Runs `callback` once the
+   * Post-render lifecycle primitive. Runs `callback` once the
    * pending render has inserted its subtree, after the `calendar:render`
    * dispatch. Not a scheduler: no retries, promises or priorities. Callbacks
    * queued from inside a drain run on the next render, and the queue is
@@ -748,6 +761,13 @@ export class CalendarViewElement extends HTMLElement {
     const dates = getVisibleDates(this.date, this.view, dateOptions);
     const resources = isResourceView(this.view) ? this.#resources : [];
 
+    // `now` is whatever this render computes: one instant shared by the now
+    // indicator, temporal states and the aging boundary, cached per render so
+    // later interaction decisions reuse the instant the grid was painted with.
+    // Never a clock service.
+    this.#now = Temporal.Now.zonedDateTimeISO(options.timeZone);
+    const now = this.#now;
+
     const scroll = this.querySelector(".cv-scroller");
     const scrollTop = scroll?.scrollTop ?? 0;
     const scrollLeft = scroll?.scrollLeft ?? 0;
@@ -764,28 +784,46 @@ export class CalendarViewElement extends HTMLElement {
     scroller.className = "cv-scroller";
     scroller.setAttribute("role", "region");
     scroller.setAttribute("aria-label", options.labels.calendarRegion);
+    // Civil half-open scope of what this render paints; the aging timer only
+    // watches boundaries inside it. Month weeks spill past the month, so the
+    // scope follows the rendered weeks/dates, not the view range.
+    /** @type {{ start: unknown, end: unknown } | null} */
+    let visibleScope = null;
     if (this.view === "month") {
+      const weeks = getMonthWeeks(this.date, dateOptions);
       scroller.append(
         renderMonthGrid({
-          weeks: getMonthWeeks(this.date, dateOptions),
+          weeks,
           month: this.date.month,
           events: this.#events,
           options,
+          now,
           eventContent: this.#config.eventContent,
           moreLinkContent: this.#config.moreLinkContent,
         }),
       );
+      visibleScope = {
+        start: weeks[0][0],
+        end: weeks[weeks.length - 1][weeks[weeks.length - 1].length - 1].add({ days: 1 }),
+      };
     } else if (this.view === "list") {
+      if (dates.length > 0) {
+        visibleScope = { start: dates[0], end: dates[dates.length - 1].add({ days: 1 }) };
+      }
       scroller.append(
         renderList({
           dates,
           events: this.#events,
           options,
+          now,
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,
         }),
       );
     } else {
+      if (dates.length > 0) {
+        visibleScope = { start: dates[0], end: dates[dates.length - 1].add({ days: 1 }) };
+      }
       scroller.append(
         renderTimeGrid({
           dates,
@@ -794,6 +832,7 @@ export class CalendarViewElement extends HTMLElement {
           events: this.#events,
           backgrounds: this.#backgrounds,
           options,
+          now,
           host: {
             editable: this.#config.editable,
             isConnected: () => this.isConnected,
@@ -836,6 +875,31 @@ export class CalendarViewElement extends HTMLElement {
     const pending = this.#afterRenderQueue;
     this.#afterRenderQueue = [];
     for (const callback of pending) callback();
+
+    // Temporal aging: one one-shot timer to the next visible event
+    // boundary fires `queueRender()`; the next render recomputes states and
+    // the following boundary. Cancelled/replaced on every render (so refetch
+    // and navigation re-arm for free) and on `disconnectedCallback`.
+    if (this.#agingTimer !== null) {
+      clearTimeout(this.#agingTimer);
+      this.#agingTimer = null;
+    }
+    const nextBoundary = nextStateChangeMs(
+      this.#events,
+      now.epochMilliseconds,
+      options.timeZone,
+      visibleScope,
+    );
+    if (nextBoundary !== null) {
+      const delay = Math.min(Math.max(0, nextBoundary - now.epochMilliseconds), MAX_TIMEOUT_MS);
+      if (delay > 0) {
+        this.#agingTimer = window.setTimeout(() => {
+          this.#agingTimer = null;
+          if (!this.isConnected) return;
+          this.#queueRender();
+        }, delay);
+      }
+    }
 
     // Rendering is full replacement by design in 0.x; keyed reconciliation
     // and a consolidated pointer engine are roadmap debt (docs/ROADMAP.md).

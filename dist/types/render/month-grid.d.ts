@@ -20,9 +20,10 @@ import { Temporal } from "temporal-polyfill";
  * @param {number} [input.options.monthEventLimit]
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.moreLinkContent]
+ * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @returns {DocumentFragment}
  */
-export declare function renderMonthGrid({ weeks, month, events, options, eventContent, moreLinkContent }: {
+export declare function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent }: {
     weeks: Temporal.PlainDate[][];
     month: number;
     events: import("../core/model.js").NormalizedEvent[];
@@ -34,5 +35,6 @@ export declare function renderMonthGrid({ weeks, month, events, options, eventCo
     };
     eventContent?: (info: object) => unknown;
     moreLinkContent?: (info: object) => unknown;
+    now?: Temporal.ZonedDateTime;
 }): DocumentFragment;
 //# sourceMappingURL=month-grid.d.ts.map

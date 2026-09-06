@@ -477,7 +477,7 @@ detail: {
 Hooks return `Node | string | null`. Hook output is appended inside a core-owned accessible wrapper (for example a focusable event button), so custom content never removes the accessible name or activation behavior. Strings are treated as text.
 
 ```js
-eventContent({ event, date, resource, element }) {
+eventContent({ event, date, resource, temporalState, element }) {
   const node = document.createElement("span");
   node.textContent = event.title;
   return node;
@@ -485,6 +485,8 @@ eventContent({ event, date, resource, element }) {
 ```
 
 Hooks: `eventContent`, `dayHeaderContent`, `resourceHeaderContent`, `slotLabelContent`, `moreLinkContent`. Do not add further hooks before a use case requires them. Do not add `innerHTML`/`allowHtml` configuration.
+
+Every rendered event node carries `data-temporal-state="past|current|future"`, derived from its canonical range against the render's `now` (`end <= now` is past, `start <= now < end` is current). `eventContent` receives the same value as `info.temporalState`. The fact ages live without refetch: the render arms a single one-shot timer to the next visible start/end boundary, which triggers the next render. The core never derives `editable`/`movable`/`resizable` from it; policy stays application-side. Style the fact from the application with plain attribute selectors (`[data-temporal-state="past"]`); the core ships no temporal styling.
 
 `slotLabelContent({ time, minutes, element })` renders one time axis label; `time` is a `Temporal.PlainTime` and `minutes` its offset from midnight. `moreLinkContent({ date, events, hidden, element })` renders the month `+n more` button, where `events` is the day's full list and `hidden` the count that did not fit.
 

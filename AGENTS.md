@@ -205,6 +205,7 @@ If code/algorithms are later reused from an MIT project (for example EventCalend
 - Audit/debug tooling lives in `scripts/` as committed reusable scripts, never as one-shot files at the repository root.
 - Personal scratch goes to the gitignored `.temp/` directory, never to versionable paths.
 - Keep the implementation readable before making it clever.
+- Comments in committed code are self-sufficient: explain the non-obvious state directly, never reference milestones, roadmap sections or use-case numbers. Planning traceability lives in docs and commit messages, not in code.
 - Extract pure geometry/date/layout helpers and unit-test them.
 - Browser interactions need browser tests; DOM shims are not a substitute for pointer/focus/layout behavior.
 - When behavior changes, update the corresponding docs and tests in the same change.

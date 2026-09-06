@@ -2,6 +2,7 @@ import { Temporal } from "temporal-polyfill";
 import { zonedDateTimeAt } from "../core/dates.js";
 import { DEFAULT_LABELS, formatLabel } from "../core/labels.js";
 import { describeEvent, eventOverlapsDate, instantRangeOf } from "../core/slicing.js";
+import { temporalState } from "../core/temporal.js";
 
 /**
  * Summary month grid. Weeks are full weeks covering the anchor month, from
@@ -24,10 +25,12 @@ import { describeEvent, eventOverlapsDate, instantRangeOf } from "../core/slicin
  * @param {number} [input.options.monthEventLimit]
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.moreLinkContent]
+ * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @returns {DocumentFragment}
  */
-export function renderMonthGrid({ weeks, month, events, options, eventContent, moreLinkContent }) {
+export function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent }) {
   const timeZone = options.timeZone ?? "UTC";
+  const renderNow = now ?? Temporal.Now.zonedDateTimeISO(timeZone);
   const locale = options.locale;
   const labels = options.labels ?? DEFAULT_LABELS;
   const limit = Math.max(1, options.monthEventLimit ?? 3);
@@ -80,8 +83,10 @@ export function renderMonthGrid({ weeks, month, events, options, eventContent, m
         chip.type = "button";
         chip.className = ["cv-month-event", ...(event.classNames ?? [])].join(" ");
         chip.dataset.eventId = event.id;
+        const state = temporalState(event.start, event.end, renderNow, timeZone);
+        chip.dataset.temporalState = state;
         chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-        const content = eventContent?.({ event, date, resource: null, element: chip });
+        const content = eventContent?.({ event, date, resource: null, temporalState: state, element: chip });
         if (content instanceof Node) chip.append(content);
         else chip.textContent = content == null ? (event.title ?? labels.untitledEvent) : String(content);
         // Native <button> activation covers pointer click and Enter/Space equally.
