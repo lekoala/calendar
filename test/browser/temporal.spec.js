@@ -60,6 +60,7 @@ test("event nodes carry data-temporal-state and hooks receive it", async ({ page
 
   const seen = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    /** @type {Record<string, string>} */
     const states = {};
     calendar.configure({
       eventContent: (/** @type {any} */ info) => {
@@ -141,6 +142,7 @@ test("month and list nodes carry data-temporal-state", async ({ page }) => {
 });
 
 test("disconnect cancels the aging timer without errors", async ({ page }) => {
+  /** @type {string[]} */
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error)));
   await page.goto("/demo/basic.html");

@@ -4119,6 +4119,46 @@
   }
 
   // src/core/overlaps.js
+  function queryRangeContext({
+    events = [],
+    backgrounds = [],
+    range,
+    timeZone = "UTC",
+    resourceId = null
+  }) {
+    if (!range || range.start == null || range.end == null) {
+      throw new TypeError("getRangeContext requires { start, end }");
+    }
+    const { start: rangeStart, end: rangeEnd } = instantRangeOf(range.start, range.end, timeZone);
+    const startMs = rangeStart.epochMilliseconds;
+    const endMs = rangeEnd.epochMilliseconds;
+    const context = { events: { overlapping: [] }, backgrounds: { overlapping: [], covering: [] } };
+    if (!(endMs > startMs))
+      return context;
+    const scoped = resourceId == null ? null : String(resourceId);
+    for (const event of events) {
+      if (scoped !== null && (event.resourceId ?? null) !== scoped)
+        continue;
+      const { start: eventStart, end: eventEnd } = instantRangeOf(event.start, event.end, timeZone);
+      if (!rangesOverlap(startMs, endMs, eventStart.epochMilliseconds, eventEnd.epochMilliseconds))
+        continue;
+      context.events.overlapping.push(event);
+    }
+    for (const background of backgrounds) {
+      if (scoped !== null && background.resourceId != null && background.resourceId !== scoped)
+        continue;
+      const { start: backgroundStart, end: backgroundEnd } = instantRangeOf(background.start, background.end, timeZone);
+      const backgroundStartMs = backgroundStart.epochMilliseconds;
+      const backgroundEndMs = backgroundEnd.epochMilliseconds;
+      if (!rangesOverlap(startMs, endMs, backgroundStartMs, backgroundEndMs))
+        continue;
+      context.backgrounds.overlapping.push(background);
+      if (backgroundStartMs <= startMs && backgroundEndMs >= endMs) {
+        context.backgrounds.covering.push(background);
+      }
+    }
+    return context;
+  }
   function rangesOverlap(aStartMs, aEndMs, bStartMs, bEndMs) {
     return aStartMs < bEndMs && bStartMs < aEndMs;
   }
@@ -4269,7 +4309,16 @@
   }
 
   // src/render/month-grid.js
-  function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent }) {
+  function renderMonthGrid({
+    weeks,
+    month,
+    events,
+    options,
+    now,
+    eventContent,
+    moreLinkContent,
+    getRangeContext
+  }) {
     const timeZone = options.timeZone ?? "UTC";
     const renderNow = now ?? Temporal2.Now.zonedDateTimeISO(timeZone);
     const locale = options.locale;
@@ -4353,14 +4402,16 @@
             return;
           }
           const start = zonedDateTimeAt(date, 0, timeZone);
+          const range = { start, end: start.add({ days: 1 }), resourceId: null };
           cell.dispatchEvent(new CustomEvent("calendar:select", {
             bubbles: true,
             composed: true,
             cancelable: true,
             detail: {
-              start,
-              end: start.add({ days: 1 }),
-              resourceId: null,
+              start: range.start,
+              end: range.end,
+              resourceId: range.resourceId,
+              context: getRangeContext?.(range) ?? null,
               nativeEvent
             }
           }));
@@ -4688,14 +4739,20 @@
       });
     }
     function dispatchSelect(body, column, start, end, nativeEvent) {
+      const range = {
+        start: zonedDateTimeAt(column.date, start, timeZone),
+        end: zonedDateTimeAt(column.date, end, timeZone),
+        resourceId: column.resource?.id ?? null
+      };
       body.dispatchEvent(new CustomEvent("calendar:select", {
         bubbles: true,
         composed: true,
         cancelable: true,
         detail: {
-          start: zonedDateTimeAt(column.date, start, timeZone),
-          end: zonedDateTimeAt(column.date, end, timeZone),
-          resourceId: column.resource?.id ?? null,
+          start: range.start,
+          end: range.end,
+          resourceId: range.resourceId,
+          context: host.getRangeContext(range),
           nativeEvent
         }
       }));
@@ -5730,6 +5787,15 @@
       removeExternalGhost();
       if (!placement?.ok)
         return;
+      const contextRange = placement.kind === "grid" ? {
+        start: placement.time,
+        end: placement.time.add({ minutes: placement.end - placement.start }),
+        resourceId: placement.target.resourceId
+      } : {
+        start: placement.target.date,
+        end: placement.target.date.add({ days: 1 }),
+        resourceId: placement.target.resourceId
+      };
       root.dispatchEvent(new CustomEvent("calendar:externaldrop", {
         bubbles: true,
         composed: true,
@@ -5738,6 +5804,7 @@
           payload: external.payload,
           date: placement.target.date,
           ...placement.kind === "grid" ? { time: placement.target.time, resourceId: placement.target.resourceId } : { resourceId: placement.target.resourceId, allDay: true },
+          context: host.getRangeContext(contextRange),
           nativeEvent: event
         }
       }));
@@ -5899,6 +5966,16 @@
         filter: options.filter
       });
     }
+    getRangeContext(range) {
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      return queryRangeContext({
+        events: this.#events,
+        backgrounds: this.#backgrounds,
+        range,
+        timeZone,
+        resourceId: range?.resourceId ?? null
+      });
+    }
     #commitEventMutation({ event, previous, current, name, nativeEvent }) {
       const id = event.id;
       const before = this.getEventById(id);
@@ -5930,7 +6007,14 @@
         bubbles: true,
         composed: true,
         cancelable: true,
-        detail: { event: this.getEventById(id), previous, current, nativeEvent, revert }
+        detail: {
+          event: this.getEventById(id),
+          previous,
+          current,
+          context: this.getRangeContext(current),
+          nativeEvent,
+          revert
+        }
       }));
       if (!accepted)
         revert();
@@ -6181,7 +6265,8 @@
           options,
           now,
           eventContent: this.#config.eventContent,
-          moreLinkContent: this.#config.moreLinkContent
+          moreLinkContent: this.#config.moreLinkContent,
+          getRangeContext: (range) => this.getRangeContext(range)
         }));
         visibleScope = {
           start: weeks[0][0],
@@ -6216,6 +6301,7 @@
             isConnected: () => this.isConnected,
             announce: (message) => this.#announce(message),
             refocusEvent: (id) => this.#refocusEvent(id),
+            getRangeContext: (range) => this.getRangeContext(range),
             commitEventMove: (input) => this.#commitEventMove(input),
             commitEventResize: (input) => this.#commitEventResize(input),
             getExternalDrag: () => this.#dragExternal,

@@ -4,6 +4,14 @@ export type TimeGridHost = {
     isConnected: () => boolean;
     announce: (message: string) => void;
     refocusEvent: (id: string) => void;
+    /**
+     * canonical range context for the proposed range
+     */
+    getRangeContext: (range: {
+        start: unknown;
+        end: unknown;
+        resourceId?: string | null;
+    }) => import("../core/overlaps.js").RangeContext;
     commitEventMove: (input: {
         event: import("../core/model.js").NormalizedEvent;
         previous: {
@@ -89,6 +97,7 @@ export type ActiveSelection = {
  * @property {() => boolean} isConnected
  * @property {(message: string) => void} announce
  * @property {(id: string) => void} refocusEvent
+ * @property {(range: { start: unknown, end: unknown, resourceId?: string | null }) => import("../core/overlaps.js").RangeContext} getRangeContext canonical range context for the proposed range
  * @property {(input: {
  *   event: import("../core/model.js").NormalizedEvent,
  *   previous: { start: unknown, end: unknown, resourceId: string | null },

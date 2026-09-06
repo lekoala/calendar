@@ -26,9 +26,19 @@ import { temporalState } from "../core/temporal.js";
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.moreLinkContent]
  * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
+ * @param {(range: { start: unknown, end: unknown, resourceId?: string | null }) => import("../core/overlaps.js").RangeContext} [input.getRangeContext] canonical range context for the selected day
  * @returns {DocumentFragment}
  */
-export function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent }) {
+export function renderMonthGrid({
+  weeks,
+  month,
+  events,
+  options,
+  now,
+  eventContent,
+  moreLinkContent,
+  getRangeContext,
+}) {
   const timeZone = options.timeZone ?? "UTC";
   const renderNow = now ?? Temporal.Now.zonedDateTimeISO(timeZone);
   const locale = options.locale;
@@ -137,15 +147,17 @@ export function renderMonthGrid({ weeks, month, events, options, now, eventConte
           return;
         }
         const start = zonedDateTimeAt(date, 0, timeZone);
+        const range = { start, end: start.add({ days: 1 }), resourceId: null };
         cell.dispatchEvent(
           new CustomEvent("calendar:select", {
             bubbles: true,
             composed: true,
             cancelable: true,
             detail: {
-              start,
-              end: start.add({ days: 1 }),
-              resourceId: null,
+              start: range.start,
+              end: range.end,
+              resourceId: range.resourceId,
+              context: getRangeContext?.(range) ?? null,
               nativeEvent,
             },
           }),

@@ -21,9 +21,10 @@ import { Temporal } from "temporal-polyfill";
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.moreLinkContent]
  * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
+ * @param {(range: { start: unknown, end: unknown, resourceId?: string | null }) => import("../core/overlaps.js").RangeContext} [input.getRangeContext] canonical range context for the selected day
  * @returns {DocumentFragment}
  */
-export declare function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent }: {
+export declare function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent, getRangeContext, }: {
     weeks: Temporal.PlainDate[][];
     month: number;
     events: import("../core/model.js").NormalizedEvent[];
@@ -36,5 +37,10 @@ export declare function renderMonthGrid({ weeks, month, events, options, now, ev
     eventContent?: (info: object) => unknown;
     moreLinkContent?: (info: object) => unknown;
     now?: Temporal.ZonedDateTime;
+    getRangeContext?: (range: {
+        start: unknown;
+        end: unknown;
+        resourceId?: string | null;
+    }) => import("../core/overlaps.js").RangeContext;
 }): DocumentFragment;
 //# sourceMappingURL=month-grid.d.ts.map

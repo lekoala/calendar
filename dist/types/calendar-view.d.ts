@@ -193,6 +193,27 @@ export declare class CalendarViewElement extends HTMLElement {
         }) => boolean;
     }): Array<import("./core/model.js").NormalizedEvent | import("./core/model.js").NormalizedBackground>;
     /**
+     * Canonical range context over canonical state: what `{ start, end }`
+     * touches. `events.overlapping` is a plain intersection;
+     * `backgrounds.covering` fully wraps the range while
+     * `backgrounds.overlapping` merely intersects it. Comparison is by
+     * absolute instant over half-open ranges; a nullish `resourceId` means no
+     * filter, resource-less backgrounds are global and match any scope.
+     *
+     * This is the single definition of "context": interaction intents attach
+     * snapshots produced here to their `detail.context`. Geometry only — when
+     * several backgrounds cover the same range, priority stays
+     * application-side.
+     *
+     * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
+     * @returns {import("./core/overlaps.js").RangeContext}
+     */
+    getRangeContext(range: {
+        start: unknown;
+        end: unknown;
+        resourceId?: string | null;
+    }): import("./core/overlaps.js").RangeContext;
+    /**
      * Non-pointer equivalent of dragging an event. Runs the same optimistic
      * commit as the pointer path, so keyboard and application commands share
      * one contract.

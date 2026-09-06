@@ -20,7 +20,7 @@ import {
   normalizeResource,
   sameRange,
 } from "./core/model.js";
-import { queryOverlaps } from "./core/overlaps.js";
+import { queryOverlaps, queryRangeContext } from "./core/overlaps.js";
 import { nextStateChangeMs } from "./core/temporal.js";
 import { renderList } from "./render/list.js";
 import { renderMonthGrid } from "./render/month-grid.js";
@@ -334,6 +334,33 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Canonical range context over canonical state: what `{ start, end }`
+   * touches. `events.overlapping` is a plain intersection;
+   * `backgrounds.covering` fully wraps the range while
+   * `backgrounds.overlapping` merely intersects it. Comparison is by
+   * absolute instant over half-open ranges; a nullish `resourceId` means no
+   * filter, resource-less backgrounds are global and match any scope.
+   *
+   * This is the single definition of "context": interaction intents attach
+   * snapshots produced here to their `detail.context`. Geometry only — when
+   * several backgrounds cover the same range, priority stays
+   * application-side.
+   *
+   * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
+   * @returns {import("./core/overlaps.js").RangeContext}
+   */
+  getRangeContext(range) {
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    return queryRangeContext({
+      events: this.#events,
+      backgrounds: this.#backgrounds,
+      range,
+      timeZone,
+      resourceId: range?.resourceId ?? null,
+    });
+  }
+
+  /**
    * Optimistic mutation path shared by pointer interactions and programmatic
    * commands. Applies `current` immediately, dispatches a cancelable event
    * carrying an idempotent `revert()`, and reverts automatically when the
@@ -389,7 +416,17 @@ export class CalendarViewElement extends HTMLElement {
         bubbles: true,
         composed: true,
         cancelable: true,
-        detail: { event: this.getEventById(id), previous, current, nativeEvent, revert },
+        // `context` is a snapshot of canonical state at dispatch time. For
+        // move/resize the optimistic mutation is already applied, so the
+        // mutated event may appear in `context.events.overlapping`.
+        detail: {
+          event: this.getEventById(id),
+          previous,
+          current,
+          context: this.getRangeContext(current),
+          nativeEvent,
+          revert,
+        },
       }),
     );
     if (!accepted) revert();
@@ -800,6 +837,7 @@ export class CalendarViewElement extends HTMLElement {
           now,
           eventContent: this.#config.eventContent,
           moreLinkContent: this.#config.moreLinkContent,
+          getRangeContext: (range) => this.getRangeContext(range),
         }),
       );
       visibleScope = {
@@ -838,6 +876,7 @@ export class CalendarViewElement extends HTMLElement {
             isConnected: () => this.isConnected,
             announce: (message) => this.#announce(message),
             refocusEvent: (id) => this.#refocusEvent(id),
+            getRangeContext: (range) => this.getRangeContext(range),
             commitEventMove: (input) => this.#commitEventMove(input),
             commitEventResize: (input) => this.#commitEventResize(input),
             getExternalDrag: () => this.#dragExternal,

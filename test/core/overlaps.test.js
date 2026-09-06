@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeBackground, normalizeEvent } from "../../src/core/model.js";
-import { queryOverlaps, rangesOverlap } from "../../src/core/overlaps.js";
+import { queryOverlaps, queryRangeContext, rangesOverlap } from "../../src/core/overlaps.js";
 
 const ZONE = "Europe/Brussels";
 /** @param {string} clock */
@@ -162,5 +162,141 @@ test("a civil query stays the civil day it names, whatever zone runs the calenda
       timeZone: ZONE,
     }),
     [],
+  );
+});
+
+test("queryRangeContext requires a range and returns empty shapes for empty ranges", () => {
+  assert.throws(
+    () => queryRangeContext({ events: [], range: /** @type {any} */ (null) }),
+    /getRangeContext requires \{ start, end \}/,
+  );
+  assert.deepEqual(
+    queryRangeContext({ events: [], range: { start: at("10:00"), end: at("10:00") }, timeZone: ZONE }),
+    {
+      events: { overlapping: [] },
+      backgrounds: { overlapping: [], covering: [] },
+    },
+  );
+});
+
+test("queryRangeContext separates overlapping from covering backgrounds", () => {
+  const ranges = backgrounds([
+    { id: "cover", start: at("09:00"), end: at("12:00") },
+    { id: "edge", start: at("10:00"), end: at("11:00") },
+    { id: "partial", start: at("10:30"), end: at("11:30") },
+  ]);
+  const context = queryRangeContext({
+    backgrounds: ranges,
+    range: { start: at("10:00"), end: at("11:00") },
+    timeZone: ZONE,
+  });
+  assert.deepEqual(
+    context.backgrounds.overlapping.map((entry) => entry.id),
+    ["cover", "edge", "partial"],
+  );
+  assert.deepEqual(
+    context.backgrounds.covering.map((entry) => entry.id),
+    ["cover", "edge"],
+  );
+});
+
+test("a 09:00-12:00 background overlaps but never covers a later partial query", () => {
+  const ranges = backgrounds([{ id: "morning", start: at("09:00"), end: at("12:00") }]);
+  const context = queryRangeContext({
+    backgrounds: ranges,
+    range: { start: at("11:30"), end: at("12:30") },
+    timeZone: ZONE,
+  });
+  assert.deepEqual(
+    context.backgrounds.overlapping.map((entry) => entry.id),
+    ["morning"],
+  );
+  assert.deepEqual(context.backgrounds.covering, []);
+});
+
+test("a timed background never covers a whole civil day query", () => {
+  const ranges = backgrounds([{ id: "morning", start: at("09:00"), end: at("12:00") }]);
+  const context = queryRangeContext({
+    backgrounds: ranges,
+    range: { start: "2026-09-03", end: "2026-09-04" },
+    timeZone: ZONE,
+  });
+  assert.deepEqual(
+    context.backgrounds.overlapping.map((entry) => entry.id),
+    ["morning"],
+  );
+  assert.deepEqual(context.backgrounds.covering, []);
+});
+
+test("queryRangeContext keeps every covering background: the core picks none", () => {
+  const ranges = backgrounds([
+    { id: "availability", start: at("08:00"), end: at("18:00") },
+    { id: "exception", start: at("08:00"), end: at("18:00"), resourceId: "room-a" },
+  ]);
+  const list = events([{ id: "booking", start: at("10:00"), end: at("11:00"), resourceId: "room-a" }]);
+  const context = queryRangeContext({
+    events: list,
+    backgrounds: ranges,
+    range: { start: at("10:00"), end: at("11:00") },
+    timeZone: ZONE,
+    resourceId: "room-a",
+  });
+  assert.deepEqual(
+    context.events.overlapping.map((entry) => entry.id),
+    ["booking"],
+  );
+  assert.deepEqual(
+    context.backgrounds.covering.map((entry) => entry.id),
+    ["availability", "exception"],
+  );
+});
+
+test("queryRangeContext scopes by resource; resourceless backgrounds stay global", () => {
+  const list = events([
+    { id: "a", start: at("09:00"), end: at("10:00"), resourceId: "room-a" },
+    { id: "b", start: at("09:00"), end: at("10:00"), resourceId: "room-b" },
+    { id: "unassigned", start: at("09:00"), end: at("10:00") },
+  ]);
+  const ranges = backgrounds([
+    { id: "global", start: at("09:00"), end: at("10:00") },
+    { id: "scoped", start: at("09:00"), end: at("10:00"), resourceId: "room-b" },
+  ]);
+  const range = { start: at("09:15"), end: at("09:45") };
+  const scoped = queryRangeContext({
+    events: list,
+    backgrounds: ranges,
+    range,
+    timeZone: ZONE,
+    resourceId: "room-a",
+  });
+  assert.deepEqual(
+    scoped.events.overlapping.map((entry) => entry.id),
+    ["a"],
+  );
+  assert.deepEqual(
+    scoped.backgrounds.overlapping.map((entry) => entry.id),
+    ["global"],
+  );
+  const unscoped = queryRangeContext({ events: list, backgrounds: ranges, range, timeZone: ZONE });
+  assert.deepEqual(
+    unscoped.events.overlapping.map((entry) => entry.id),
+    ["a", "b", "unassigned"],
+  );
+  assert.deepEqual(
+    unscoped.backgrounds.covering.map((entry) => entry.id),
+    ["global", "scoped"],
+  );
+});
+
+test("queryRangeContext projects all-day bounds to local midnights", () => {
+  const allDay = normalizeEvent({ id: "ad", allDay: true, start: "2026-09-03", end: "2026-09-04" });
+  const context = queryRangeContext({
+    events: [allDay],
+    range: { start: at("09:00"), end: at("09:30") },
+    timeZone: ZONE,
+  });
+  assert.deepEqual(
+    context.events.overlapping.map((entry) => entry.id),
+    ["ad"],
   );
 });

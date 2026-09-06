@@ -120,6 +120,11 @@
             },
             {
               "kind": "method",
+              "name": "getRangeContext",
+              "description": "Canonical range context over canonical state: what `{ start, end }` touches."
+            },
+            {
+              "kind": "method",
               "name": "moveEvent",
               "description": "Non-pointer equivalent of dragging an event."
             },

@@ -39,6 +39,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @property {() => boolean} isConnected
  * @property {(message: string) => void} announce
  * @property {(id: string) => void} refocusEvent
+ * @property {(range: { start: unknown, end: unknown, resourceId?: string | null }) => import("../core/overlaps.js").RangeContext} getRangeContext canonical range context for the proposed range
  * @property {(input: {
  *   event: import("../core/model.js").NormalizedEvent,
  *   previous: { start: unknown, end: unknown, resourceId: string | null },
@@ -317,15 +318,21 @@ export function renderTimeGrid({
    * @returns {void}
    */
   function dispatchSelect(body, column, start, end, nativeEvent) {
+    const range = {
+      start: zonedDateTimeAt(column.date, start, timeZone),
+      end: zonedDateTimeAt(column.date, end, timeZone),
+      resourceId: column.resource?.id ?? null,
+    };
     body.dispatchEvent(
       new CustomEvent("calendar:select", {
         bubbles: true,
         composed: true,
         cancelable: true,
         detail: {
-          start: zonedDateTimeAt(column.date, start, timeZone),
-          end: zonedDateTimeAt(column.date, end, timeZone),
-          resourceId: column.resource?.id ?? null,
+          start: range.start,
+          end: range.end,
+          resourceId: range.resourceId,
+          context: host.getRangeContext(range),
           nativeEvent,
         },
       }),
@@ -1674,6 +1681,22 @@ export function renderTimeGrid({
     const placement = resolveExternal(event.clientX, event.clientY);
     removeExternalGhost();
     if (!placement?.ok) return;
+    // `context` covers the range the ghost previewed and validated: the real
+    // external duration for timed drops, the civil day for lane drops. If a
+    // lane drop ever gains a multi-day civil duration, this follows that
+    // preview instead of staying one day.
+    const contextRange =
+      placement.kind === "grid"
+        ? {
+            start: placement.time,
+            end: placement.time.add({ minutes: placement.end - placement.start }),
+            resourceId: placement.target.resourceId,
+          }
+        : {
+            start: placement.target.date,
+            end: placement.target.date.add({ days: 1 }),
+            resourceId: placement.target.resourceId,
+          };
     root.dispatchEvent(
       new CustomEvent("calendar:externaldrop", {
         bubbles: true,
@@ -1685,6 +1708,7 @@ export function renderTimeGrid({
           ...(placement.kind === "grid"
             ? { time: placement.target.time, resourceId: placement.target.resourceId }
             : { resourceId: placement.target.resourceId, allDay: true }),
+          context: host.getRangeContext(contextRange),
           nativeEvent: event,
         },
       }),

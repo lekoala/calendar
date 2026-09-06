@@ -311,6 +311,39 @@ option: the core always lays out simultaneous events side by side (see
 combining `getEventOverlaps` with synchronous `preventDefault()` on
 `calendar:select` / `calendar:eventmove` / `calendar:eventresize`.
 
+## Range context
+
+```js
+const context = calendar.getRangeContext({ start, end, resourceId });
+```
+
+The single definition of "context" in the core: what a `{ start, end }`
+range touches, over canonical state.
+
+```js
+{
+  events: { overlapping: [...] },
+  backgrounds: { overlapping: [...], covering: [...] },
+}
+```
+
+`overlapping` is a plain intersection by absolute instant over half-open
+`[start, end)` ranges; `covering` backgrounds fully wrap the range. Bounds
+accept the same values as the overlap queries (zoned, ISO, civil). A
+nullish `resourceId` means no filter; otherwise only entries of that
+resource are kept, except resource-less backgrounds, which are global
+context. Geometry only: when several backgrounds cover the same range, the
+core never picks one — priority stays application-side.
+
+Interaction intents attach snapshots produced by this primitive to their
+`detail.context`: `calendar:select`, `calendar:eventmove`,
+`calendar:eventresize` and `calendar:externaldrop`. For move/resize the
+snapshot describes canonical state at dispatch time, which is the
+optimistic post-mutation state — so the mutated event may appear in
+`context.events.overlapping`. For `externaldrop` the context covers the
+range the ghost previewed and validated: `[time, time + duration)` for
+timed drops, the civil day for lane drops.
+
 ## Mutations / realtime adapters
 
 ```js
@@ -390,6 +423,7 @@ detail: {
   time,                 // ZonedDateTime when timed; absent for all-day
   resourceId,           // target resource, or null
   allDay,               // true when dropped on the all-day lane
+  context,              // range context of the previewed range (see above)
   nativeEvent,
 }
 ```
@@ -426,6 +460,7 @@ detail: {
   event,
   previous: { start, end, resourceId },
   current: { start, end, resourceId },
+  context,              // post-commit snapshot: the event may overlap itself
   nativeEvent,
   revert,
 }
@@ -468,6 +503,7 @@ detail: {
   start,
   end,
   resourceId,
+  context,              // range context of the selected range (see above)
   nativeEvent,
 }
 ```
