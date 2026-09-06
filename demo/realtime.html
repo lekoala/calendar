@@ -19,6 +19,9 @@
 <calendar-view view="day" date="2026-09-03"></calendar-view>
 <script type="module">
   const calendar = document.querySelector("calendar-view");
+  // Fixture data is Brussels-dated; pin the zone so the demo never depends
+  // on the neutral UTC default.
+  calendar.configure({ timeZone: "Europe/Brussels" });
   calendar.events = [{ id:"live", title:"Live event", start:"2026-09-03T09:00:00+02:00[Europe/Brussels]", end:"2026-09-03T09:40:00+02:00[Europe/Brussels]" }];
   add.onclick = () => calendar.addEvent({ id: crypto.randomUUID(), title:"Pushed event", start:"2026-09-03T13:00:00+02:00[Europe/Brussels]", end:"2026-09-03T13:30:00+02:00[Europe/Brussels]" });
   move.onclick = () => calendar.updateEvent({ ...calendar.getEventById("live"), id:"live", title:"Updated live event", start:"2026-09-03T10:00:00+02:00[Europe/Brussels]", end:"2026-09-03T10:40:00+02:00[Europe/Brussels]" });

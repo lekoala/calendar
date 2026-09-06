@@ -389,3 +389,32 @@ test("an event refetch keeps the backgrounds set while it was in flight", async 
   expect(outcome.events).toEqual(["from-source"]);
   expect(outcome.backgrounds).toEqual(["bg", "bg-mid-flight"]);
 });
+
+test("an unconfigured calendar renders in UTC, not in a product zone", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await page.evaluate(() => {
+    const fresh = document.createElement("calendar-view");
+    fresh.id = "neutral";
+    fresh.setAttribute("view", "day");
+    fresh.setAttribute("date", "2026-09-03");
+    fresh.setAttribute("slot-min", "00:00");
+    fresh.setAttribute("slot-max", "23:59");
+    document.body.append(fresh);
+    /** @type {any} */ (fresh).events = [
+      {
+        id: "n",
+        title: "Neutral",
+        start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T09:30:00+02:00[Europe/Brussels]",
+      },
+    ];
+  });
+  await flushRender(page);
+  await flushRender(page);
+  // 09:00 Brussels is 07:00 UTC: the neutral default converts at paint time.
+  await expect(page.locator('#neutral [data-event-id="n"]')).toHaveAttribute(
+    "aria-label",
+    "Neutral, 2026-09-03, 07:00 to 07:30",
+  );
+  await page.evaluate(() => document.querySelector("#neutral")?.remove());
+});

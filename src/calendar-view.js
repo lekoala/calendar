@@ -105,7 +105,7 @@ import { renderTimeGrid } from "./render/time-grid.js";
 
 const DEFAULTS = {
   view: "week",
-  timeZone: "Europe/Brussels",
+  timeZone: "UTC",
   slotMin: "08:00",
   slotMax: "18:00",
   slotDuration: 20,

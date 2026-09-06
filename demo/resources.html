@@ -21,6 +21,9 @@
 <calendar-view view="resourceThreeDays" date="2026-09-03"></calendar-view>
 <script type="module">
   const calendar = document.querySelector("calendar-view");
+  // Fixture data is Brussels-dated; pin the zone so the demo never depends
+  // on the neutral UTC default.
+  calendar.configure({ timeZone: "Europe/Brussels" });
   const rooms = (count) =>
     Array.from({ length: count }, (_, index) => ({ id: `room-${index + 1}`, title: `Room ${index + 1}` }));
   /** @type {Record<string, () => void>} */

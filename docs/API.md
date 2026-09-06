@@ -167,6 +167,13 @@ calendar.configure({
 });
 ```
 
+`timeZone` is the IANA zone civil boundaries project into and wall times
+render in. It defaults to `UTC` — deliberately neutral: without an
+explicit zone a Brussels-dated fixture would silently paint Brussels
+midnights and wall times. Set it to the deployment zone
+(`configure({ timeZone: "Europe/Brussels" })`); events keep their own
+zone in canonical state and convert at paint time.
+
 `locale` is a BCP 47 tag for default presentation: day headers, axis labels
 and the month weekday row render through `Intl`, and an explicit
 `configure({ locale })` suggests `firstDay` when none is set (FullCalendar

@@ -3484,6 +3484,9 @@
 
   calendar.configure({
     pxPerMinute: 1.5,
+    // This shell operates in Brussels: pin the zone instead of relying on
+    // the neutral UTC default, like every other Brussels-dated fixture.
+    timeZone: ZONE,
     // This shell does not take Sunday bookings, and it pins the week to
     // Monday rather than letting the locale suggest one: both are
     // application policy handed to the core, and both are undoable from
