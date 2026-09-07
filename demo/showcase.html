@@ -14,17 +14,24 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.6.0/site/assets/actual-themes.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/dist/combobox.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.1.1/dist/date-picker.min.css">
   <link rel="stylesheet" href="../dist/calendar.css">
   <!-- Application dependencies, pinned the way Actual CSS already is. The
        bare specifiers matter: `@lekoala/combobox` imports `@lekoala/floating`
        itself, so mapping the name gives both it and this page the same
-       module instance instead of two copies of the positioning engine. -->
+       module instance instead of two copies of the positioning engine.
+       `@lekoala/date-picker/calendar` is the calendar-only door of the
+       picker package: it pulls no positioning engine and no text field, so
+       the mini month costs one element and nothing else. -->
   <script type="importmap">
     {
       "imports": {
         "@lekoala/floating": "https://cdn.jsdelivr.net/npm/@lekoala/floating@0.1.0/src/floating.js",
         "@lekoala/combobox": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/src/index.js",
-        "@lekoala/combobox/define": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/src/define.js"
+        "@lekoala/combobox/define": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/src/define.js",
+        "@lekoala/date-picker/calendar": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.1.1/src/date-calendar.js",
+        "@lekoala/date-picker/locales/fr": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.1.1/src/locales/fr.js",
+        "@lekoala/date-picker/locales/nl": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.1.1/src/locales/nl.js"
       }
     }
   </script>
@@ -258,165 +265,127 @@
       font-size: 11px;
     }
 
-    /* Mini month: a composition peer, written against the Temporal dates
-       the element already exposes through `calendar.date`. */
+    /* Mini month: `<date-calendar selection="none">` from
+       @lekoala/date-picker, driven as a navigator. Two things only are ours:
+       the BRIDGE from Actual's palette onto the component's public `--dp-*`
+       tokens, and the application decorations under it. `.dp-*` class names
+       are deliberately not a styling API (date-picker DECISIONS D3), so
+       every rule below hangs off the one marker node this shell returns
+       from `renderDay()`; `:has()` lifts it to the cell and to the row
+       without naming a single component class.
+
+       One deliberate carve-out: the component hardcodes its header control
+       sizes (2.25rem nav buttons, pressed `margin-inline-start`) with no
+       `--dp-*` token and no header render hook, so the compact panel would
+       stretch wider than its day grid. The three rules under `#mini` below
+       are the only ones that name component classes, and they stop at the
+       header. */
     .sc-mini {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       gap: var(--space-10);
-      /* The default `auto` grid column tracks the selects' widest option
-         and pushes a scrollbar into the sidebar; constrain it instead. */
       min-inline-size: 0;
     }
 
-    .sc-mini-head {
-      display: flex;
-      align-items: center;
-      gap: var(--space-10);
-    }
-
-    .sc-mini-head .sc-mini-select {
-      flex: 1;
-      min-inline-size: 0;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      color: var(--text);
-      font-size: var(--font-size-sm);
-      font-weight: var(--font-weight-bold);
-      cursor: pointer;
-    }
-
-    .sc-mini-head .sc-mini-year {
-      flex: 0 1 4.2rem;
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* Native selects: `color-scheme` already drives the popup in dark mode,
-       and explicit token colours keep the field and its options legible the
-       moment the OS or browser cannot honour that hint. */
-    .sc-mini-head .sc-mini-select,
-    .sc-mini-head .sc-mini-select option {
-      color: var(--text);
-      background: var(--surface);
-    }
-
-    .sc-mini-grid {
-      display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
-      gap: 1px;
-    }
-
-    /* Week numbers are one extra leading column, so the same cells and the
-       same loop keep working. */
-    .sc-mini-grid[data-weeks="true"] {
-      grid-template-columns: 1.35rem repeat(7, minmax(0, 1fr));
-    }
-
-    .sc-mini-dow,
-    .sc-mini-week {
-      display: grid;
-      place-items: center;
-      padding-block: 2px;
-      color: var(--text-subtle);
-      font-size: 10px;
-      font-weight: var(--font-weight-bold);
-      text-align: center;
-      text-transform: uppercase;
-    }
-
-    .sc-mini-week {
-      font-variant-numeric: tabular-nums;
-      opacity: 0.7;
-    }
-
-    .sc-mini-day {
-      position: relative;
-      display: grid;
-      place-items: center;
-      aspect-ratio: 1;
-      min-inline-size: 0;
-      padding: 0;
-      border: 0;
-      border-radius: var(--radius-sm);
-      background: transparent;
-      color: var(--text);
-      font: inherit;
+    #mini {
+      --dp-bg: var(--surface);
+      --dp-fg: var(--text);
+      --dp-muted: var(--text-subtle);
+      --dp-border: var(--border);
+      --dp-hover: var(--hover-overlay);
+      --dp-accent: var(--primary);
+      --dp-accent-fg: var(--primary-fg);
+      --dp-radius: var(--radius-sm);
+      /* Seven columns plus the ISO-week gutter have to fit the panel
+         without pushing a scrollbar into it. */
+      --dp-day-size: 1.75rem;
+      --dp-gap: var(--space-10);
       font-size: var(--font-size-xs);
-      font-variant-numeric: tabular-nums;
-      cursor: pointer;
+      /* The panel must not outgrow its day grid: the grid is 7×day cell
+         plus the ISO-week gutter. */
+      max-inline-size: 228px;
     }
 
-    .sc-mini-day:hover {
-      background: var(--hover-overlay);
+    /* D3 carve-out: shrink the header to day-cell scale. `#mini` keeps
+       specificity above the component's (0,2,0); `:where()` scores 0. */
+    #mini .dp-calendar-header {
+      margin-block-end: 0;
     }
 
-    .sc-mini-day:focus-visible {
-      outline: var(--focus-outline);
-      outline-color: var(--focus);
+    #mini .dp-calendar-header .dp-prev {
+      margin-inline-start: 0;
     }
 
-    .sc-mini-day[data-outside-month="true"] {
-      color: var(--text-subtle);
+    #mini .dp-nav {
+      inline-size: 1.5rem;
+      min-block-size: 1.5rem;
     }
 
-    .sc-mini-day[data-activeweek="true"] {
+    #mini .dp-calendar-header :where(button, select, input) {
+      min-block-size: 1.5rem;
+    }
+
+    #mini .dp-day-extra {
+      bottom: -1px;
+    }
+
+    #mini .dp-day {
+      border-radius: 0;
+    }
+
+    #mini .dp-grid {
+      width: 100%;
+    }
+
+    /* One node per day carries the whole verdict, so a cell keeps a single
+       source of truth for its state. Only the three marker states draw a
+       dot; `closed`, `neutral` and the anchor tint the cell instead, and
+       `:has()` still matches a node it never paints. */
+    .sc-mini-marker {
+      display: none;
+      inline-size: 4px;
+      block-size: 4px;
+      border-radius: var(--radius-full);
+      opacity: 0.9;
+    }
+
+    .sc-mini-marker[data-state="free"] {
+      display: block;
+      background: var(--success);
+    }
+
+    .sc-mini-marker[data-state="soon"] {
+      display: block;
+      background: var(--warning);
+    }
+
+    .sc-mini-marker[data-state="full"] {
+      display: block;
+      background: var(--danger);
+    }
+
+    /* The anchor's own row is the active week: its marker sits in that row,
+       so the band needs no second flag and no week math. */
+    #mini tr:has(.sc-mini-marker[data-anchor]) {
       background: color-mix(in oklab, var(--primary), transparent 90%);
     }
 
-    .sc-mini-day[data-closed="true"] {
+    #mini td:has(.sc-mini-marker[data-state="closed"]) {
       color: var(--text-subtle);
       background: color-mix(in oklab, var(--surface-subtle), var(--text) 6%);
     }
 
-    .sc-mini-day[data-today="true"] {
-      box-shadow: inset 0 0 0 1px var(--primary);
-      font-weight: var(--font-weight-bold);
+    /* No room selected: the day is open but says nothing about
+       availability, instead of misreading "none" as "full". */
+    #mini td:has(.sc-mini-marker[data-state="neutral"]) {
+      color: var(--text-subtle);
     }
 
-    .sc-mini-day[data-anchor="true"] {
+    /* Last, so a closed or neutral anchor still reads as the anchor. */
+    #mini td:has(.sc-mini-marker[data-anchor]) {
       background: var(--primary);
       color: var(--primary-fg);
       font-weight: var(--font-weight-bold);
-    }
-
-    .sc-mini-day[data-marked="true"]::after {
-      content: "";
-      position: absolute;
-      inset-block-end: 2px;
-      inline-size: 4px;
-      block-size: 4px;
-      border-radius: var(--radius-full);
-      background: var(--success);
-      opacity: 0.9;
-    }
-
-    .sc-mini-day[data-full="true"]::after {
-      content: "";
-      position: absolute;
-      inset-block-end: 2px;
-      inline-size: 4px;
-      block-size: 4px;
-      border-radius: var(--radius-full);
-      background: var(--danger);
-      opacity: 0.9;
-    }
-
-    .sc-mini-day[data-soon="true"]::after {
-      content: "";
-      position: absolute;
-      inset-block-end: 2px;
-      inline-size: 4px;
-      block-size: 4px;
-      border-radius: var(--radius-full);
-      background: var(--warning);
-      opacity: 0.9;
-    }
-
-    /* No room selected: the day is open but says nothing about
-       availability, instead of misreading "none" as "full". */
-    .sc-mini-day[data-neutral="true"] {
-      color: var(--text-subtle);
     }
 
     .sc-mini-legend {
@@ -2444,21 +2413,11 @@
       </button>
 
       <section class="sc-group sc-mini" aria-label="Month navigation">
-        <div class="sc-mini-head">
-          <select id="mini-month" class="sc-mini-select" aria-label="Month"></select>
-          <select id="mini-year" class="sc-mini-select sc-mini-year" aria-label="Year"></select>
-          <button type="button" class="btn sm neutral ghost icon-only" id="mini-prev" aria-label="Previous month">
-            <i class="ti ti-chevron-left" aria-hidden="true"></i>
-          </button>
-          <button type="button" class="btn sm neutral ghost icon-only" id="mini-next" aria-label="Next month">
-            <i class="ti ti-chevron-right" aria-hidden="true"></i>
-          </button>
-        </div>
-        <div class="sc-mini-grid" id="mini-grid" data-weeks="true"></div>
+        <date-calendar id="mini" selection="none" fixed-weeks show-week-numbers first-day="1"></date-calendar>
         <p class="sc-mini-legend" id="mini-legend"></p>
       </section>
 
-      <button type="button" class="btn sm neutral outline sc-searchbtn" id="search-open">
+      <button type="button" class="btn sm neutral soft sc-searchbtn" id="search-open">
         <i class="ti ti-search" aria-hidden="true"></i>
         <span>Search bookings</span>
         <kbd class="key">/</kbd>
@@ -2901,6 +2860,14 @@
   // both so they keep working over `file://`.
   import { autoUpdate, reposition, repositionAt } from "@lekoala/floating";
   import "@lekoala/combobox/define";
+  // The mini month is the picker package's calendar primitive, driven as a
+  // navigator. `/calendar` defines nothing by itself, which is what lets a
+  // page take the element without the text field or its floating engine.
+  import { DateCalendarElement } from "@lekoala/date-picker/calendar";
+  import miniMessagesFr from "@lekoala/date-picker/locales/fr";
+  import miniMessagesNl from "@lekoala/date-picker/locales/nl";
+
+  customElements.define("date-calendar", DateCalendarElement);
 
   // TODO(runtime): chrome controls still rely on native `title` tooltips
   // (pinned tools, view switch, locale chips, theme swatches). Later pass:
@@ -3664,6 +3631,16 @@
     },
   };
 
+  /**
+   * The mini calendar's own fixed strings. It ships its translations, so
+   * this table only picks one - the same shape as `CORE_LABELS`, minus the
+   * writing. An empty override falls back to the shipped English.
+   */
+  const MINI_MESSAGES = {
+    fr: miniMessagesFr,
+    nl: miniMessagesNl,
+  };
+
   let chosenLocale = "";
 
   /** @returns {string | undefined} */
@@ -3686,7 +3663,6 @@
     return {
       day: new Intl.DateTimeFormat(locale, { weekday: "short" }),
       month: new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }),
-      monthName: new Intl.DateTimeFormat(locale, { month: "long" }),
       range: new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }),
       short: new Intl.DateTimeFormat(locale, { day: "numeric", month: "numeric" }),
       long: new Intl.DateTimeFormat(locale, {
@@ -4627,19 +4603,28 @@
   }
 
   // --- Mini month: a navigator, not a date-picker -------------------------
-  // Every day stays clickable (navigation only); `closed` / markers describe
-  // the application policy for that day. The grid reuses the core month
-  // math, padded to a fixed 6 rows for a stable height (presentation only —
-  // the core contract stays variable).
-  const miniGrid = document.getElementById("mini-grid");
-  const miniMonth = document.getElementById("mini-month");
-  const miniYear = document.getElementById("mini-year");
+  // `<date-calendar selection="none">` owns the grid, the month/year header,
+  // the roving tabindex and the ARIA grid; this shell owns the policy alone.
+  // Every day stays activatable because `dateState` never returns `disabled`:
+  // `closed` and the markers answer "can I book this day", which is a
+  // different question from "can I navigate there".
+  const mini = document.getElementById("mini");
   const miniLegend = document.getElementById("mini-legend");
-  let miniAnchor = null;
-  /** Anchor ISO seen by the last render: a moved anchor re-follows it, while selects and chevrons browse freely until then. */
+  /** Anchor ISO seen by the last render: a moved anchor re-follows it, while the component's own header browses freely until then. */
   let lastAnchorIso = "";
-  /** First civil day of mini-month rows, mirroring the grid toggle (`undefined` hands the choice to the locale, like the core). Starts pinned like the main grid. */
+  /** First civil day of mini-month rows, mirroring the grid toggle. ISO 1-7, passed through as-is; `undefined` means "not pinned", which the component reads as Monday - it derives no first day from the locale, so the two agree by default. */
   let miniFirstDay = 1;
+  /** The core's own month math, reached statically so the classic-script build (file:// friendly) shares it. */
+  const miniDates = /** @type {any} */ (calendar.constructor).dates;
+
+  /** The words behind each verdict, appended to the day's accessible name. */
+  const MINI_STATUS = {
+    neutral: "no rooms selected",
+    closed: "closed",
+    full: "fully booked",
+    soon: "nearly full",
+    free: "free",
+  };
 
   /**
    * Free wall-clock parts of `window` after removing every covered range.
@@ -4751,130 +4736,71 @@
     return ranges;
   }
 
-  /** Month names follow the shell locale; the year has its own select, so
-   * the label is the month alone. The list rebuilds when the locale does. */
-  function miniMonthNames() {
-    return Array.from({ length: 12 }, (_, index) => fmt.monthName.format(new Date(2026, index, 15, 12)));
+  /**
+   * `first-day` counts 0-6 with Sunday = 0 and takes ISO 7 as a Sunday alias
+   * (date-picker 0.1.1), so the core's Temporal 1-7 goes straight through
+   * and no pin at all reads as Monday on both sides.
+   */
+  function applyMiniFirstDay() {
+    const attribute = String(miniFirstDay ?? 1);
+    // Guarded: `setAttribute` re-renders the component even when the value
+    // is unchanged, and this runs on every render beat.
+    if (mini.getAttribute("first-day") !== attribute) mini.setAttribute("first-day", attribute);
   }
 
-  /** @param {any} month a Temporal.PlainDate inside the shown month */
-  function fillMiniSelects(month) {
-    const names = miniMonthNames();
-    if (miniMonth.options.length !== 12 || miniMonth.options[0]?.textContent !== names[0]) {
-      miniMonth.replaceChildren();
-      for (const [index, name] of names.entries()) {
-        const option = document.createElement("option");
-        option.value = String(index + 1);
-        option.textContent = name;
-        miniMonth.append(option);
-      }
-    }
-    miniMonth.value = String(month.month);
-    // The year window recenters when the chevrons carry the anchor out of
-    // it, so the active year is never missing from the list.
-    const years = [...miniYear.options].map((option) => Number(option.value));
-    if (!years.includes(month.year)) {
-      miniYear.replaceChildren();
-      for (let year = month.year - 10; year <= month.year + 10; year += 1) {
-        const option = document.createElement("option");
-        option.value = String(year);
-        option.textContent = String(year);
-        miniYear.append(option);
-      }
-    }
-    miniYear.value = String(month.year);
-  }
+  /**
+   * Application state for one cell. `disabled` is never returned: a closed
+   * or fully-booked day still navigates. The verdict rides `state.verdict`
+   * for `renderDay` to decorate, and `description` for the screen reader -
+   * the component appends it to the day's own accessible name, so the
+   * marker is never colour-only.
+   *
+   * @param {string} iso civil date, `YYYY-MM-DD`
+   */
+  mini.dateState = (iso) => {
+    const state = miniDayState(iso, miniDates.toPlainDate(iso).dayOfWeek);
+    // A day carries exactly one verdict: closed, full, nearly full or
+    // available - never a mix, and never a verdict when no room is on.
+    let verdict = "";
+    if (state.neutral) verdict = "neutral";
+    else if (state.closed) verdict = "closed";
+    else if (!state.hasAvailability) verdict = "full";
+    else if (state.soonFull) verdict = "soon";
+    else if (POLICY.viewer === "admin" ? state.hasAvailability : state.bookable) verdict = "free";
+    // `aria-current="date"` is the component's marker for today, so the
+    // agenda anchor says what it is in words rather than borrowing it.
+    const anchor = iso === calendar.date.toString();
+    const description = [MINI_STATUS[verdict] ?? "", anchor ? "shown in the agenda" : ""]
+      .filter(Boolean)
+      .join(", ");
+    return { verdict, anchor, description };
+  };
 
-  function renderMiniMonth() {
-    const anchor = calendar.date;
-    const anchorIso = anchor.toString();
-    if (anchorIso !== lastAnchorIso) {
-      miniAnchor = anchor;
-      lastAnchorIso = anchorIso;
-    }
-    const month = miniAnchor ?? anchor;
-    fillMiniSelects(month);
-    // Static on the element so the classic-script build (file:// friendly)
-    // reaches the same month math as the grid.
-    const weeks = /** @type {any} */ (calendar.constructor).dates.getMonthWeeks(month, {
-      firstDay: miniFirstDay,
-    });
-    while (weeks.length < 6) {
-      const start = weeks[weeks.length - 1][6].add({ days: 1 });
-      weeks.push(Array.from({ length: 7 }, (_, index) => start.add({ days: index })));
-    }
-    const showWeeks = miniGrid.dataset.weeks === "true";
-    const today = todayIso();
+  /**
+   * One decorative node per day, placed by the component in an
+   * `aria-hidden` slot at the bottom of the cell. The class name is ours,
+   * which is the whole contract: `renderDay` promises the node, never the
+   * container it lands in.
+   *
+   * @param {string} iso @param {{ verdict: string, anchor: boolean }} state
+   */
+  mini.renderDay = (iso, state) => {
+    if (!state.verdict && !state.anchor) return null;
+    const marker = document.createElement("span");
+    marker.className = "sc-mini-marker";
+    if (state.verdict) marker.dataset.state = state.verdict;
+    if (state.anchor) marker.dataset.anchor = "true";
+    return marker;
+  };
 
-    miniGrid.replaceChildren();
-    if (showWeeks) {
-      const corner = document.createElement("span");
-      corner.className = "sc-mini-dow";
-      corner.textContent = "";
-      corner.setAttribute("aria-hidden", "true");
-      miniGrid.append(corner);
-    }
-    for (const day of weeks[0]) {
-      const head = document.createElement("span");
-      head.className = "sc-mini-dow";
-      head.textContent = fmt.day.format(asDate(day.toString())).slice(0, 2);
-      miniGrid.append(head);
-    }
-    for (const week of weeks) {
-      if (showWeeks) {
-        const marker = document.createElement("span");
-        marker.className = "sc-mini-week";
-        marker.textContent = String(week[0].weekOfYear);
-        marker.title = `ISO week ${week[0].weekOfYear}`;
-        miniGrid.append(marker);
-      }
-      // The anchor's own row is the active week, whatever first day the
-      // grid follows — no week math needed beyond row membership.
-      const active = week.some((day) => day.toString() === anchorIso);
-      for (const date of week) {
-        const iso = date.toString();
-        const cell = document.createElement("button");
-        cell.type = "button";
-        cell.className = "sc-mini-day";
-        cell.textContent = String(date.day);
-        cell.dataset.date = iso;
-        if (date.month !== month.month) cell.dataset.outsideMonth = "true";
-        if (active) cell.dataset.activeweek = "true";
-        const state = miniDayState(iso, date.dayOfWeek);
-        // A day carries exactly one verdict: closed, full, nearly full or
-        // available — never a mix, and never a verdict when no room is on.
-        if (state.neutral) {
-          cell.dataset.neutral = "true";
-        } else if (state.closed) {
-          cell.dataset.closed = "true";
-        } else if (!state.hasAvailability) {
-          cell.dataset.full = "true";
-        } else if (state.soonFull) {
-          cell.dataset.soon = "true";
-        } else if (POLICY.viewer === "admin" ? state.hasAvailability : state.bookable) {
-          cell.dataset.marked = "true";
-        }
-        // The marker status belongs in the accessible name, not only in a
-        // CSS `::after` dot: a screen reader must hear the verdict too.
-        let status = "";
-        if (state.neutral) status = "no rooms selected";
-        else if (state.closed) status = "closed";
-        else if (!state.hasAvailability) status = "fully booked";
-        else if (state.soonFull) status = "nearly full";
-        else if (POLICY.viewer === "admin" ? state.hasAvailability : state.bookable) status = "free";
-        if (status) cell.setAttribute("aria-label", `${fmt.long.format(asDate(iso))}, ${status}`);
-        if (iso === today) cell.dataset.today = "true";
-        if (iso === anchorIso) {
-          cell.dataset.anchor = "true";
-          cell.setAttribute("aria-current", "date");
-        }
-        cell.addEventListener("click", () => {
-          miniAnchor = date;
-          calendar.gotoDate(iso);
-        });
-        miniGrid.append(cell);
-      }
-    }
+  // Activation is navigation: the anchor moves and no value is ever taken,
+  // which is what `selection="none"` buys. A closed day reaches here too.
+  mini.addEventListener("dateactivate", (event) => {
+    calendar.gotoDate(event.detail.date);
+  });
+
+  /** The legend follows the viewer, exactly like the markers do. */
+  function renderMiniLegend() {
     miniLegend.replaceChildren(
       legendItem(POLICY.viewer === "admin" ? "Free" : "Bookable for you"),
       legendItem("Nearly full", "is-warning"),
@@ -4882,25 +4808,22 @@
     );
   }
 
-  miniMonth.addEventListener("change", () => {
-    // Clamp to the 1st: February has no 30th for an anchor coming from one.
-    miniAnchor = (miniAnchor ?? calendar.date).with({ day: 1, month: Number(miniMonth.value) });
-    renderMiniMonth();
-  });
-
-  miniYear.addEventListener("change", () => {
-    miniAnchor = (miniAnchor ?? calendar.date).with({ day: 1, year: Number(miniYear.value) });
-    renderMiniMonth();
-  });
-
-  document.getElementById("mini-prev").addEventListener("click", () => {
-    miniAnchor = (miniAnchor ?? calendar.date).add({ months: -1 });
-    renderMiniMonth();
-  });
-  document.getElementById("mini-next").addEventListener("click", () => {
-    miniAnchor = (miniAnchor ?? calendar.date).add({ months: 1 });
-    renderMiniMonth();
-  });
+  function renderMiniMonth() {
+    const anchorIso = calendar.date.toString();
+    if (anchorIso !== lastAnchorIso) {
+      lastAnchorIso = anchorIso;
+      // The anchor is application state, not the component's: `focusedDate`
+      // is dragged into whatever month `display` shows, so it can never hold
+      // an anchor the user has browsed away from. Assigning the property
+      // never steals focus, which the agenda needs to keep.
+      mini.focusedDate = anchorIso;
+    }
+    applyMiniFirstDay();
+    // Verdicts are re-derived per cell on render, so this one call is how a
+    // filter, a booking or a viewer switch reaches the markers.
+    mini.render();
+    renderMiniLegend();
+  }
 
   // The dots describe the events currently shown: the core already renders
   // on every mutation, so `calendar:render` is the one beat to watch.
@@ -5920,7 +5843,7 @@
       POLICY.viewer = on ? "external" : "admin";
       renderMiniMonth();
     } else if (option === "weeks") {
-      miniGrid.dataset.weeks = String(on);
+      mini.showWeekNumbers = on;
       renderMiniMonth();
     } else if (option === "sunday") {
       calendar.configure({ hiddenDays: on ? [7] : [] });
@@ -6160,8 +6083,11 @@
     // Instances snapshot their messages at construction, so a locale change
     // reconfigures them explicitly - the documented path.
     searchCombo.configure({ messages: searchMessages() });
-    // The mini month caches nothing locale-shaped, but every label it
-    // prints comes from `fmt`, so the whole chrome is redrawn.
+    // The mini calendar takes the same two halves as the core: `locale` for
+    // everything `Intl` formats, `messages` for the strings it writes
+    // itself. Empty resets both to the runtime default and to English.
+    mini.locale = locale ?? "";
+    mini.messages = MINI_MESSAGES[base] ?? {};
     renderLocales();
     refreshChrome();
     record(`locale → ${effectiveLocale() ?? "runtime default"}`);

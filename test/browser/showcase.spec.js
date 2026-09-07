@@ -39,7 +39,7 @@ test("the classic-script build serves the shell over file://", async ({ page }) 
   page.on("pageerror", (error) => errors.push(String(error)));
   await page.goto(fileUrl);
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await expect(page.locator(".sc-mini-day")).toHaveCount(42);
+  await expect(page.locator("#mini td[data-date]")).toHaveCount(42);
   expect(errors).toHaveLength(0);
 });
 test("clicking an event opens the app-owned detail sheet", async ({ page }) => {
@@ -456,12 +456,19 @@ test("the locale switch drives the core labels and the shell's own dates", async
   // One `configure()` call carries both halves: `labels` for the strings the
   // core writes itself, `locale` for everything `Intl` formats.
   await expect(page.locator(".cv-scroller")).toHaveAttribute("aria-label", "Calendrier");
-  await expect(page.locator("#mini-month")).toHaveValue("9");
+  // The mini calendar takes the same locale, and writes its own header from
+  // it: the month select is the component's, the value is the anchor's month.
+  const localeAnchor = await anchorDate(page);
+  await expect(page.locator("#mini select")).toHaveValue(String(localeAnchor.month).padStart(2, "0"));
   const monthLabel = await page.evaluate(() => {
-    const select = /** @type {any} */ (document.getElementById("mini-month"));
+    const select = /** @type {any} */ (document.querySelector("#mini select"));
     return select.options[select.selectedIndex]?.text ?? "";
   });
-  expect(monthLabel).toMatch(/septembre/);
+  expect(monthLabel).toBe(
+    new Intl.DateTimeFormat("fr", { month: "long", timeZone: "UTC" }).format(
+      new Date(Date.UTC(localeAnchor.year, localeAnchor.month - 1, 1)),
+    ),
+  );
   await expect(page.locator("#anchor-sub")).toContainText("fr");
   await page.keyboard.press("Escape");
 

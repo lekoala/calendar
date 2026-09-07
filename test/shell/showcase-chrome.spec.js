@@ -4,8 +4,11 @@ import {
   anchorDate,
   closePanel,
   flushRender,
+  mini,
+  miniVerdict,
   openDayFrom,
   openPanel,
+  setMiniYear,
   setView,
   weekdayFrom,
 } from "../support/showcase-helpers.js";
@@ -152,30 +155,30 @@ test("the mini month navigates the anchor date and shows ISO weeks", async ({ pa
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
   const anchor = await anchorDate(page);
-  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText(String(anchor.day));
+  await expect(page.locator(mini.anchor)).toHaveText(String(anchor.day));
   // Temporal already answers this: no date library, no extra option. The
   // number belongs to the first day the grid renders, whichever it is.
-  const firstCell = await page.locator(".sc-mini-day").first().getAttribute("data-date");
-  await expect(page.locator(".sc-mini-week").first()).toHaveText(
+  const firstCell = await page.locator(mini.days).first().getAttribute("data-date");
+  await expect(page.locator(mini.weekNumbers).first()).toHaveText(
     String(Temporal.PlainDate.from(/** @type {string} */ (firstCell)).weekOfYear),
   );
   // A week away, staying inside the anchor's own month so the cell is always
   // one of the six rendered rows.
   const other = anchor.day <= 21 ? anchor.add({ days: 7 }) : anchor.subtract({ days: 7 });
-  await page.click(`.sc-mini-day[data-date="${other}"]`);
+  await page.click(mini.day(other));
   await flushRender(page);
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", other.toString());
-  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveText(String(other.day));
+  await expect(page.locator(mini.anchor)).toHaveText(String(other.day));
 });
-test("month and year selects drive the mini grid without navigating", async ({ page }) => {
+test("the month and year header drives the mini grid without navigating", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
   const anchor = await anchorDate(page);
-  // The month label is the month alone: the year has its own select, and a
-  // narrow label keeps the mini section from overflowing the sidebar.
+  // The component's header is a month select next to a year field, so the
+  // label is the month alone and the sidebar keeps its width.
   const monthText = await page.evaluate(() => {
-    const select = /** @type {any} */ (document.getElementById("mini-month"));
+    const select = /** @type {any} */ (document.querySelector("#mini select"));
     return select.options[select.selectedIndex]?.text ?? "";
   });
   expect(monthText).toBe(
@@ -191,50 +194,53 @@ test("month and year selects drive the mini grid without navigating", async ({ p
   // Mid-month in the month after the anchor: always one of the six rows.
   const nextMonth = anchor.with({ day: 1 }).add({ months: 1 });
   const target = nextMonth.with({ day: 15 });
-  await page.selectOption("#mini-month", String(nextMonth.month));
-  if (nextMonth.year !== anchor.year) await page.selectOption("#mini-year", String(nextMonth.year));
-  await expect(page.locator(`.sc-mini-day[data-date="${target}"]`)).toBeVisible();
-  // Selecting shows another month; the main anchor only moves on day click.
+  await page.selectOption(mini.monthSelect, String(nextMonth.month).padStart(2, "0"));
+  if (nextMonth.year !== anchor.year) await setMiniYear(page, nextMonth.year);
+  await expect(page.locator(mini.day(target))).toBeVisible();
+  // Browsing shows another month; the main anchor only moves on day click.
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", anchor.toString());
-  await page.click(`.sc-mini-day[data-date="${target}"]`);
+  await page.click(mini.day(target));
   await flushRender(page);
   await expect(page.locator("#anchor-label")).toHaveAttribute("data-date", target.toString());
 
   const far = target.with({ year: target.year + 4, day: 1 });
-  await page.selectOption("#mini-year", String(far.year));
-  await expect(page.locator(`.sc-mini-day[data-date="${far}"]`)).toBeVisible();
-  // Chevron past the window edge recenters the year list on the anchor:
-  // three months on from October lands in January of the following year.
+  await setMiniYear(page, far.year);
+  await expect(page.locator(mini.day(far))).toBeVisible();
+  // The year is a free field rather than a windowed list, so a chevron past
+  // December simply carries it: three months on from October lands in January
+  // of the following year, and the field follows.
   const edge = far.with({ month: 10, day: 1, year: target.year + 10 });
-  await page.selectOption("#mini-year", String(edge.year));
-  await page.selectOption("#mini-month", "10");
-  await page.click("#mini-next");
-  await page.click("#mini-next");
-  await page.click("#mini-next");
-  await expect(page.locator("#mini-year")).toHaveValue(String(edge.year + 1));
-  await expect(
-    page.locator(`.sc-mini-day[data-date="${edge.add({ months: 3 }).with({ day: 15 })}"]`),
-  ).toBeVisible();
+  await setMiniYear(page, edge.year);
+  await page.selectOption(mini.monthSelect, "10");
+  await page.click(mini.next);
+  await page.click(mini.next);
+  await page.click(mini.next);
+  await expect(page.locator(mini.yearField)).toHaveValue(String(edge.year + 1));
+  await expect(page.locator(mini.day(edge.add({ months: 3 }).with({ day: 15 })))).toBeVisible();
 });
 test("short months still fill six stable rows", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
   // February 2021 holds four civil weeks; presentation pads it to six.
-  await page.selectOption("#mini-year", "2021");
-  await page.selectOption("#mini-month", "2");
-  await expect(page.locator(".sc-mini-day")).toHaveCount(42);
-  await expect(page.locator('.sc-mini-day[data-date="2021-02-01"]')).toBeVisible();
-  await expect(page.locator('.sc-mini-day[data-date="2021-03-14"]')).toBeVisible();
+  await setMiniYear(page, 2021);
+  await page.selectOption(mini.monthSelect, "02");
+  await expect(page.locator(mini.days)).toHaveCount(42);
+  await expect(page.locator(mini.day("2021-02-01"))).toBeVisible();
+  await expect(page.locator(mini.day("2021-03-14"))).toBeVisible();
 });
 test("outside-month days navigate and nothing is ever disabled", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
-  await expect(page.locator("#mini-grid [disabled]")).toHaveCount(0);
+  // Two halves of the same promise: no control is disabled, and no day
+  // refuses activation - `dateState` never returns `disabled`, so a closed
+  // or fully-booked day still navigates.
+  await expect(page.locator("#mini [disabled]")).toHaveCount(0);
+  await expect(page.locator('#mini td[aria-disabled="true"]')).toHaveCount(0);
   // Six stable rows always spill over at least one month edge; take whichever
   // padding day the anchor's month happens to produce.
-  const outside = page.locator('.sc-mini-day[data-outside-month="true"]').first();
+  const outside = page.locator('#mini td[data-outside-month="true"]').first();
   const outsideIso = await outside.getAttribute("data-date");
   await outside.click();
   await flushRender(page);
@@ -256,37 +262,31 @@ test("the mini-month marks closed days and the active week", async ({ page }) =>
   const saturday = weekdayFrom(firstOfMonth, 6);
   const sunday = saturday.add({ days: 1 });
   const working = weekdayFrom(firstOfMonth, 4);
-  await expect(page.locator(`.sc-mini-day[data-date="${saturday}"]`)).toHaveAttribute("data-closed", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${sunday}"]`)).toHaveAttribute("data-closed", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${working}"]`)).not.toHaveAttribute(
-    "data-closed",
-    "true",
-  );
+  expect(await miniVerdict(page, saturday)).toBe("closed");
+  expect(await miniVerdict(page, sunday)).toBe("closed");
+  expect(await miniVerdict(page, working)).not.toBe("closed");
   // The anchor's civil week rides one band of seven.
   const monday = anchor.subtract({ days: anchor.dayOfWeek - 1 });
   const otherWeek = anchor.day <= 21 ? anchor.add({ days: 7 }) : anchor.subtract({ days: 7 });
-  await expect(page.locator('.sc-mini-day[data-activeweek="true"]')).toHaveCount(7);
-  await expect(page.locator(`.sc-mini-day[data-date="${monday}"]`)).toHaveAttribute(
-    "data-activeweek",
-    "true",
-  );
-  await expect(page.locator(`.sc-mini-day[data-date="${otherWeek}"]`)).not.toHaveAttribute(
-    "data-activeweek",
-    "true",
-  );
-  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveAttribute("aria-current", "date");
+  await expect(page.locator(`${mini.activeWeek} td[data-date]`)).toHaveCount(7);
+  await expect(page.locator(`${mini.activeWeek} td[data-date="${monday}"]`)).toHaveCount(1);
+  await expect(page.locator(`${mini.activeWeek} td[data-date="${otherWeek}"]`)).toHaveCount(0);
+  // `aria-current="date"` belongs to today, which is the component's own
+  // marker; the agenda anchor is application state, so it says what it is in
+  // words instead of borrowing that attribute.
+  await expect(page.locator(mini.anchor)).toHaveAttribute("aria-label", /shown in the agenda$/);
 });
 test("the viewer toggle re-marks availability without touching navigation", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
-  const adminMarks = await page.locator('.sc-mini-day[data-marked="true"]').count();
+  const adminMarks = await page.locator(mini.verdict("free")).count();
   expect(adminMarks).toBeGreaterThan(0);
   await expect(page.locator("#mini-legend")).toContainText("Free");
   await page.click("#tools-toggle");
   await page.click('#grid-menu [data-grid="viewer"]');
   await expect(page.locator("#mini-legend")).toContainText("Bookable for you");
-  const externalMarks = await page.locator('.sc-mini-day[data-marked="true"]').count();
+  const externalMarks = await page.locator(mini.verdict("free")).count();
   // Bookable implies available, so the external set can only shrink.
   expect(externalMarks).toBeLessThanOrEqual(adminMarks);
   // Navigation is viewer-independent: an outside-month day still jumps.
@@ -295,7 +295,7 @@ test("the viewer toggle re-marks availability without touching navigation", asyn
   await page.keyboard.press("Escape");
   await closePanel(page);
   await openPanel(page);
-  const outside = page.locator('.sc-mini-day[data-outside-month="true"]').first();
+  const outside = page.locator('#mini td[data-outside-month="true"]').first();
   const outsideIso = await outside.getAttribute("data-date");
   await outside.click();
   await flushRender(page);
@@ -303,7 +303,7 @@ test("the viewer toggle re-marks availability without touching navigation", asyn
     "data-date",
     /** @type {string} */ (outsideIso),
   );
-  await expect(page.locator("#mini-grid [disabled]")).toHaveCount(0);
+  await expect(page.locator('#mini td[aria-disabled="true"]')).toHaveCount(0);
 });
 test("occupancy removes the availability dot without closing the day", async ({ page }) => {
   await page.goto("/demo/showcase.html");
@@ -334,11 +334,8 @@ test("occupancy removes the availability dot without closing the day", async ({ 
   await flushRender(page);
   // The day stays open, but red "full" replaces the green dot: no free
   // interval remains anywhere.
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).toHaveAttribute("data-full", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-marked", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-closed", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${nextIso}"]`)).toHaveAttribute("data-marked", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${nextIso}"]`)).not.toHaveAttribute("data-full", "true");
+  expect(await miniVerdict(page, iso)).toBe("full");
+  expect(await miniVerdict(page, nextIso)).toBe("free");
 });
 test("a seeded fully-booked day shows red, and no day mixes markers", async ({ page }) => {
   await page.goto("/demo/showcase.html");
@@ -346,17 +343,17 @@ test("a seeded fully-booked day shows red, and no day mixes markers", async ({ p
   await openPanel(page);
   // The fixture puts it a week out, on the first opening day from there.
   const fullIso = openDayFrom((await anchorDate(page)).add({ days: 6 })).toString();
-  await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).toHaveAttribute("data-full", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).not.toHaveAttribute(
-    "data-marked",
-    "true",
+  expect(await miniVerdict(page, fullIso)).toBe("full");
+  // One verdict per day is structural now: a cell carries a single marker and
+  // that marker carries a single state, so "green and red at once" cannot be
+  // encoded at all. Pin the invariant rather than the old pair of booleans.
+  const mixed = await page.evaluate(
+    () =>
+      [...document.querySelectorAll("#mini td[data-date]")].filter(
+        (cell) => cell.querySelectorAll(".sc-mini-marker").length > 1,
+      ).length,
   );
-  await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).not.toHaveAttribute(
-    "data-closed",
-    "true",
-  );
-  // A green day is never simultaneously red.
-  await expect(page.locator('.sc-mini-day[data-marked="true"][data-full="true"]')).toHaveCount(0);
+  expect(mixed).toBe(0);
   await expect(page.locator("#mini-legend .is-danger")).toBeVisible();
   await expect(page.locator("#mini-legend")).toContainText(/fully booked/i);
 });
@@ -367,13 +364,9 @@ test("a seeded nearly-full day shows amber from the first load", async ({ page }
   // The three verdicts the legend names are all on screen without touching
   // anything: this fixture is the amber one, three days past the red day.
   const nearIso = openDayFrom((await anchorDate(page)).add({ days: 9 })).toString();
-  const cell = page.locator(`.sc-mini-day[data-date="${nearIso}"]`);
-  await expect(cell).toHaveAttribute("data-soon", "true");
-  await expect(cell).not.toHaveAttribute("data-full", "true");
-  await expect(cell).not.toHaveAttribute("data-marked", "true");
-  await expect(cell).not.toHaveAttribute("data-closed", "true");
+  expect(await miniVerdict(page, nearIso)).toBe("soon");
   // Amber is a verdict about the day, not about one room: all three are busy.
-  await expect(page.locator('.sc-mini-day[data-soon="true"]').first()).toBeVisible();
+  await expect(page.locator(mini.verdict("soon")).first()).toBeVisible();
   await expect(page.locator("#mini-legend .is-warning")).toBeVisible();
 });
 test("room and kind filters change what the core is given", async ({ page }) => {
@@ -430,10 +423,10 @@ test("the room master toggle reads indeterminate, and no room is no verdict", as
   await page.locator(`#room-list input[data-room-id="${rooms[1]}"]`).uncheck();
   await flushRender(page);
   await expect(page.locator("#room-summary")).toHaveText("0/3");
-  await expect(page.locator('.sc-mini-day[data-full="true"]')).toHaveCount(0);
-  await expect(page.locator('.sc-mini-day[data-marked="true"]')).toHaveCount(0);
-  await expect(page.locator('.sc-mini-day[data-neutral="true"]')).toHaveCount(42);
-  await expect(page.locator(".sc-mini-day").first()).toHaveAttribute("aria-label", /no rooms selected$/);
+  await expect(page.locator(mini.verdict("full"))).toHaveCount(0);
+  await expect(page.locator(mini.verdict("free"))).toHaveCount(0);
+  await expect(page.locator(mini.verdict("neutral"))).toHaveCount(42);
+  await expect(page.locator(mini.days).first()).toHaveAttribute("aria-label", /no rooms selected/);
 
   // One click on the master restores the whole fixture.
   await page.locator("#room-all").check();
@@ -458,14 +451,11 @@ test("a nearly-full day shows amber before it tips to red", async ({ page }) => 
     }));
   }, iso);
   await flushRender(page);
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).toHaveAttribute("data-soon", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-full", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-closed", "true");
-  // The amber verdict is named and shown next to its legend swatch.
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).toHaveAttribute(
-    "aria-label",
-    /nearly full$/,
-  );
+  expect(await miniVerdict(page, iso)).toBe("soon");
+  // The amber verdict is named and shown next to its legend swatch. The
+  // component builds the accessible name; `dateState.description` is the
+  // half this shell contributes, so the marker is never colour-only.
+  await expect(page.locator(mini.day(iso))).toHaveAttribute("aria-label", /nearly full/);
   await expect(page.locator("#mini-legend .is-warning")).toBeVisible();
   await expect(page.locator("#mini-legend")).toContainText(/nearly full/i);
   // A day fully covered in every room still outranks it: red is the
@@ -480,8 +470,7 @@ test("a nearly-full day shows amber before it tips to red", async ({ page }) => 
     }));
   }, iso);
   await flushRender(page);
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).toHaveAttribute("data-full", "true");
-  await expect(page.locator(`.sc-mini-day[data-date="${iso}"]`)).not.toHaveAttribute("data-soon", "true");
+  expect(await miniVerdict(page, iso)).toBe("full");
 });
 test("the mini month names its verdict in the accessible name", async ({ page }) => {
   await page.goto("/demo/showcase.html");
@@ -489,21 +478,14 @@ test("the mini month names its verdict in the accessible name", async ({ page })
   await openPanel(page);
   // The seeded fully-booked day, a week out, reads red aloud.
   const fullIso = openDayFrom((await anchorDate(page)).add({ days: 6 })).toString();
-  await expect(page.locator(`.sc-mini-day[data-date="${fullIso}"]`)).toHaveAttribute(
-    "aria-label",
-    /fully booked$/,
-  );
+  await expect(page.locator(mini.day(fullIso))).toHaveAttribute("aria-label", /fully booked/);
   // A closed Saturday is named closed.
-  await expect(page.locator('.sc-mini-day[data-closed="true"]').first()).toHaveAttribute(
-    "aria-label",
-    /closed$/,
-  );
-  // An open day is named free, and the anchor keeps its aria-current.
-  await expect(page.locator('.sc-mini-day[data-marked="true"]').first()).toHaveAttribute(
-    "aria-label",
-    /free$/,
-  );
-  await expect(page.locator('.sc-mini-day[data-anchor="true"]')).toHaveAttribute("aria-current", "date");
+  await expect(page.locator(mini.verdict("closed")).first()).toHaveAttribute("aria-label", /closed/);
+  // An open day is named free, and the anchor names itself as the anchor.
+  await expect(page.locator(mini.verdict("free")).first()).toHaveAttribute("aria-label", /free/);
+  await expect(page.locator(mini.anchor)).toHaveAttribute("aria-label", /shown in the agenda$/);
+  // Today keeps the component's own marker, which the anchor never borrows.
+  await expect(page.locator('#mini td[aria-current="date"]')).toHaveCount(1);
 });
 test("the live strip reports the visible range", async ({ page }) => {
   await page.goto("/demo/showcase.html");
