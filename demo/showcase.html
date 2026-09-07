@@ -2943,15 +2943,59 @@
     return POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
   }
 
+  /**
+   * Why a booking cannot be replanned, or `null` when it can. This is the
+   * *subject* half of the application's rules - "may this be picked up at
+   * all" - and it is what `visibleStore()` turns into `editable: false`,
+   * the flag that stops the core arming a drag or a keyboard move.
+   *
+   * The interaction policy answers the other half - "is this *destination*
+   * legal" - and neither substitutes for the other: an event sitting inside
+   * a non-bookable range is refused as a target and is at the same time
+   * exactly the one the workbench has to pick up.
+   *
+   * Past wins over locked: a maintenance booking that is over is over, and
+   * that is the shorter thing to say about it.
+   *
+   * The verdict carries its own label and marker, so the three surfaces
+   * that show it - menu heading, hover tooltip, detail sheet - name the
+   * rule identically without three copies of the wording.
+   *
+   * @param {any} item
+   * @returns {{ code: "archived" | "locked", label: string, icon: string } | null}
+   */
+  function frozenReason(item) {
+    if (beforeToday(String(item.end))) {
+      return { code: "archived", label: "Already over", icon: "history" };
+    }
+    if (isLocked(item)) {
+      return { code: "locked", label: "Locked by facilities", icon: "lock" };
+    }
+    return null;
+  }
+
+  /**
+   * The same rule at day granularity, for the surfaces that act on a whole
+   * civil day instead of one booking: the day-header and empty-slot menus,
+   * and the two `parkDay*` commands that stay the authority for it.
+   *
+   * @param {string} iso
+   * @returns {string | null}
+   */
+  function frozenDayReason(iso) {
+    return beforeToday(iso) ? "That day is already over — its bookings stay put." : null;
+  }
+
   function visibleStore() {
     return store
       .filter((item) => activeKinds.has(item.extendedProps?.kind ?? "review"))
       .map((item) => {
-        // Two read-only doors share one shape: facilities-owned kinds are
-        // handed `editable: false`, and so are events that are already over.
-        // The core then never arms a pointer drag/resize for them, and
-        // `moveEvent()`/`resizeEvent()` stay quiet on the keyboard path.
-        if (isLocked(item) || beforeToday(String(item.end))) {
+        // Two read-only doors share one shape, and `frozenReason()` is the
+        // single place that decides which one applies. The core then never
+        // arms a pointer drag/resize for them, `moveEvent()`/`resizeEvent()`
+        // stay quiet on the keyboard path, and every application surface
+        // that offers a replanning verb asks the same question.
+        if (frozenReason(item) !== null) {
           return { ...item, editable: false, movable: false, resizable: false };
         }
         return item;
@@ -3511,10 +3555,26 @@
   });
 
   /**
+   * Jump to one civil day in the day view - the same navigation
+   * `calendar:moreclick` performs, and the one read-only verb the past-time
+   * menus can still offer.
+   * @param {string} iso
+   */
+  function openDay(iso) {
+    calendar.gotoDate(iso.slice(0, 10));
+    calendar.setView("day");
+    record(`opened day ${iso.slice(0, 10)}`);
+  }
+
+  /**
    * Right-click a day header to queue that whole day: the header is core
    * DOM without its own intent, so the application delegates to it — same
    * pattern as event cards. In resource views the day header carries its
    * resource column, so the action can be scoped to one room.
+   *
+   * A day that is over is not a replanning target, so it gets the same
+   * treatment a past booking gets: a distinct menu naming the rule, not the
+   * live menu with an action that a click would only be refused for.
    */
   calendar.addEventListener("contextmenu", (event) => {
     const target = event.target;
@@ -3535,24 +3595,29 @@
     event.preventDefault();
     const date = column.date.toString();
     const resource = column.resource ?? null;
+    const frozen = frozenDayReason(date);
     openContextMenu(
       [
+        ...(frozen ? [{ note: "Already over", icon: "history" }] : []),
+        { label: "Open this day", icon: "columns-1", run: () => openDay(date) },
         resource
           ? {
               label: `Replanify this day · ${resource.title ?? resource.id}`,
               icon: "arrows-shuffle",
+              disabled: frozen !== null,
               run: () => parkDayFor(date, String(resource.id)),
             }
           : {
               label: "Replanify all bookings of this day",
               icon: "arrows-shuffle",
+              disabled: frozen !== null,
               run: () => parkDay(date),
             },
       ],
       event.clientX,
       event.clientY,
     );
-    record(`day contextmenu: ${date}${resource ? ` · ${resource.id}` : ""}`);
+    record(`day contextmenu: ${date}${resource ? ` · ${resource.id}` : ""}${frozen ? " (over)" : ""}`);
   });
 
   /** @param {any} item */
@@ -3565,9 +3630,13 @@
 
   /** Add every current booking of one civil day to the workbench. @param {string} iso */
   function parkDay(iso) {
-    if (beforeToday(iso)) {
+    const frozen = frozenDayReason(iso);
+    if (frozen) {
+      // Still the authority for the day rule: the menus only stop offering
+      // the verb, they do not enforce it. Every other entry point (the
+      // tools shelf, a keyboard command) arrives here.
       record(`replanify refused: ${iso.slice(0, 10)} is in the past`);
-      toast("That day is already over — its bookings stay put.", "warning");
+      toast(frozen, "warning");
       return;
     }
     const inDay = calendar.events.filter(
@@ -3579,9 +3648,13 @@
 
   /** Add the bookings of one resource on one civil day. @param {string} iso @param {string} resourceId */
   function parkDayFor(iso, resourceId) {
-    if (beforeToday(iso)) {
+    const frozen = frozenDayReason(iso);
+    if (frozen) {
+      // Still the authority for the day rule: the menus only stop offering
+      // the verb, they do not enforce it. Every other entry point (the
+      // tools shelf, a keyboard command) arrives here.
       record(`replanify refused: ${iso.slice(0, 10)} is in the past`);
-      toast("That day is already over — its bookings stay put.", "warning");
+      toast(frozen, "warning");
       return;
     }
     const inDay = calendar.events.filter(
@@ -4887,7 +4960,7 @@
   /** @param {any} item */
   function openDetail(item) {
     detailId = item.id;
-    const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
+    const frozen = frozenReason(item);
     document.getElementById("detail-title").textContent = item.title ?? "Booking";
     const when =
       item.allDay === true
@@ -4896,8 +4969,12 @@
     document.getElementById("detail-meta").textContent =
       when +
       `${item.resourceId ? ` · ${roomTitle(String(item.resourceId))}` : ""} · ${item.extendedProps?.seats ?? "?"} seats` +
-      `${locked ? " · locked by facilities" : ""}`;
-    document.getElementById("detail-shift").disabled = locked;
+      `${frozen ? ` · ${frozen.label.toLocaleLowerCase()}` : ""}`;
+    // The sheet obeys the same gate as the menus, and obeys it for both
+    // verbs: a booking nobody may move is not a booking anybody may delete
+    // either, which is what the sheet used to imply for locked kinds.
+    document.getElementById("detail-shift").disabled = frozen !== null;
+    document.getElementById("detail-delete").disabled = frozen !== null;
     detailDialog.showModal();
   }
 
@@ -4986,13 +5063,32 @@
   }
 
   /**
-   * @param {Array<{ label: string, icon: string, danger?: boolean, disabled?: boolean, run: () => void }>} actions
+   * One menu, two kinds of row: an action, or a `note` that names a rule.
+   * The note is what makes a disabled row honest - "Already over" over four
+   * greyed verbs says why in one line, where four identical tooltips would
+   * repeat themselves and a shorter menu would hide the verbs entirely.
+   *
+   * @param {Array<{ note: string, icon?: string } | { label: string, icon: string, danger?: boolean, disabled?: boolean, run: () => void }>} rows
    * @param {number} x
    * @param {number} y
    */
-  function openContextMenu(actions, x, y) {
+  function openContextMenu(rows, x, y) {
     contextMenuList.replaceChildren();
-    for (const action of actions) {
+    for (const row of rows) {
+      if ("note" in row) {
+        // Same shape as the grouped headings in the view menu: a
+        // presentational `li` so the menu's own roles stay clean.
+        const heading = document.createElement("li");
+        heading.setAttribute("role", "presentation");
+        const label = document.createElement("h3");
+        label.className = "menu-label";
+        if (row.icon) label.append(icon(row.icon), document.createTextNode(" "));
+        label.append(document.createTextNode(row.note));
+        heading.append(label);
+        contextMenuList.append(heading);
+        continue;
+      }
+      const action = row;
       const item = document.createElement("li");
       item.setAttribute("role", "none");
       const button = document.createElement("button");
@@ -5032,7 +5128,7 @@
     const y = detail.clientY ?? detail.nativeEvent?.clientY ?? 0;
 
     if (item) {
-      const locked = POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
+      const frozen = frozenReason(item);
       const allDay = item.allDay === true;
       // Wall-clock duration travels with the copy clipboard; the paste target
       // supplies the new start. All-day bookings are civil and keep out of
@@ -5043,18 +5139,56 @@
             15,
             wallMinutesOf(String(item.end)) - wallMinutesOf(String(item.start)),
           );
+
+      // One menu shape, two reasons a verb can be refused: the booking is
+      // over, or facilities own it. Both keep every row where it was and
+      // grey out what they forbid, so the user reads what they would have
+      // had and why, instead of a shorter menu that quietly omits it. The
+      // heading names the rule; `editable: false` already told the core the
+      // same thing, which is why no drag arms either.
+      const frozenHere = frozen !== null;
+      // "Move +1h" proposes a destination, so the destination rule is what
+      // answers for it: `checkInteraction()` runs the very policy a pointer
+      // drag runs, on the range this click would commit. The menu is then
+      // honest before the click instead of accepting the move and explaining
+      // a snap-back afterwards. The commit path keeps its own guard - this
+      // is the menu telling the truth, not a new authority.
+      const live = calendar.getEventById(String(item.id));
+      const shifted = live
+        ? allDay
+          ? {
+              start: /** @type {any} */ (live.start).add({ days: 1 }),
+              end: /** @type {any} */ (live.end).add({ days: 1 }),
+            }
+          : { start: shiftHour(String(live.start)), end: shiftHour(String(live.end)) }
+        : null;
+      const shiftRefused =
+        shifted !== null &&
+        !calendar.checkInteraction({
+          action: "move",
+          event: live,
+          start: shifted.start,
+          end: shifted.end,
+          resourceId: item.resourceId ?? null,
+          allDay,
+        }).ok;
       openContextMenu([
+        ...(frozen ? [{ note: frozen.label, icon: frozen.icon }] : []),
         { label: "Open booking", icon: "arrow-up-right", run: () => openDetail(item) },
         allDay
-          ? { label: "Move +1 day", icon: "calendar-repeat", disabled: locked, run: () => shiftDay(String(item.id)) }
-          : { label: "Move +1h", icon: "clock-play", disabled: locked, run: () => shiftById(String(item.id)) },
+          ? { label: "Move +1 day", icon: "calendar-repeat", disabled: frozenHere || shiftRefused, run: () => shiftDay(String(item.id)) }
+          : { label: "Move +1h", icon: "clock-play", disabled: frozenHere || shiftRefused, run: () => shiftById(String(item.id)) },
         {
           label: "Cut",
           icon: "scissors",
-          disabled: locked,
+          disabled: frozenHere,
           run: () => parkEvent(item),
         },
         {
+          // Copy survives the archive rule on purpose: it carries a title
+          // and a duration, and the paste target is a slot the policy still
+          // has a say about. Rebooking last week's stand-up for next week is
+          // the one replanning verb the past does allow.
           label: "Copy",
           icon: "copy",
           disabled: allDay,
@@ -5064,12 +5198,19 @@
             durationMin,
           }),
         },
-        { label: "Duplicate", icon: "copy-plus", run: () => duplicate(item) },
+        {
+          // Duplicate lands on the booking's own range, so a past one would
+          // create a booking in the past - refused everywhere else.
+          label: "Duplicate",
+          icon: "copy-plus",
+          disabled: frozen?.code === "archived",
+          run: () => duplicate(item),
+        },
         {
           label: "Delete",
           icon: "trash",
           danger: true,
-          disabled: locked,
+          disabled: frozenHere,
           run: () => {
             if (copyClipboard?.id === String(item.id)) clearCopyClipboard("lost its event");
             workbench.remove(String(item.id));
@@ -5080,7 +5221,7 @@
           },
         },
       ], x, y);
-      record(`eventcontextmenu: ${item.id}`);
+      record(`eventcontextmenu: ${item.id}${frozen ? ` (${frozen.code})` : ""}`);
       return;
     }
 
@@ -5091,7 +5232,13 @@
     // off positions 11-16 (`wallClock` relies on the same layout).
     const minutes = detail.time ? wallMinutesOf(String(detail.time)) : POLICY.opensAt;
     const resourceId = detail.resourceId ?? null;
-    setLastSlot({ date, minutes, resourceId });
+
+    // A day that is over greys out every verb below rather than dropping
+    // them, exactly like a booking that is over. The last-slot target is the
+    // one thing that is not merely greyed: it drives the placement preview
+    // and `Ctrl+V`, neither of which should point into the past.
+    const frozenDay = frozenDayReason(date);
+    setLastSlot(frozenDay ? null : { date, minutes, resourceId });
     const slotActions = [];
     // Paste places the armed workbench item into this slot — the keyboard
     // twin of dragging the sidebar row onto the grid. Both run the same
@@ -5107,7 +5254,7 @@
       slotActions.push({
         label: `Paste “${String(activeItem.original?.title ?? "Booking")}” here`,
         icon: "arrows-shuffle",
-        disabled: activeReason !== null,
+        disabled: frozenDay !== null || activeReason !== null,
         run: () => placeWorkbenchItem(String(activeItem.eventId), date, minutes, resourceId),
       });
     }
@@ -5126,7 +5273,7 @@
       slotActions.push({
         label: `Paste a copy of “${copyClipboard.title}” here`,
         icon: "clipboard",
-        disabled: pasteReason !== null,
+        disabled: frozenDay !== null || pasteReason !== null,
         run: () => pasteCopy({ date, minutes, resourceId }),
       });
     }
@@ -5139,6 +5286,7 @@
       slotActions.push({
         label: "Replanify bookings affected by this block",
         icon: "ban",
+        disabled: frozenDay !== null,
         run: () => {
           const inBlock = calendar.events.filter((event) => {
             if (resourceId !== null && event.resourceId !== resourceId) return false;
@@ -5157,10 +5305,12 @@
       });
     }
     openContextMenu([
+      ...(frozenDay ? [{ note: "Already over", icon: "history" }] : []),
       ...slotActions,
       {
         label: "Book 30 minutes here",
         icon: "calendar-plus",
+        disabled: frozenDay !== null,
         run: () => {
           const start = stamp(date, minutes);
           const end = stamp(date, minutes + 30);
@@ -5179,6 +5329,7 @@
       {
         label: "Block this hour",
         icon: "ban",
+        disabled: frozenDay !== null,
         run: () => {
           const id = `blocked-${Date.now()}`;
           backgroundKey = "";
@@ -5194,7 +5345,7 @@
         },
       },
     ], x, y);
-    record(`eventcontextmenu: empty slot ${date} ${clock(minutes)}`);
+    record(`eventcontextmenu: empty slot ${date} ${clock(minutes)}${frozenDay ? " (over)" : ""}`);
   });
 
   /** @param {any} item */
@@ -5271,12 +5422,16 @@
     row("Seats", String(item.extendedProps?.seats ?? "?"));
     tip.append(title, rows);
 
-    if (POLICY.lockedKinds.includes(kind)) {
+    // The same verdict the menus grey their rows from, in the surface that
+    // explains it before the user reaches for a verb - and with the same
+    // label and marker, because they come from the same place.
+    const frozen = frozenReason(item);
+    if (frozen) {
       const note = document.createElement("p");
       note.className = "sc-tip-note";
       note.style.margin = "0";
-      note.append(icon("lock"));
-      note.append(document.createTextNode("Locked by facilities"));
+      note.append(icon(frozen.icon));
+      note.append(document.createTextNode(frozen.label));
       tip.append(note);
     } else if (POLICY.reviewedKinds.includes(kind)) {
       const note = document.createElement("p");

@@ -297,6 +297,133 @@ test("the empty-slot context menu proposes a real range", async ({ page }) => {
   await expect(page.locator("#context-menu")).toContainText("Book 30 minutes here");
   await expect(page.locator("#context-menu")).toContainText("Block this hour");
 });
+
+/**
+ * Latest opening day strictly before the anchor that carries a booking. The
+ * fixture seeds behind the anchor, but how far back and how densely is
+ * fixture business: find the day rather than name an offset.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {Temporal.PlainDate} anchor
+ * @returns {Promise<Temporal.PlainDate>}
+ */
+async function pastDayWithBookings(page, anchor) {
+  const seeded = new Set(
+    await page.evaluate(() => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      return (calendar.events ?? []).map((/** @type {any} */ event) => String(event.start).slice(0, 10));
+    }),
+  );
+  let cursor = anchor.subtract({ days: 1 });
+  for (let guard = 0; guard < 400; guard += 1) {
+    if (cursor.dayOfWeek <= 5 && seeded.has(cursor.toString())) return cursor;
+    cursor = cursor.subtract({ days: 1 });
+  }
+  throw new Error("no past opening day with bookings in the seeded range");
+}
+
+test("a booking that is over greys out its replanning verbs", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await gotoDate(page, await pastDayWithBookings(page, await anchorDate(page)));
+  await setView(page, "day");
+  // The application's archive rule is day-granular, so every card on a past
+  // day carries it — whichever one the fixture put first.
+  const card = page.locator(".cv-event").first();
+  await expect(card).toHaveAttribute("data-archived", "true");
+  await card.click({ button: "right" });
+  const menu = page.locator("#context-menu");
+  await expect(menu).toBeVisible();
+  // Every row stays where it was: the rule is named once, and the verbs it
+  // forbids are refused in place rather than dropped from the menu.
+  await expect(menu.locator(".menu-label")).toContainText("Already over");
+  await expect(menu.getByRole("menuitem", { name: "Open booking" })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: "Copy" })).toBeEnabled();
+  for (const name of ["Move +1h", "Cut", "Duplicate", "Delete"]) {
+    await expect(menu.getByRole("menuitem", { name })).toBeDisabled();
+  }
+});
+
+test("a day that is over greys out replanning from its header and its slots", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  const past = await pastDayWithBookings(page, await anchorDate(page));
+  await gotoDate(page, past);
+  await setView(page, "day");
+  await page.locator(".cv-day-header").first().click({ button: "right" });
+  const menu = page.locator("#context-menu");
+  await expect(menu).toBeVisible();
+  await expect(menu.locator(".menu-label")).toContainText("Already over");
+  await expect(menu.getByRole("menuitem", { name: /Replanify/ })).toBeDisabled();
+  await expect(menu.getByRole("menuitem", { name: "Open this day" })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+
+  // Same doctrine one row down: an empty slot on that day proposes nothing
+  // bookable. Driven through the intent, so no free pixel has to be found on
+  // a day the fixture may have filled.
+  await page.evaluate((iso) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.dispatchEvent(
+      new CustomEvent("calendar:eventcontextmenu", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          event: null,
+          date: iso,
+          time: `${iso}T10:00:00[Europe/Brussels]`,
+          resourceId: null,
+          clientX: 0,
+          clientY: 0,
+        },
+      }),
+    );
+  }, past.toString());
+  await expect(menu).toBeVisible();
+  await expect(menu.locator(".menu-label")).toContainText("Already over");
+  await expect(menu.getByRole("menuitem", { name: "Book 30 minutes here" })).toBeDisabled();
+  await expect(menu.getByRole("menuitem", { name: "Block this hour" })).toBeDisabled();
+});
+
+test("a move the policy would refuse is disabled in the menu, not toasted", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "resourceDay");
+  await gotoDate(page, weekdayFrom((await anchorDate(page)).add({ days: 21 }), 3));
+  const { resourceId, start } = await describeBlocker(page);
+  // A booking that ends exactly where a non-bookable range begins: +1h lands
+  // inside it, so `checkInteraction()` - the same policy a pointer drag
+  // consults - has to answer the menu row before it is offered.
+  const blocker = Temporal.ZonedDateTime.from(start);
+  await page.evaluate(
+    async ({ probeStart, probeEnd, room }) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      await calendar.refetchEvents();
+      calendar.addEvent({
+        id: "probe-shift",
+        title: "Probe",
+        start: probeStart,
+        end: probeEnd,
+        resourceId: room,
+      });
+    },
+    {
+      probeStart: blocker.subtract({ minutes: 60 }).toString(),
+      probeEnd: blocker.toString(),
+      room: resourceId,
+    },
+  );
+  await flushRender(page);
+  await page.locator('.cv-event[data-event-id="probe-shift"]').click({ button: "right" });
+  const menu = page.locator("#context-menu");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Move +1h" })).toBeDisabled();
+  // Only the row that proposes a destination is refused. Picking the booking
+  // up stays allowed, which is the other half of the rules and a different
+  // question: the workbench exists to move exactly such bookings away.
+  await expect(menu.getByRole("menuitem", { name: "Cut" })).toBeEnabled();
+  await expect(page.locator("#toast")).not.toHaveClass(/is-open/);
+});
 test("grid options travel through configure(), not through the toolbar", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();

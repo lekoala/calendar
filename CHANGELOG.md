@@ -22,6 +22,10 @@ query subsystem, resource tree or source cache was added.
   (`action ∈ move | resize | select`, plus `external`) at gesture entry and
   on snapped-target change, sharing one evaluation path with the external
   drop `validate`. Programmatic mutations never consult it.
+* `checkInteraction({ action, event, start, end, resourceId, allDay })`:
+  that same evaluation as a question an application can ask, normalized to
+  `{ ok, reason }`, so a menu row or a preflight can be honest before a
+  gesture exists instead of re-implementing the policy.
 * `revealEvent(id, { focus, highlight })` for in-range reveals and an
   awaitable `reveal({ eventId, date | start })` that navigates once, then
   focuses/highlights — the search-result navigation primitive.

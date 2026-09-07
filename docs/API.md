@@ -483,6 +483,23 @@ drops the chain is structural validity, then the global policy, then the
 source-specific `validate` — the first refusal wins. Without a
 configured policy nothing changes.
 
+The same evaluation is available to the application, so a menu, a button
+or a preflight can ask the question a gesture would ask instead of
+re-implementing the rule:
+
+```js
+const { ok, reason } = calendar.checkInteraction({
+  action: "move",           // "select" | "move" | "resize" | "external"
+  event: calendar.getEventById(id),   // or null
+  start, end, resourceId, allDay,
+});
+```
+
+It resolves the range context, takes a fresh `now`, calls the configured
+policy and normalizes the answer to `{ ok, reason }`; with no policy
+configured it answers `{ ok: true, reason: null }`. It is a question, not
+a gate: the mutation APIs stay authoritative and consult nothing.
+
 ## Mutations / realtime adapters
 
 ```js
