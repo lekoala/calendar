@@ -1,5 +1,10 @@
 <!doctype html>
-<html lang="en">
+<!-- `data-skin` sits on the root, not on the calendar element: the floating
+     overlays (tooltip, sheets, menus, workbench chips) are in the top layer
+     and are not descendants of the grid, so only the root reaches all of
+     them. It is set here rather than by script so the first paint is already
+     the chosen skin - a swap after boot would flash the other one. -->
+<html lang="en" data-skin="soft">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -34,7 +39,8 @@
                         needs to fill;
          2. BRIDGE    - Actual tokens mapped onto the public
                         --calendar-* custom properties;
-         3. SKIN      - the event cards this application chooses;
+         3. SKINS     - the two event-card skins this application offers,
+                        switched by `data-skin` on the root;
          4. OVERLAYS  - popover menus, hover tooltip, sheets;
          5. RESPONSIVE - below 64rem the chrome collapses so the grid
                         keeps the whole remaining viewport, which is the
@@ -1043,9 +1049,21 @@
     }
 
     /* ---------------------------------------------------------------- */
-    /* 3. EVENT SKIN - solid tone cards, one hue per application kind.   */
-    /* Tones come from Actual's semantic tokens, so every theme in the   */
-    /* switcher reskins the grid.                                        */
+    /* 3. EVENT SKINS - two of them, one hue per application kind.       */
+    /*                                                                   */
+    /* `solid` fills the card with the kind's tone and writes on it in   */
+    /* the tone's foreground. `soft` washes the tone into the surface,   */
+    /* keeps the tone as a left rail and writes in the page's own ink.   */
+    /* Neither hard-codes a colour: both read `--sc-tone`, which comes   */
+    /* from Actual's semantic tokens. Skin and theme are therefore       */
+    /* orthogonal - two skins across every theme and both colour        */
+    /* schemes, with no per-combination exception to write.              */
+    /*                                                                   */
+    /* The two are mutually exclusive selectors, so their specificity     */
+    /* relative to each other never matters; what matters is that every  */
+    /* rule which overrides a property the skin base sets (the temporal  */
+    /* states own the left rail and the shadow) lives inside a skin      */
+    /* block too, or the base would outrank it.                          */
     /* ---------------------------------------------------------------- */
     [data-kind="review"] {
       --sc-tone: var(--primary);
@@ -1079,10 +1097,22 @@
       --sc-tone-fg: var(--warning-fg);
     }
 
+    /* Geometry and the container query are the same in both skins: only
+       colour, radius and rail weight change, so the card's own layout
+       contract is stated once. */
     .actual-calendar .cv-event {
       container-type: size;
       padding: 3px 6px;
       border: 0;
+    }
+
+    .actual-calendar .cv-allday-event {
+      margin: 1px 2px;
+      border: 0;
+    }
+
+    /* --- `solid` ---------------------------------------------------- */
+    [data-skin="solid"] .actual-calendar .cv-event {
       border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 34%);
       border-radius: var(--radius-sm);
       background: var(--sc-tone, var(--primary));
@@ -1092,12 +1122,78 @@
 
     /* All-day lane bars wear the same tone cards as timed events: the core
        styles them neutrally, so the kind token does the reskinning here. */
-    .actual-calendar .cv-allday-event {
-      margin: 1px 2px;
-      border: 0;
+    [data-skin="solid"] .actual-calendar .cv-allday-event {
       border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 34%);
       background: var(--sc-tone, var(--primary));
       color: var(--sc-tone-fg, var(--primary-fg));
+    }
+
+    /* --- `soft` ----------------------------------------------------- */
+    /* The wash ratio goes through `light-dark()` rather than one value:
+       in dark schemes the surface is nearly black, and a single 87% mix
+       made the card indistinguishable from the column behind it. The
+       target stays `--surface`, so no theme needs an exception. */
+    [data-skin="soft"] .actual-calendar .cv-event,
+    [data-skin="soft"] .actual-calendar .cv-allday-event {
+      border: var(--border-width) solid color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 72%);
+      border-inline-start: 4px solid var(--sc-tone, var(--primary));
+      border-radius: 7px;
+      background:
+        light-dark(
+          color-mix(in oklab, var(--sc-tone, var(--primary)), var(--surface) 87%),
+          color-mix(in oklab, var(--sc-tone, var(--primary)), var(--surface) 74%)
+        );
+      color: var(--text);
+      box-shadow: none;
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-event {
+      padding-inline: 7px;
+      transition: box-shadow 120ms var(--ease-exit);
+    }
+
+    /* A wash carries less hue separation than a fill: on a monochrome
+       theme two neighbouring kinds converge once desaturated. Lifting the
+       card on hover is what keeps the one under the pointer legible when
+       it overlaps another; the kind icon below is what keeps them told
+       apart at rest. */
+    [data-skin="soft"] .actual-calendar .cv-event:hover {
+      box-shadow: 0 2px 8px -2px color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 60%);
+    }
+
+    /* The application's background policies are declared in the BRIDGE
+       section above, at `solid` intensities. `soft` only turns them down:
+       once the cards themselves are washes, three stacked background
+       treatments at full strength compete with the thing they are meant to
+       sit behind. The hatch loses its red, because the rail already says
+       "not bookable" and the weave does not have to shout it too; the
+       bookable and extended-hours bands come down just far enough to stop
+       competing, and no further - they carry information, so erasing them
+       would be a different mistake from the one being fixed. */
+    [data-skin="soft"] .actual-calendar {
+      --calendar-line: color-mix(in oklab, var(--border), transparent 25%);
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-hour-line {
+      border-color: color-mix(in oklab, var(--border), transparent 55%);
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-background.sc-blocked {
+      border-inline-start-color: color-mix(in oklab, var(--danger), transparent 55%);
+      background:
+        repeating-linear-gradient(
+          135deg,
+          color-mix(in oklab, var(--text), transparent 92%) 0 7px,
+          transparent 7px 14px
+        );
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-background.sc-open {
+      background: color-mix(in oklab, var(--success), transparent 91%);
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-background.sc-extra {
+      background: color-mix(in oklab, var(--warning), transparent 86%);
     }
 
     .actual-calendar .cv-event:focus-visible {
@@ -1133,17 +1229,40 @@
 
        It ages without a refetch and without a clock here: the render arms a
        single timer to the next visible boundary, so a booking crosses from
-       `current` to `past` on screen while nobody touches the page. */
-    .actual-calendar .cv-event[data-temporal-state="past"] {
+       `current` to `past` on screen while nobody touches the page.
+
+       Both states own the left rail and the shadow, which the skin bases
+       also set, so each skin states them itself: a single shared rule at
+       lower specificity would be outranked by whichever base is active. */
+    [data-skin="solid"] .actual-calendar .cv-event[data-temporal-state="past"] {
       opacity: 0.72;
     }
 
-    .actual-calendar .cv-event[data-temporal-state="current"] {
+    [data-skin="solid"] .actual-calendar .cv-event[data-temporal-state="current"] {
       border-inline-start-width: 5px;
       border-inline-start-color: var(--success, #16a34a);
       box-shadow:
         0 1px 2px rgb(0 0 0 / 0.16),
         0 0 0 2px color-mix(in oklab, var(--success, #16a34a), transparent 55%);
+    }
+
+    /* `soft` retires the past by desaturating the wash rather than by a
+       blanket opacity, which would fade the ink along with the fill and
+       cost the card its legibility for no gain. */
+    [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="past"] {
+      border-color: color-mix(in oklab, var(--border), transparent 20%);
+      border-inline-start-color: color-mix(in oklab, var(--sc-tone, var(--primary)), var(--surface) 45%);
+      background:
+        light-dark(
+          color-mix(in oklab, var(--sc-tone, var(--primary)), var(--surface) 95%),
+          color-mix(in oklab, var(--sc-tone, var(--primary)), var(--surface) 88%)
+        );
+      color: var(--text-muted);
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="current"] {
+      border-inline-start-color: var(--success, #16a34a);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--success, #16a34a), transparent 60%);
     }
 
     /* Running bookings in the list view get the same edge, where there is no
@@ -1242,7 +1361,6 @@
       align-items: center;
       gap: 0.3em;
       overflow: hidden;
-      font-size: var(--font-size-xs);
       font-weight: var(--font-weight-bold);
     }
 
@@ -1252,21 +1370,62 @@
       white-space: nowrap;
     }
 
-    .sc-card .sc-meta {
+    .sc-card .sc-meta,
+    .sc-card .sc-when {
       overflow: hidden;
-      font-size: 10.5px;
-      opacity: 0.85;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .sc-card .sc-when {
-      overflow: hidden;
-      font-size: 10.5px;
       font-variant-numeric: tabular-nums;
+    }
+
+    /* `solid` writes on the tone, so its three lines separate by opacity
+       against a single ink colour. */
+    [data-skin="solid"] .sc-card strong {
+      font-size: var(--font-size-xs);
+    }
+
+    [data-skin="solid"] .sc-card .sc-meta {
+      font-size: 10.5px;
+      opacity: 0.85;
+    }
+
+    [data-skin="solid"] .sc-card .sc-when {
+      font-size: 10.5px;
       opacity: 0.9;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    }
+
+    /* `soft` has the page's own text colours available, so it separates by
+       colour instead and can afford one real size jump: the title steps up
+       to 12px and takes the kind's hue, the two supporting lines drop to
+       `--text-muted`. Four near-identical sizes become two.
+
+       The clock moves above the title: in a column whose whole geometry is
+       time, "when" is what the eye is already looking for, and the title
+       answers it. `order` does that without touching the hook's markup. */
+    [data-skin="soft"] .sc-card {
+      gap: 0;
+    }
+
+    [data-skin="soft"] .sc-card strong {
+      order: 1;
+      color: color-mix(in oklab, var(--sc-tone, var(--primary)), var(--text) 62%);
+      font-size: 12px;
+    }
+
+    [data-skin="soft"] .sc-card .sc-when {
+      order: 0;
+      color: var(--text-muted);
+      font-size: 10.5px;
+      font-weight: var(--font-weight-strong);
+    }
+
+    [data-skin="soft"] .sc-card .sc-meta {
+      order: 2;
+      color: var(--text-muted);
+      font-size: 10.5px;
     }
 
     /* Trailing flag cluster (remote, priority): pinned top-end inside the
@@ -1286,6 +1445,13 @@
       padding-inline-end: 2.6em;
     }
 
+    /* `solid` writes the flags in the tone's own foreground, which they
+       inherit; `soft` writes in the page's ink, where a flag at full
+       strength would read as loud as the title. */
+    [data-skin="soft"] .actual-calendar .cv-event .sc-icons {
+      color: var(--text-muted);
+    }
+
     .sc-card .sc-tag {
       justify-self: start;
       margin-block-start: 2px;
@@ -1296,6 +1462,28 @@
       font-weight: var(--font-weight-bold);
       letter-spacing: 0.05em;
       text-transform: uppercase;
+    }
+
+    /* `soft` drops the chip: the kind is already carried by the card's
+       tone, by the sidebar legend that teaches the tone, and - in words -
+       by the meta line right above it, which reads "Workshop · 7 seats".
+       A fourth statement of the same fact was the third line inside a
+       40px card, and it was the one to lose.
+
+       The kind glyph is the fallback for the one case where that argument
+       fails: on a card too short for the meta line (the container query
+       below), the tone becomes the only remaining cue, and a wash
+       separates hues less than a fill does - two neighbouring kinds on a
+       monochrome theme converge once desaturated. So the glyph is hidden
+       by default and appears exactly where `.sc-meta` stops. Showing it
+       everywhere cost real title width in the resource views, whose
+       columns are 7.5rem, to repeat something already legible.
+
+       Both nodes are always in the markup; only CSS decides which shows,
+       so switching skins never re-renders a card. */
+    .sc-card .sc-kind,
+    [data-skin="soft"] .sc-card .sc-tag {
+      display: none;
     }
 
     /* Short bookings drop detail instead of clipping it. The hover tooltip
@@ -1317,6 +1505,35 @@
 
       .sc-card .sc-when {
         display: none;
+      }
+
+      /* The meta line was the kind in words; with it gone, `soft` puts the
+         kind back as a glyph, because a wash alone is a weaker cue than a
+         fill. `solid` needs no replacement - its fill still separates the
+         hues on its own. */
+      [data-skin="soft"] .sc-card .sc-kind {
+        display: block;
+        opacity: 0.8;
+      }
+    }
+
+    /* `soft` lifts the grid off the chrome: the calendar becomes a rounded
+       panel on the subtle ground instead of a slab running edge to edge
+       between two hairlines. Desktop only - below 64rem the whole point of
+       the responsive section is that the grid keeps every pixel it can, and
+       a margin there would spend three of them on decoration. */
+    @media (min-width: 64rem) {
+      [data-skin="soft"] .sc-main {
+        background: var(--surface-subtle);
+      }
+
+      [data-skin="soft"] .actual-calendar {
+        margin: var(--space-20) var(--space-30) var(--space-30);
+        border: var(--border-width) solid var(--border);
+        border-radius: 14px;
+        box-shadow:
+          0 1px 2px rgb(0 0 0 / 0.04),
+          0 8px 24px -12px rgb(0 0 0 / 0.16);
       }
     }
 
@@ -1635,15 +1852,20 @@
     }
 
     /* Five locales as one row of chips rather than five menu rows: the
-       account menu has to stay short enough not to scroll. */
-    .sc-locales {
+       account menu has to stay short enough not to scroll. The two card
+       skins borrow the same row shape, for the same reason - and because
+       a skin belongs beside the theme rather than in Tools, which holds
+       grid and data options, not presentation ones. */
+    .sc-locales,
+    .sc-skins {
       display: flex;
       flex-wrap: wrap;
       gap: var(--space-10);
       padding: var(--space-10) var(--space-20) var(--space-20);
     }
 
-    .sc-locale {
+    .sc-locale,
+    .sc-skin {
       padding: 2px 0.5em;
       border: var(--border-width) solid var(--border);
       border-radius: var(--radius-full);
@@ -1654,11 +1876,18 @@
       cursor: pointer;
     }
 
-    .sc-locale[aria-pressed="true"] {
+    .sc-locale[aria-pressed="true"],
+    .sc-skin[aria-pressed="true"] {
       border-color: var(--primary);
       background: var(--primary);
       color: var(--primary-fg);
       font-weight: var(--font-weight-bold);
+    }
+
+    .sc-skin {
+      display: flex;
+      align-items: center;
+      gap: 0.3em;
     }
 
     /* Hover intent. Events carry `data-event-id`, so an application
@@ -2411,6 +2640,7 @@
     <h3 class="menu-label"><i class="ti ti-palette" aria-hidden="true"></i> Theme</h3>
     <ul class="menu" role="group" id="theme-menu"></ul>
     <div class="sc-themes" id="theme-swatches" role="group" aria-label="Accent theme"></div>
+    <div class="sc-skins" id="skin-chips" role="group" aria-label="Card skin"></div>
     <hr class="menu-separator">
     <h3 class="menu-label"><i class="ti ti-world" aria-hidden="true"></i> Language</h3>
     <div class="sc-locales" id="locale-chips" role="group" aria-label="Locale"></div>
@@ -3894,6 +4124,15 @@
       when.textContent = event.allDay === true ? "All day" : `${wallClock(start)}–${wallClock(end)}`;
       const title = document.createElement("strong");
       if (locked) title.append(icon("lock"));
+      // The kind glyph is emitted unconditionally and shown by CSS only
+      // under `soft`, which needs a second cue for the kind because a wash
+      // separates hues less than a fill. Emitting it either way is what
+      // lets the skin switch be a single attribute: no re-render, and no
+      // card whose markup depends on which skin was active when it was
+      // built.
+      const kindGlyph = icon(KIND_ICONS[kind] ?? "calendar");
+      kindGlyph.classList.add("sc-kind");
+      title.append(kindGlyph);
       const label = document.createElement("span");
       label.textContent = event.title ?? "Booking";
       title.append(label);
@@ -5711,6 +5950,45 @@
   const themeMenu = document.getElementById("theme-menu");
   const themeSwatches = document.getElementById("theme-swatches");
   const localeChips = document.getElementById("locale-chips");
+  const skinChips = document.getElementById("skin-chips");
+
+  // Two card skins, switched by `data-skin` on the root element and nothing
+  // else: no re-render, no `configure()`, no second markup path. `soft` is
+  // the default and is set in the document's own `<html>` tag so the first
+  // paint is already right; this only ever changes it afterwards.
+  // The two glyphs draw the difference rather than label it: a rounded
+  // square for the washed cards, a sharp one for the filled slabs. Both are
+  // core Tabler outlines - the `-filled` variants are not all in the webfont
+  // build, and a missing glyph renders as nothing at all.
+  const SKINS = [
+    { value: "soft", label: "Soft", icon: "square-rounded" },
+    { value: "solid", label: "Solid", icon: "square" },
+  ];
+
+  /** @param {string} value */
+  function applySkin(value) {
+    document.documentElement.dataset.skin = value;
+    renderSkins();
+    record(`skin → ${value} (one attribute; the cards are not re-rendered)`);
+  }
+
+  function renderSkins() {
+    const current = document.documentElement.dataset.skin ?? "soft";
+    skinChips.replaceChildren();
+    for (const skin of SKINS) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "sc-skin";
+      chip.dataset.skinValue = skin.value;
+      chip.setAttribute("aria-pressed", String(skin.value === current));
+      chip.append(icon(skin.icon));
+      const text = document.createElement("span");
+      text.textContent = skin.label;
+      chip.append(text);
+      chip.addEventListener("click", () => applySkin(skin.value));
+      skinChips.append(chip);
+    }
+  }
 
   /**
    * One call carries both halves of the contract: `locale` for everything
@@ -6152,6 +6430,7 @@
 
   renderRules();
   renderThemes();
+  renderSkins();
   renderLocales();
   renderShortcuts();
   refreshChrome();

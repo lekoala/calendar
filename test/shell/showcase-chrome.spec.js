@@ -656,3 +656,56 @@ test("the side panel is a popover below 64rem and a column above it", async ({ p
   await page.keyboard.press("Escape");
   await expect(page.locator("#sidebar")).toBeHidden();
 });
+test("the two card skins are one attribute, and switching keeps the same cards", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+
+  // Stamp the tallest card and read that one: it is the only card certain
+  // to sit above every container-query threshold, so what is measured is
+  // what a skin does to a full card rather than what a container query
+  // does to a short one.
+  await page.evaluate(() => {
+    const cards = [...document.querySelectorAll(".cv-event")];
+    const tallest = cards.reduce((best, card) => (card.clientHeight > best.clientHeight ? card : best));
+    tallest.dataset.skinProbe = "1";
+  });
+  const probe = page.locator('.cv-event[data-skin-probe="1"]');
+  const read = () =>
+    probe.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        radius: Number.parseFloat(style.borderTopLeftRadius),
+        shadow: style.boxShadow,
+        tag: getComputedStyle(/** @type {Element} */ (node.querySelector(".sc-tag"))).display,
+        ink: style.color,
+        fill: style.backgroundColor,
+      };
+    });
+
+  await expect(page.locator("html")).toHaveAttribute("data-skin", "soft");
+  const soft = await read();
+
+  await page.click("#account-toggle");
+  await page.click('#skin-chips [data-skin-value="solid"]');
+  await expect(page.locator("html")).toHaveAttribute("data-skin", "solid");
+  await expect(page.locator('#skin-chips [data-skin-value="solid"]')).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+
+  // The stamp is still there, so no card was rebuilt: the switch is a CSS
+  // concern end to end, and nothing the application had put on a node was
+  // lost with it.
+  await expect(probe).toHaveCount(1);
+  const solid = await read();
+
+  // Relationships, not values: `soft` rounds more than `solid`, carries no
+  // resting shadow, and hides the kind chip that a filled card can still
+  // afford, while both the ink and the fill change. Re-tuning either skin
+  // stays free.
+  expect(soft.radius).toBeGreaterThan(solid.radius);
+  expect(soft.shadow).toBe("none");
+  expect(solid.shadow).not.toBe("none");
+  expect(soft.tag).toBe("none");
+  expect(solid.tag).not.toBe("none");
+  expect(soft.ink).not.toBe(solid.ink);
+  expect(soft.fill).not.toBe(solid.fill);
+});
