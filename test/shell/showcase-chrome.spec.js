@@ -676,7 +676,12 @@ test("the two card skins are one attribute, and switching keeps the same cards",
       return {
         radius: Number.parseFloat(style.borderTopLeftRadius),
         shadow: style.boxShadow,
-        tag: getComputedStyle(/** @type {Element} */ (node.querySelector(".sc-tag"))).display,
+        // Where the kind badge sits, not whether it shows: `soft` shares
+        // row 1 with the clock, `solid` gives the chip a row of its own.
+        // Visibility would have been the wrong question - container queries
+        // hide the badge on a narrow card under either skin, so the
+        // assertion would have passed without the skin doing anything.
+        tagRow: getComputedStyle(/** @type {Element} */ (node.querySelector(".sc-tag"))).gridRowStart,
         ink: style.color,
         fill: style.backgroundColor,
       };
@@ -698,14 +703,14 @@ test("the two card skins are one attribute, and switching keeps the same cards",
   const solid = await read();
 
   // Relationships, not values: `soft` rounds more than `solid`, carries no
-  // resting shadow, and hides the kind chip that a filled card can still
-  // afford, while both the ink and the fill change. Re-tuning either skin
-  // stays free.
+  // resting shadow, and puts the kind badge on the clock's row instead of a
+  // row of its own, while both the ink and the fill change. Re-tuning
+  // either skin stays free.
   expect(soft.radius).toBeGreaterThan(solid.radius);
   expect(soft.shadow).toBe("none");
   expect(solid.shadow).not.toBe("none");
-  expect(soft.tag).toBe("none");
-  expect(solid.tag).not.toBe("none");
+  expect(soft.tagRow).toBe("1");
+  expect(solid.tagRow).not.toBe("1");
   expect(soft.ink).not.toBe(solid.ink);
   expect(soft.fill).not.toBe(solid.fill);
 });

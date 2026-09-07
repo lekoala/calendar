@@ -952,6 +952,75 @@
       background: color-mix(in oklab, var(--warning), transparent 72%);
     }
 
+    /* A hatch in the middle of a working day says nothing about why it is
+       there, and sends the reader to the sidebar legend to find out. Naming
+       it costs nothing. Only the non-bookable ranges are named, though:
+       closed hours sit at the day's edges against an axis already reading
+       07:00, so a label there repeats the geometry once per column, and the
+       bookable and extended-hours washes span whole days, where a label
+       would be noise rather than information.
+
+       The label is a `::after` keyed off the class, which is as far as CSS
+       can go: the core builds backgrounds as bare `<div>`s carrying only
+       `classNames` (there is no `backgroundContent` to match the five
+       content hooks the rest of the render has), so the text is per policy
+       and not per range. A closure the desk creates for a named reason
+       ("Deep clean") still cannot say so on the grid - that one needs the
+       hook, and it is the strongest thing on the roadmap out of this pass.
+
+       `container-type` is set here rather than inherited: the bands are
+       absolutely positioned with an inline height, so each one can size its
+       own query and drop the label when it is too short to hold it. */
+    .actual-calendar .cv-background.sc-blocked {
+      container-type: size;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .actual-calendar .cv-background.sc-blocked::after {
+      content: "Not bookable";
+      color: var(--text-subtle);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    @container (max-height: 34px) {
+      .actual-calendar .cv-background.sc-blocked::after {
+        content: "";
+      }
+    }
+
+    /* The core owns the now line: one bare, `aria-hidden` div per column
+       whose date is today, positioned by the same geometry as the events.
+       What it looks like is the application's, and 2px of accent read as a
+       range boundary rather than an instant - so it thins to a hairline and
+       gains a dot at the column's leading edge, which is what makes it
+       legible as "now" at a glance. The dot bleeds half its width into the
+       gutter on purpose; the column body does not clip.
+
+       What is not reachable from here is the time itself in the axis, the
+       way calendar apps print it: the node is inside the column body, it
+       takes no content, and the axis is a separate sticky column. That one
+       is the core's to give. */
+    .actual-calendar .cv-now {
+      border-top-width: 1px;
+    }
+
+    .actual-calendar .cv-now::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      inset-inline-start: 0;
+      inline-size: 7px;
+      block-size: 7px;
+      border-radius: var(--radius-full);
+      background: var(--danger);
+      transform: translate(-50%, -50%);
+    }
+
     /* Day and resource headers take application content; the core keeps
        geometry and stickiness. */
     .actual-calendar .cv-day-header {
@@ -1404,26 +1473,34 @@
 
        The clock moves above the title: in a column whose whole geometry is
        time, "when" is what the eye is already looking for, and the title
-       answers it. `order` does that without touching the hook's markup. */
-    [data-skin="soft"] .sc-card {
-      gap: 0;
-    }
+       answers it.
 
-    [data-skin="soft"] .sc-card strong {
-      order: 1;
-      color: color-mix(in oklab, var(--sc-tone, var(--primary)), var(--text) 62%);
-      font-size: 12px;
+       That clock line then has spare width at its end, which is where the
+       kind badge goes - so naming the kind costs no line of its own. The
+       three rows are placed explicitly rather than by `order`, because the
+       badge has to share row 1 with the clock instead of taking a row
+       after it. The hook's markup is untouched either way. */
+    [data-skin="soft"] .sc-card {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: 0 0.4em;
     }
 
     [data-skin="soft"] .sc-card .sc-when {
-      order: 0;
+      grid-area: 1 / 1;
       color: var(--text-muted);
       font-size: 10.5px;
       font-weight: var(--font-weight-strong);
     }
 
+    [data-skin="soft"] .sc-card strong {
+      grid-area: 2 / 1 / auto / -1;
+      color: color-mix(in oklab, var(--sc-tone, var(--primary)), var(--text) 62%);
+      font-size: 12px;
+    }
+
     [data-skin="soft"] .sc-card .sc-meta {
-      order: 2;
+      grid-area: 3 / 1 / auto / -1;
       color: var(--text-muted);
       font-size: 10.5px;
     }
@@ -1447,9 +1524,25 @@
 
     /* `solid` writes the flags in the tone's own foreground, which they
        inherit; `soft` writes in the page's ink, where a flag at full
-       strength would read as loud as the title. */
+       strength would read as loud as the title.
+
+       They also move to the foot of the card, because the kind badge now
+       owns the top end of row 1 and the two would overlap there. The
+       cluster is a sibling of `.sc-card`, not a cell in its grid, so it
+       stays absolutely positioned and the clearance moves with it: off the
+       title, onto the meta line it now sits beside. */
     [data-skin="soft"] .actual-calendar .cv-event .sc-icons {
+      top: auto;
+      bottom: 3px;
       color: var(--text-muted);
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-event:has(.sc-icons) .sc-card strong {
+      padding-inline-end: 0;
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-event:has(.sc-icons) .sc-card .sc-meta {
+      padding-inline-end: 2.6em;
     }
 
     .sc-card .sc-tag {
@@ -1464,25 +1557,35 @@
       text-transform: uppercase;
     }
 
-    /* `soft` drops the chip: the kind is already carried by the card's
-       tone, by the sidebar legend that teaches the tone, and - in words -
-       by the meta line right above it, which reads "Workshop · 7 seats".
-       A fourth statement of the same fact was the third line inside a
-       40px card, and it was the one to lose.
+    /* `soft` restyles the chip into a badge instead of dropping it. The
+       chip's problem was never that it named the kind - it was that it took
+       a third line to do it, under a card whose meta line already said the
+       same thing in words. Sharing row 1 with the clock costs nothing, and
+       the kind stops being read as decoration: it reads as a label, which
+       is what it is. `capitalize` is what turns the raw id into "Review"
+       with no change to the hook. */
+    [data-skin="soft"] .sc-card .sc-tag {
+      grid-area: 1 / 2;
+      margin-block-start: 0;
+      padding: 0 0.4em;
+      background: color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 78%);
+      color: color-mix(in oklab, var(--sc-tone, var(--primary)), var(--text) 45%);
+      font-size: 9.5px;
+      letter-spacing: 0;
+      text-transform: capitalize;
+    }
 
-       The kind glyph is the fallback for the one case where that argument
-       fails: on a card too short for the meta line (the container query
-       below), the tone becomes the only remaining cue, and a wash
-       separates hues less than a fill does - two neighbouring kinds on a
-       monochrome theme converge once desaturated. So the glyph is hidden
-       by default and appears exactly where `.sc-meta` stops. Showing it
-       everywhere cost real title width in the resource views, whose
-       columns are 7.5rem, to repeat something already legible.
+    /* The kind glyph is the fallback for the one case the badge cannot
+       cover: a card too short to show row 1 at all (the container query
+       below drops the clock and takes the badge with it). There the tone is
+       the only remaining cue, and a wash separates hues less well than a
+       fill does. Hidden everywhere else - showing it alongside the badge
+       spent title width, which the 7.5rem resource columns do not have, to
+       state the kind twice.
 
        Both nodes are always in the markup; only CSS decides which shows,
        so switching skins never re-renders a card. */
-    .sc-card .sc-kind,
-    [data-skin="soft"] .sc-card .sc-tag {
+    .sc-card .sc-kind {
       display: none;
     }
 
@@ -1496,6 +1599,16 @@
       .actual-calendar .cv-event .sc-icons {
         display: none;
       }
+
+      /* The chip has just gone and the meta line no longer repeats the
+         kind, so on a short card the tone would be the only thing left
+         naming it. The glyph takes over for both skins - `solid` separates
+         its hues better than `soft` does, but neither separates six of them
+         on a card this size. */
+      .sc-card .sc-kind {
+        display: block;
+        opacity: 0.8;
+      }
     }
 
     @container (max-height: 26px) {
@@ -1506,14 +1619,39 @@
       .sc-card .sc-when {
         display: none;
       }
+    }
 
-      /* The meta line was the kind in words; with it gone, `soft` puts the
-         kind back as a glyph, because a wash alone is a weaker cue than a
-         fill. `solid` needs no replacement - its fill still separates the
-         hues on its own. */
+    /* Row 1 is the one row with two claims on it, so it needs a width
+       budget as well as a height one. Both steps hand back to something
+       already on the card rather than dropping information: the range's end
+       is restated by the card's height, and the badge is restated by the
+       glyph. Narrow columns are not an edge case here - the resource views
+       run at 7.5rem, which is where the shell opens. */
+    @container (max-width: 11rem) {
+      [data-skin="soft"] .sc-card .sc-to {
+        display: none;
+      }
+    }
+
+    @container (max-width: 8.5rem) {
+      [data-skin="soft"] .sc-card .sc-tag {
+        display: none;
+      }
+
       [data-skin="soft"] .sc-card .sc-kind {
         display: block;
         opacity: 0.8;
+      }
+    }
+
+    /* Past a certain narrowness the glyph stops being a cue and becomes the
+       thing crowding out the title: on a sliver in a busy week, a locked
+       maintenance card was spending two glyphs to leave one letter of its
+       name. The tone still carries the kind, and the hover tooltip carries
+       everything. */
+    @container (max-width: 5.5rem) {
+      .sc-card .sc-kind {
+        display: none;
       }
     }
 
@@ -2374,11 +2512,11 @@
     <div class="sc-main">
       <div class="sc-toolbar">
         <div class="join" role="group" aria-label="Date navigation">
-          <button type="button" class="btn sm icon-only" id="nav-prev" aria-label="Previous range">
+          <button type="button" class="btn sm neutral soft icon-only" id="nav-prev" aria-label="Previous range">
             <i class="ti ti-chevron-left" aria-hidden="true"></i>
           </button>
-          <button type="button" class="btn sm" id="nav-today">Today</button>
-          <button type="button" class="btn sm icon-only" id="nav-next" aria-label="Next range">
+          <button type="button" class="btn sm neutral soft" id="nav-today">Today</button>
+          <button type="button" class="btn sm neutral soft icon-only" id="nav-next" aria-label="Next range">
             <i class="ti ti-chevron-right" aria-hidden="true"></i>
           </button>
         </div>
@@ -2394,13 +2532,13 @@
                switch as a one-click icon + tooltip cluster, not on a strip
                of their own. -->
           <div class="sc-tools-pinned-bar" id="tools-pinned-bar" role="toolbar" aria-label="Pinned tools" hidden></div>
-          <button type="button" class="btn sm neutral outline sc-viewbtn" id="view-toggle"
+          <button type="button" class="btn sm neutral soft sc-viewbtn" id="view-toggle"
                   popovertarget="view-menu" aria-expanded="false" aria-haspopup="menu">
             <i class="ti ti-users" id="view-icon" aria-hidden="true"></i>
             <span id="view-label">—</span>
             <i class="ti ti-chevron-down" aria-hidden="true"></i>
           </button>
-          <button type="button" class="btn sm neutral outline" id="tools-toggle"
+          <button type="button" class="btn sm neutral soft" id="tools-toggle"
                   popovertarget="tools-menu" aria-expanded="false" aria-haspopup="true">
             <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
             <span class="sc-desktop-only">Tools</span>
@@ -4121,7 +4259,21 @@
       wrap.className = "sc-card";
       const when = document.createElement("span");
       when.className = "sc-when";
-      when.textContent = event.allDay === true ? "All day" : `${wallClock(start)}–${wallClock(end)}`;
+      // Two nodes, not one string: the end of the range is the first thing
+      // worth dropping when the card gets narrow, because the card's own
+      // height already states the duration. Splitting it here lets a
+      // container query decide, which a single text node could not.
+      if (event.allDay === true) {
+        when.textContent = "All day";
+      } else {
+        const from = document.createElement("span");
+        from.className = "sc-from";
+        from.textContent = wallClock(start);
+        const to = document.createElement("span");
+        to.className = "sc-to";
+        to.textContent = `–${wallClock(end)}`;
+        when.append(from, to);
+      }
       const title = document.createElement("strong");
       if (locked) title.append(icon("lock"));
       // The kind glyph is emitted unconditionally and shown by CSS only
@@ -4138,8 +4290,11 @@
       title.append(label);
       const meta = document.createElement("span");
       meta.className = "sc-meta";
-      const kindLabel = KINDS.find((entry) => entry.id === kind)?.label ?? kind;
-      meta.textContent = `${kindLabel} · ${event.extendedProps?.seats ?? "?"} seats`;
+      // The kind used to lead this line and was said twice on every card,
+      // once here in words and once in the chip below it. The chip is now a
+      // badge in the clock line, so the meta line carries only what nothing
+      // else does.
+      meta.textContent = `${event.extendedProps?.seats ?? "?"} seats`;
       const tag = document.createElement("span");
       tag.className = "sc-tag";
       tag.textContent = kind;
