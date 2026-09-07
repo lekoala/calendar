@@ -328,6 +328,7 @@ export function renderTimeGrid({
     });
     target.addEventListener("pointerup", clear);
     target.addEventListener("pointercancel", clear);
+    target.addEventListener("lostpointercapture", clear);
   }
 
   /**
@@ -608,6 +609,7 @@ export function renderTimeGrid({
       bar.removeEventListener("pointermove", onMove);
       bar.removeEventListener("pointerup", onUp);
       bar.removeEventListener("pointercancel", onCancel);
+      bar.removeEventListener("lostpointercapture", onCancel);
       mirror?.remove();
       bar.classList.remove("cv-drag-source");
     };
@@ -644,6 +646,7 @@ export function renderTimeGrid({
     bar.addEventListener("pointermove", onMove);
     bar.addEventListener("pointerup", onUp);
     bar.addEventListener("pointercancel", onCancel);
+    bar.addEventListener("lostpointercapture", onCancel);
   }
 
   const lane = document.createElement("div");
@@ -1280,6 +1283,9 @@ export function renderTimeGrid({
         const onUp = (upEvent) => {
           node.removeEventListener("pointermove", onMove);
           node.removeEventListener("pointercancel", onCancel);
+          // See the drag path: the implicit release at `pointerup` would
+          // otherwise cancel a resize that already committed.
+          node.removeEventListener("lostpointercapture", onCancel);
           if (longPressConsumed) {
             node.style.top = savedTop;
             node.style.height = savedHeight;
@@ -1339,6 +1345,7 @@ export function renderTimeGrid({
         const onCancel = (_cancelEvent) => {
           node.removeEventListener("pointermove", onMove);
           node.removeEventListener("pointerup", onUp);
+          node.removeEventListener("lostpointercapture", onCancel);
           node.style.top = savedTop;
           node.style.height = savedHeight;
           node.classList.remove("cv-invalid");
@@ -1351,6 +1358,12 @@ export function renderTimeGrid({
         node.addEventListener("pointermove", onMove);
         node.addEventListener("pointerup", onUp);
         node.addEventListener("pointercancel", onCancel);
+        // Losing the capture ends the gesture as surely as a cancel does,
+        // and it happens without either: an explicit
+        // `releasePointerCapture()`, or the captured node being detached by
+        // a render that lands mid-gesture. Without this the remaining
+        // pointer events go elsewhere, so no cleanup ever runs.
+        node.addEventListener("lostpointercapture", onCancel);
       }
 
       /**
@@ -1450,6 +1463,10 @@ export function renderTimeGrid({
           node.removeEventListener("pointermove", onMove);
           node.removeEventListener("pointerup", onUp);
           node.removeEventListener("pointercancel", onCancel);
+          // Released last: a normal drop releases the capture implicitly, so
+          // `lostpointercapture` still arrives after `pointerup` and would
+          // otherwise cancel the gesture that just committed.
+          node.removeEventListener("lostpointercapture", onCancel);
           autoscroll?.stop();
           mirror?.remove();
           node.classList.remove("cv-drag-source");
@@ -1522,6 +1539,7 @@ export function renderTimeGrid({
         node.addEventListener("pointermove", onMove);
         node.addEventListener("pointerup", onUp);
         node.addEventListener("pointercancel", onCancel);
+        node.addEventListener("lostpointercapture", onCancel);
       }
 
       body.append(node);
@@ -1680,6 +1698,7 @@ export function renderTimeGrid({
 
       body.addEventListener("pointerup", (nativeEvent) => finishSelection(nativeEvent, false));
       body.addEventListener("pointercancel", (nativeEvent) => finishSelection(nativeEvent, true));
+      body.addEventListener("lostpointercapture", (nativeEvent) => finishSelection(nativeEvent, true));
 
       // A true drag-selection must not leak a second select from its residual click.
       body.addEventListener("click", (nativeEvent) => {

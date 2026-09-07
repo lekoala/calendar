@@ -4790,6 +4790,7 @@
       });
       target.addEventListener("pointerup", clear);
       target.addEventListener("pointercancel", clear);
+      target.addEventListener("lostpointercapture", clear);
     }
     function focusableEvents(body) {
       const nodes = [...body.querySelectorAll(".cv-event")];
@@ -4979,6 +4980,7 @@
         bar.removeEventListener("pointermove", onMove);
         bar.removeEventListener("pointerup", onUp);
         bar.removeEventListener("pointercancel", onCancel);
+        bar.removeEventListener("lostpointercapture", onCancel);
         mirror?.remove();
         bar.classList.remove("cv-drag-source");
       };
@@ -5011,6 +5013,7 @@
       bar.addEventListener("pointermove", onMove);
       bar.addEventListener("pointerup", onUp);
       bar.addEventListener("pointercancel", onCancel);
+      bar.addEventListener("lostpointercapture", onCancel);
     }
     const lane = document.createElement("div");
     lane.className = "cv-allday";
@@ -5437,6 +5440,7 @@
           const onUp = (upEvent) => {
             node.removeEventListener("pointermove", onMove);
             node.removeEventListener("pointercancel", onCancel);
+            node.removeEventListener("lostpointercapture", onCancel);
             if (longPressConsumed) {
               node.style.top = savedTop;
               node.style.height = savedHeight;
@@ -5488,6 +5492,7 @@
           const onCancel = (_cancelEvent) => {
             node.removeEventListener("pointermove", onMove);
             node.removeEventListener("pointerup", onUp);
+            node.removeEventListener("lostpointercapture", onCancel);
             node.style.top = savedTop;
             node.style.height = savedHeight;
             node.classList.remove("cv-invalid");
@@ -5498,6 +5503,7 @@
           node.addEventListener("pointermove", onMove);
           node.addEventListener("pointerup", onUp);
           node.addEventListener("pointercancel", onCancel);
+          node.addEventListener("lostpointercapture", onCancel);
         }, beginDrag = function(nativeEvent) {
           if (nativeEvent.button !== 0)
             return;
@@ -5583,6 +5589,7 @@
             node.removeEventListener("pointermove", onMove);
             node.removeEventListener("pointerup", onUp);
             node.removeEventListener("pointercancel", onCancel);
+            node.removeEventListener("lostpointercapture", onCancel);
             autoscroll?.stop();
             mirror?.remove();
             node.classList.remove("cv-drag-source");
@@ -5638,6 +5645,7 @@
           node.addEventListener("pointermove", onMove);
           node.addEventListener("pointerup", onUp);
           node.addEventListener("pointercancel", onCancel);
+          node.addEventListener("lostpointercapture", onCancel);
         };
         const { event } = item;
         const geometry = eventGeometry({
@@ -5864,6 +5872,7 @@
         };
         body.addEventListener("pointerup", (nativeEvent) => finishSelection(nativeEvent, false));
         body.addEventListener("pointercancel", (nativeEvent) => finishSelection(nativeEvent, true));
+        body.addEventListener("lostpointercapture", (nativeEvent) => finishSelection(nativeEvent, true));
         body.addEventListener("click", (nativeEvent) => {
           if (!suppressClick)
             return;
@@ -6191,7 +6200,10 @@
     }
     disconnectedCallback() {
       this.#abortController?.abort();
+      const dropped = this.#afterRenderQueue;
       this.#afterRenderQueue = [];
+      for (const entry of dropped)
+        entry.cancel?.();
       this.#pendingAnnounce = null;
       if (this.#announceFrame !== null) {
         cancelAnimationFrame(this.#announceFrame);
@@ -6345,7 +6357,7 @@
         throw new TypeError("reveal() requires a date or start anchor.");
       }
       const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
-      const requested = toPlainDate(anchorInput instanceof Temporal2.PlainDate || typeof anchorInput === "string" ? anchorInput : targetDate(anchorInput, timeZone)).toString();
+      const requested = targetDate(anchorInput, timeZone).toString();
       const key = String(eventId);
       const options = { focus: input?.focus ?? false, highlight: input?.highlight ?? true };
       if (this.date.toString() === requested && this.getEventById(key) && this.#revealNode(key, options)) {
@@ -6363,6 +6375,7 @@
       if (this.#revealNode(key, options))
         return true;
       return new Promise((resolve) => {
+        const cancel = () => resolve(false);
         this.#afterRender(() => {
           const zone = this.#config.timeZone ?? DEFAULTS.timeZone;
           const event = this.getEventById(key);
@@ -6380,8 +6393,8 @@
             if (fresh instanceof HTMLElement)
               this.#applyRevealVisuals(event, fresh, options);
             resolve(true);
-          });
-        });
+          }, cancel);
+        }, cancel);
       });
     }
     #revealNode(id, options = {}) {
@@ -6675,8 +6688,8 @@
         this.#render();
       });
     }
-    #afterRender(callback) {
-      this.#afterRenderQueue.push(callback);
+    #afterRender(callback, onCancel) {
+      this.#afterRenderQueue.push({ run: callback, cancel: onCancel });
       this.#queueRender();
     }
     #announce(message) {
@@ -6826,8 +6839,8 @@
       }));
       const pending = this.#afterRenderQueue;
       this.#afterRenderQueue = [];
-      for (const callback of pending)
-        callback();
+      for (const entry of pending)
+        entry.run();
       if (this.#agingTimer !== null) {
         clearTimeout(this.#agingTimer);
         this.#agingTimer = null;

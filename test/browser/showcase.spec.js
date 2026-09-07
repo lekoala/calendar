@@ -499,7 +499,9 @@ test("an explicit firstDay wins over the locale, and dropping it hands the choic
 test("cut parks the booking in the workbench and Escape disarms it", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openPanel(page);
+  // The grid comes first: below 64rem the panel is a drawer over it, so it
+  // is opened only around the assertions that need to see it, and shut again
+  // before Escape - which has to mean "disarm", not "close the drawer".
   const node = page.locator('.cv-event[data-kind="planning"]').first();
   const id = await node.getAttribute("data-event-id");
   await node.click({ button: "right" });
@@ -507,17 +509,20 @@ test("cut parks the booking in the workbench and Escape disarms it", async ({ pa
   await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
   // The queue is the state: the event shows in the sidebar, parked and armed,
   // and stays in place in the grid as a muted "waiting" card.
+  await openPanel(page);
   await expect(page.locator("#workbench-panel")).toBeVisible();
   await expect(page.locator("#workbench-list button[aria-current='true']")).toHaveAttribute(
     "data-event-id",
     String(id),
   );
+  await closePanel(page);
   await expect(page.locator(`.cv-event[data-event-id="${id}"][data-parked="true"]`)).toBeVisible();
   // Escape disarms the active item without removing it from the queue.
   await page.keyboard.press("Escape");
   await expect(page.locator("#workbench-list button[aria-current='true']")).toHaveCount(0);
   await expect(page.locator(`.cv-event[data-event-id="${id}"]`)).toHaveAttribute("data-parked", "true");
   // Empty clears the queue; the parked look goes with it.
+  await openPanel(page);
   await page.locator("#workbench-clear").click();
   await expect(page.locator("#workbench-panel")).toBeHidden();
   await expect(page.locator(`.cv-event[data-event-id="${id}"][data-parked="true"]`)).toHaveCount(0);
@@ -542,7 +547,12 @@ test("replanning the current day queues its bookings, which survive navigation",
   await gotoDate(page, openDayFrom(anchor).add({ days: 21 }));
   await expect(page.locator("#workbench-list li")).toHaveCount(queued);
 });
-test("dragging a workbench row onto the grid places it and advances the queue", async ({ page }) => {
+test("dragging a workbench row onto the grid places it", async ({ page, isMobile }) => {
+  // Below 64rem the sidebar is a modal drawer *over* the grid, so a row and
+  // its drop target can never be on screen together: this gesture only
+  // exists in the desktop layout. Its keyboard twin ("pasting the armed item
+  // places it") covers the same placement everywhere.
+  test.skip(Boolean(isMobile), "the sidebar is a drawer over the grid below 64rem");
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await openPanel(page);
@@ -628,7 +638,8 @@ test("dragging a workbench row onto the grid places it and advances the queue", 
 test("pasting the armed item places it, and an occupied slot keeps it", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openPanel(page);
+  // The queue is counted, not looked at, so the panel stays shut - below
+  // 64rem opening it would put a drawer over the grid this test clicks on.
   const anchor = await anchorDate(page);
   // A free target, found rather than assumed (see above).
   const empty = await emptyDayFrom(page, anchor.add({ days: 21 }));
@@ -667,7 +678,14 @@ test("pasting the armed item places it, and an occupied slot keeps it", async ({
   // is the deterministic occupant: mid-morning in room A on the first opening
   // day, so it is neither closed, blocked nor off-screen.
   await gotoDate(page, openDayFrom(anchor));
-  const moved = page.locator('.cv-event[data-kind="planning"]').first();
+  // Any booking the shell lets you move, rather than a kind: a narrow
+  // viewport renders one day instead of three room-days, so "the first
+  // planning card" can be the very one this test just moved away.
+  const moved = page
+    .locator(
+      '.cv-event:not([data-locked="true"]):not([data-parked="true"]):not([data-event-id="seed-overlap"])',
+    )
+    .first();
   const movedId = await moved.getAttribute("data-event-id");
   await moved.click({ button: "right" });
   await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
@@ -730,7 +748,8 @@ test("pasting the armed item places it, and an occupied slot keeps it", async ({
 test("an armed placement previews its target until pasted or cleared", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openPanel(page);
+  // Same as above: nothing here needs the panel on screen, and a drawer over
+  // the grid would swallow the clicks.
   const anchor = await anchorDate(page);
   const empty = await emptyDayFrom(page, anchor.add({ days: 21 }));
   // Park a timed booking: it is armed, so a later empty-slot target previews
@@ -770,7 +789,9 @@ test("an armed placement previews its target until pasted or cleared", async ({ 
 test("the placement preview tracks the active payload, not the last click", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openPanel(page);
+  // No `openPanel()` here: nothing about the workbench panel is asserted,
+  // and below 64rem it is a drawer that would sit over the grid this test
+  // clicks on.
   const anchor = await anchorDate(page);
   const empty = await emptyDayFrom(page, anchor.add({ days: 21 }));
   await gotoDate(page, empty);
@@ -837,7 +858,10 @@ test("the placement preview tracks the active payload, not the last click", asyn
 test("dragging a booking out of the grid parks it, glows the zone and opens no modal", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openPanel(page);
+  // The panel stays shut while the gesture runs: below 64rem it is a drawer
+  // over the grid, so opening it first would put a backdrop between the
+  // pointer and the card. It is opened further down, for the queue
+  // assertions that actually need to see it.
   const card = page.locator('.cv-event[data-kind="planning"]').first();
   const id = await card.getAttribute("data-event-id");
   // The first planning card of the day can sit well below the fold; grabbing
@@ -873,6 +897,7 @@ test("dragging a booking out of the grid parks it, glows the zone and opens no m
   await flushRender(page);
   // The residual click is suppressed: no detail dialog, the event is parked.
   await expect(page.locator("#detail-dialog")).toBeHidden();
+  await openPanel(page);
   await expect(page.locator(`#workbench-list [data-event-id="${id}"]`)).toBeVisible();
   await expect(page.locator(`.cv-event[data-event-id="${id}"]:not(.cv-drag-mirror)`)).not.toHaveAttribute(
     "data-dropout",
@@ -924,9 +949,13 @@ test("a blocked-range slot queues the bookings it overlaps", async ({ page }) =>
 test("right-clicking a day header queues that day's bookings", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  await openPanel(page);
-  // The default resource view's first day header belongs to room A and the
-  // first rendered day, so the action is scoped to that resource's day.
+  // A resource view is what scopes the action to one room, and the shell
+  // opens a narrow viewport on the combined day view - so the test sets the
+  // view it is about instead of inheriting whichever one the width chose.
+  // The panel waits too: below 64rem it is a drawer over the grid.
+  await setView(page, "resourceDay");
+  // The first day header belongs to room A and the first rendered day, so
+  // the action is scoped to that resource's day.
   await page.locator(".cv-day-header").first().click({ button: "right" });
   await expect(page.locator("#context-menu")).toBeVisible();
   await page
@@ -934,6 +963,7 @@ test("right-clicking a day header queues that day's bookings", async ({ page }) 
     .getByRole("menuitem", { name: /Replanify this day/i })
     .click();
   await flushRender(page);
+  await openPanel(page);
   await expect(page.locator("#workbench-panel")).toBeVisible();
   const expected = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -1072,19 +1102,15 @@ test("a refused selection drag paints its own ghost", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await setView(page, "resourceThreeDays");
-  // Far enough out that the fixture has thinned to nothing, so the space
-  // above the blocker is column background rather than a booking.
   await gotoDate(page, weekdayFrom((await anchorDate(page)).add({ days: 21 }), 3));
   await scrollToMorning(page);
-  const { label } = await describeBlocker(page);
-  const box = await blockerBox(page, true);
-  const x = box.x + box.width / 2;
-
   // The press has to land on a legal anchor - a refused start arms no
-  // selection at all - so it begins clear of the blocker and grows into it.
-  await page.mouse.move(x, box.y - 80);
+  // selection at all - so it begins on free background above a rule and
+  // grows into it.
+  const { label, box, from } = await blockerToGrowInto(page);
+  await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(x, box.y + box.height - 6, { steps: 10 });
+  await page.mouse.move(from.x, box.y + box.height - 6, { steps: 10 });
   const ghost = page.locator(".cv-select-ghost");
   await expect(ghost).toHaveClass(/cv-invalid/);
   await expect(ghost).toHaveAttribute("data-reason", new RegExp(label));
@@ -1150,29 +1176,146 @@ test("the cockpit counts what the core marks as running", async ({ page }) => {
 /**
  * A viewport point at a wall-clock minute inside a rendered column, derived
  * from the column box and the element's own day bounds rather than from an
- * axis label - the labels are localized, the geometry is not. Columns are
- * scanned from `fromColumn` until one is free at that height, so the point
- * is an empty-slot intent and not a hit on a booking.
+ * axis label - the labels are localized, the geometry is not.
+ *
+ * Two properties have to hold at once, and neither can be assumed from the
+ * fixture: the point is empty column background, and it is still empty once
+ * the browser truncates the coordinates it reports to `contextmenu`. A
+ * fractional point one pixel below a card's edge resolves to the card
+ * there, which is how this read as "the day is thin enough" for as long as
+ * the seeding happened not to end a booking on that minute. So the search
+ * runs on integers, checks the pixel rows either side, and walks the
+ * columns and then later minutes until a point satisfies both.
  *
  * @param {import("@playwright/test").Page} page
  * @param {number} minutes wall-clock minutes from midnight
+ * @param {number} [spanMinutes] how far past `minutes` the search may walk; callers pick a window that keeps the point inside the range under test
  */
-async function freeSlotPoint(page, minutes) {
-  return page.evaluate((target) => {
-    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    const toMinutes = (/** @type {string} */ value) =>
-      Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
-    const min = toMinutes(calendar.getAttribute("slot-min") ?? "00:00");
-    const max = toMinutes(calendar.getAttribute("slot-max") ?? "24:00");
-    for (const body of calendar.querySelectorAll(".cv-day-body")) {
-      const rect = body.getBoundingClientRect();
-      const y = rect.top + (rect.height * (target - min)) / (max - min);
-      const x = rect.left + rect.width / 2;
-      const node = document.elementFromPoint(x, y);
-      if (node instanceof Element && node.classList.contains("cv-day-body")) return { x, y };
-    }
-    return null;
-  }, minutes);
+async function freeSlotPoint(page, minutes, spanMinutes = 30) {
+  return page.evaluate(
+    ({ target, span }) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      const toMinutes = (/** @type {string} */ value) =>
+        Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+      const min = toMinutes(calendar.getAttribute("slot-min") ?? "00:00");
+      const max = toMinutes(calendar.getAttribute("slot-max") ?? "24:00");
+      const bodies = [...calendar.querySelectorAll(".cv-day-body")];
+      /** Empty background at that pixel and at its neighbours. */
+      const free = (/** @type {number} */ x, /** @type {number} */ y) =>
+        [0, -1, 1].every((dy) => {
+          const node = document.elementFromPoint(x, y + dy);
+          return node instanceof Element && node.classList.contains("cv-day-body");
+        });
+      for (let at = target; at <= target + span; at += 5) {
+        for (const body of bodies) {
+          const rect = body.getBoundingClientRect();
+          const y = Math.round(rect.top + (rect.height * (at - min)) / (max - min));
+          const x = Math.round(rect.left + rect.width / 2);
+          if (free(x, y)) return { x, y };
+        }
+      }
+      return null;
+    },
+    { target: minutes, span: spanMinutes },
+  );
+}
+
+/**
+ * A press point in the same column, above `box`, that a selection can
+ * actually start from. Two things disqualify a pixel and neither is a fixed
+ * offset: a booking already occupies it, or the range a press would propose
+ * there is refused - walking up the column walks towards opening time, and
+ * an anchor before it arms no selection at all. The legality question goes
+ * to `checkInteraction()`, the same policy the press consults, so the
+ * search never restates the shell's booking hours.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {{ x: number, y: number, width: number }} box
+ */
+async function legalPressAbove(page, box) {
+  return page.evaluate(
+    ({ x, top }) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      const scroller = document.querySelector(".cv-scroller");
+      const limit = (scroller?.getBoundingClientRect().top ?? 0) + 8;
+      const column = Math.round(x);
+      const toMinutes = (/** @type {string} */ value) =>
+        Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+      const min = toMinutes(calendar.getAttribute("slot-min") ?? "00:00");
+      const max = toMinutes(calendar.getAttribute("slot-max") ?? "24:00");
+      const clock = (/** @type {number} */ minutes) =>
+        `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+      for (let y = Math.round(top) - 12; y > limit; y -= 8) {
+        const free = [0, -1, 1].every((dy) => {
+          const node = document.elementFromPoint(column, y + dy);
+          return node instanceof Element && node.classList.contains("cv-day-body");
+        });
+        if (!free) continue;
+        const body = /** @type {Element} */ (document.elementFromPoint(column, y));
+        const day = /** @type {HTMLElement | null} */ (body.closest(".cv-day"));
+        const date = day?.dataset.date;
+        if (!date) continue;
+        const rect = body.getBoundingClientRect();
+        const minute = Math.round(min + ((y - rect.top) / rect.height) * (max - min));
+        const stamp = (/** @type {number} */ at) => `${date}T${clock(at)}:00[Europe/Brussels]`;
+        // A press proposes the default duration straight away, so that is
+        // the range whose legality decides whether a ghost ever exists.
+        const decision = calendar.checkInteraction({
+          action: "select",
+          event: null,
+          start: stamp(minute),
+          end: stamp(minute + 30),
+          resourceId: day.dataset.resourceId ?? null,
+        });
+        if (decision.ok) return { x: column, y };
+      }
+      return null;
+    },
+    { x: box.x + box.width / 2, top: box.y },
+  );
+}
+
+/**
+ * A painted rule a selection can be grown into, with its label, its box and
+ * the point to press from. Which rooms' rules are on screen depends on the
+ * weekday, and whether the column above one of them is free and bookable
+ * depends on the seeding density that day - so the situation the test needs
+ * is searched for instead of taken from the first rule and hoped for. Each
+ * candidate is scrolled so the column above it is on screen at all.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function blockerToGrowInto(page) {
+  const nodes = page.locator(".cv-background.sc-blocked");
+  await expect(nodes.first()).toBeVisible();
+  const count = await nodes.count();
+  for (let index = 0; index < count; index += 1) {
+    const node = nodes.nth(index);
+    const rule = await node.evaluate((element) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      const resourceId = /** @type {HTMLElement | null} */ (element.closest(".cv-day"))?.dataset.resourceId;
+      const found = /** @type {Array<any>} */ (calendar.backgrounds).find(
+        (entry) => entry.classNames?.includes("sc-blocked") && String(entry.resourceId) === resourceId,
+      );
+      if (!found) return null;
+      return { label: String(found.extendedProps?.label ?? found.title ?? ""), start: String(found.start) };
+    });
+    if (!rule?.label) continue;
+    // Two hours of column above the rule, on screen: `scrollIntoViewIfNeeded`
+    // scrolls the minimum, which can leave the rule flush against the
+    // headers with nothing above it to press on.
+    await page.evaluate(
+      (time) => {
+        /** @type {any} */ (document.querySelector("calendar-view")).scrollToTime(time);
+      },
+      `${String(Math.max(0, Number(rule.start.slice(11, 13)) - 2)).padStart(2, "0")}:${rule.start.slice(14, 16)}`,
+    );
+    const box = await node.boundingBox();
+    if (!box) continue;
+    const from = await legalPressAbove(page, box);
+    if (from) return { label: rule.label, box, from };
+  }
+  throw new Error("expected a painted rule with a legal press point above it");
 }
 
 /**

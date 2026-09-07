@@ -106,14 +106,3 @@ Every async source request gets:
 - a monotonically increasing request/version id.
 
 Both are needed: not every source respects abort.
-
-## Future packaging
-
-Once the API stabilizes, follow the combobox project pattern:
-
-- source ESM as canonical implementation;
-- explicit `./define` side-effect entry;
-- generated dist/types/custom-elements manifest;
-- demos exercise distributable output;
-- source browser tests exercise ESM directly;
-- `check` vs `sync` vs `verify` separation.

@@ -276,3 +276,57 @@ test("the reveal highlight clears itself", async ({ page }) => {
   await page.waitForTimeout(2300);
   await expect(page.locator(".cv-reveal")).toHaveCount(0);
 });
+
+test("a disconnect settles a pending reveal instead of hanging it", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await expect(page.locator('[data-event-id="a"]')).toBeVisible();
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const day = calendar.date.toString();
+    // In state but outside the visible band, so no node exists: reveal()
+    // falls through to its post-render promise, which a disconnect drops.
+    calendar.addEvent({
+      id: "outside",
+      title: "Outside",
+      start: `${day}T03:00:00[Europe/Brussels]`,
+      end: `${day}T03:30:00[Europe/Brussels]`,
+    });
+    const pending = calendar.reveal({ eventId: "outside", date: day });
+    calendar.remove();
+    return await Promise.race([
+      pending.then((/** @type {boolean} */ value) => ({ settled: true, value })),
+      new Promise((resolve) => setTimeout(() => resolve({ settled: false }), 600)),
+    ]);
+  });
+  expect(outcome).toEqual({ settled: true, value: false });
+});
+
+test("a zoned anchor navigates to the day the calendar shows it on", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await expect(page.locator('[data-event-id="a"]')).toBeVisible();
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const day = calendar.date.toString();
+    // Late evening in New York is the next morning in Brussels, so the two
+    // anchor shapes for one and the same instant must agree on the day.
+    const zoned = `${day}T23:30:00-04:00[America/New_York]`;
+    calendar.addEvent({
+      id: "abroad",
+      title: "Abroad",
+      start: zoned,
+      end: `${day}T23:45:00-04:00[America/New_York]`,
+    });
+    const shownOn = calendar
+      .getEventById("abroad")
+      .start.withTimeZone("Europe/Brussels")
+      .toPlainDate()
+      .toString();
+    await calendar.reveal({ eventId: "abroad", start: zoned });
+    const fromString = calendar.getAttribute("date");
+    await calendar.gotoDate(day);
+    await calendar.reveal({ eventId: "abroad", start: calendar.getEventById("abroad").start });
+    return { shownOn, fromString, fromObject: calendar.getAttribute("date") };
+  });
+  expect(outcome.fromString).toBe(outcome.shownOn);
+  expect(outcome.fromObject).toBe(outcome.shownOn);
+});

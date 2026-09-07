@@ -838,3 +838,49 @@ test("autoscroll stops when the calendar leaves the document mid-drag", async ({
   expect(await framesKeepComing(page)).toBe(false);
   await page.mouse.up();
 });
+
+test("losing the pointer capture cleans up a drag", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  const card = page.locator('.cv-event[data-event-id="a"]');
+  await expect(card).toBeVisible();
+  const box = await card.boundingBox();
+  if (!box) throw new Error("expected the card to be laid out");
+  // The pointer id is the engine's to choose (1 in Chromium, 0 in Firefox),
+  // so it is read off the gesture instead of assumed.
+  await page.evaluate(() => {
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        /** @type {any} */ (window).pointerId = event.pointerId;
+      },
+      { capture: true, once: true },
+    );
+  });
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 40, { steps: 5 });
+  await expect(page.locator(".cv-drag-mirror")).toHaveCount(1);
+  // Capture can be lost without a pointercancel: released explicitly here,
+  // and in practice by a render detaching the node mid-gesture. Either way
+  // the remaining pointer events go elsewhere, so the gesture has to end on
+  // the loss itself.
+  const released = await page.evaluate(() => {
+    const id = /** @type {any} */ (window).pointerId;
+    const node = document.querySelector('.cv-event[data-event-id="a"]');
+    if (!(node instanceof HTMLElement) || !node.hasPointerCapture(id)) return false;
+    node.releasePointerCapture(id);
+    return true;
+  });
+  expect(released).toBe(true);
+  // A pending capture change is processed on the next pointer event, which
+  // is also the first one the node no longer receives.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 90, { steps: 5 });
+  await expect(page.locator(".cv-drag-mirror")).toHaveCount(0);
+  await expect(page.locator(".cv-drag-source")).toHaveCount(0);
+  await page.mouse.up();
+  // Nothing committed: the drag was abandoned, not applied.
+  const start = await page.evaluate(() =>
+    String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById("a").start),
+  );
+  expect(start).toContain("T09:00");
+});

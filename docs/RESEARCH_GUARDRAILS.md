@@ -26,7 +26,3 @@ If an MIT-licensed project later provides an algorithm worth adapting:
 3. document the origin in the adapted file or `NOTICE`;
 4. avoid mixing in differently licensed premium/proprietary code;
 5. keep the public API driven by this project's needs rather than cloning another library wholesale.
-
-## FullCalendar experiment
-
-A separate spike may still test whether FullCalendar Community + a small resource extension is lower maintenance than owning the renderer. This prototype does not assume that outcome and should remain useful as the independent-contract reference.

@@ -198,7 +198,12 @@ export class CalendarViewElement extends HTMLElement {
   #requestVersion = 0;
   #batchDepth = 0;
   #renderQueued = false;
-  /** Post-render callbacks, drained once the pending render inserted its subtree. @type {Array<() => void>} */
+  /**
+   * Post-render callbacks, drained once the pending render inserted its
+   * subtree. `cancel` runs instead of `run` when the queue is dropped, so a
+   * caller awaiting the seam settles rather than hanging.
+   * @type {Array<{ run: () => void, cancel?: () => void }>}
+   */
   #afterRenderQueue = [];
   /** Latest pending live-region message; last write wins. @type {string | null} */
   #pendingAnnounce = null;
@@ -227,8 +232,12 @@ export class CalendarViewElement extends HTMLElement {
   disconnectedCallback() {
     this.#abortController?.abort();
     // No work survives a disconnect: drop queued post-render callbacks and
-    // cancel the single pending announce frame, if any.
+    // cancel the single pending announce frame, if any. Dropping is not
+    // silent - a queued callback an awaiting caller depends on gets its
+    // cancel path, so `reveal()` settles instead of hanging forever.
+    const dropped = this.#afterRenderQueue;
     this.#afterRenderQueue = [];
+    for (const entry of dropped) entry.cancel?.();
     this.#pendingAnnounce = null;
     if (this.#announceFrame !== null) {
       cancelAnimationFrame(this.#announceFrame);
@@ -491,11 +500,12 @@ export class CalendarViewElement extends HTMLElement {
       throw new TypeError("reveal() requires a date or start anchor.");
     }
     const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
-    const requested = toPlainDate(
-      anchorInput instanceof Temporal.PlainDate || typeof anchorInput === "string"
-        ? anchorInput
-        : targetDate(anchorInput, timeZone),
-    ).toString();
+    // One projection for every anchor shape: `targetDate()` keeps a civil
+    // `YYYY-MM-DD` civil and projects everything else into the calendar's
+    // zone. A zoned *string* used to skip it and land on its own wall date,
+    // so `…T23:30-04:00[America/New_York]` navigated to the day before the
+    // one the event starts on in Brussels.
+    const requested = targetDate(anchorInput, timeZone).toString();
     const key = String(eventId);
     const options = { focus: input?.focus ?? false, highlight: input?.highlight ?? true };
     // Fast path: already on the date with the event in state.
@@ -517,7 +527,11 @@ export class CalendarViewElement extends HTMLElement {
     // scheduled-not-guaranteed contract as `revealEvent()`: visuals apply
     // only when the view renders a node, a month event behind `+n more`
     // stays hidden without flipping the boolean.
+    // Both hops carry a cancel path: a disconnect drops the post-render
+    // queue, and a caller awaiting this promise has to settle rather than
+    // wait for a render that will never come.
     return new Promise((resolve) => {
+      const cancel = () => resolve(false);
       this.#afterRender(() => {
         const zone = this.#config.timeZone ?? DEFAULTS.timeZone;
         const event = this.getEventById(key);
@@ -534,8 +548,8 @@ export class CalendarViewElement extends HTMLElement {
           const fresh = this.querySelector(`[data-event-id="${CSS.escape(key)}"]`);
           if (fresh instanceof HTMLElement) this.#applyRevealVisuals(event, fresh, options);
           resolve(true);
-        });
-      });
+        }, cancel);
+      }, cancel);
     });
   }
 
@@ -1043,10 +1057,11 @@ export class CalendarViewElement extends HTMLElement {
    * dropped on `disconnectedCallback`.
    *
    * @param {() => void} callback
+   * @param {() => void} [onCancel] run in its place if the queue is dropped
    * @returns {void}
    */
-  #afterRender(callback) {
-    this.#afterRenderQueue.push(callback);
+  #afterRender(callback, onCancel) {
+    this.#afterRenderQueue.push({ run: callback, cancel: onCancel });
     this.#queueRender();
   }
 
@@ -1261,7 +1276,7 @@ export class CalendarViewElement extends HTMLElement {
     // callbacks queued from inside a drain run on the next render.
     const pending = this.#afterRenderQueue;
     this.#afterRenderQueue = [];
-    for (const callback of pending) callback();
+    for (const entry of pending) entry.run();
 
     // Temporal aging: one one-shot timer to the next visible event
     // boundary fires `queueRender()`; the next render recomputes states and
