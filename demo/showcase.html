@@ -925,6 +925,15 @@
       background: color-mix(in oklab, var(--warning), transparent 72%);
     }
 
+    /* Scoped availability context (Team day): location metadata for creation
+       defaults, carried by the range without adding paint. The bookable-hours
+       wash above already says "available" in green; this layer only tells
+       *where* (Site Nord, Visio) through `getRangeContext().backgrounds`. */
+    .actual-calendar .cv-background.sc-avail {
+      border-inline-start: 0;
+      background: transparent;
+    }
+
     /* A hatch in the middle of a working day says nothing about why it is
        there, and sends the reader to the sidebar legend to find out. Naming
        it costs nothing. Only the non-bookable ranges are named, though:
@@ -1130,6 +1139,11 @@
     /* Grey reads as "routine", amber as "do not book"; the seeded set
        never uses amber, so blocked markers stand out when created. */
     [data-kind="maintenance"] {
+      --sc-tone: var(--neutral);
+      --sc-tone-fg: var(--neutral-fg);
+    }
+
+    [data-kind="absence"] {
       --sc-tone: var(--neutral);
       --sc-tone-fg: var(--neutral-fg);
     }
@@ -2932,6 +2946,7 @@
     { id: "workshop", label: "Workshop" },
     { id: "deadline", label: "Deadline" },
     { id: "maintenance", label: "Maintenance" },
+    { id: "absence", label: "Absence" },
   ];
 
   /** Tabler glyph per kind, for list rows and tooltips. */
@@ -2941,6 +2956,7 @@
     workshop: "users",
     deadline: "alarm",
     maintenance: "tool",
+    absence: "user-off",
   };
 
   const TITLES = {
@@ -2949,6 +2965,7 @@
     workshop: ["Discovery workshop", "Onboarding workshop", "Retro workshop", "Training session"],
     deadline: ["Release gate", "Freeze deadline", "Handover", "Demo Friday"],
     maintenance: ["Equipment check", "Network maintenance", "Deep clean", "Inventory"],
+    absence: ["Absence", "Out of office", "Training away", "Conference day"],
   };
 
   /**
@@ -3188,6 +3205,56 @@
       allDay: true,
       extendedProps: { kind: "planning", seats: 0 },
     });
+    // Team-day pair on a day clear of the other deterministic seeds: one
+    // all-day absence (room A) and one remote busy hour (room B). Both are
+    // read-only yet clickable, and both opt in to `blocksAvailability`, so
+    // the policy refuses new bookings over them while ordinary overlaps
+    // elsewhere stay allowed. Civil boundaries, end exclusive, like above.
+    const takenDays = new Set([
+      overlapDay.toString(),
+      liveDay.toString(),
+      fullDay.toString(),
+      nearDay.toString(),
+    ]);
+    let teamDay = openDayFrom(calendar.date.add({ days: 4 }));
+    while (takenDays.has(teamDay.toString())) {
+      teamDay = openDayFrom(teamDay.add({ days: 1 }));
+    }
+    const teamIso = teamDay.toString();
+    store.push({
+      id: "team-absence",
+      title: "Absence — Room A",
+      start: teamIso,
+      end: teamDay.add({ days: 1 }).toString(),
+      resourceId: "room-a",
+      allDay: true,
+      editable: false,
+      movable: false,
+      resizable: false,
+      extendedProps: {
+        kind: "absence",
+        seats: 0,
+        blocksAvailability: true,
+        blockReason: "Absent that day",
+      },
+    });
+    store.push({
+      id: "team-remote-busy",
+      title: "External agenda · Busy",
+      start: stamp(teamDay, 15 * 60),
+      end: stamp(teamDay, 16 * 60),
+      resourceId: "room-b",
+      editable: false,
+      movable: false,
+      resizable: false,
+      extendedProps: {
+        kind: "planning",
+        seats: 0,
+        remote: true,
+        blocksAvailability: true,
+        blockReason: "Busy in external calendar",
+      },
+    });
     return store;
   }
 
@@ -3279,7 +3346,10 @@
 
   /** @param {any} item */
   function isLocked(item) {
-    return POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review");
+    return (
+      POLICY.lockedKinds.includes(item.extendedProps?.kind ?? "review") ||
+      item.extendedProps?.blocksAvailability === true
+    );
   }
 
   /**
@@ -3308,6 +3378,10 @@
       return { code: "archived", label: "Already over", icon: "history" };
     }
     if (isLocked(item)) {
+      const reason = item.extendedProps?.blockReason;
+      if (typeof reason === "string" && reason !== "") {
+        return { code: "locked", label: reason, icon: "lock" };
+      }
       return { code: "locked", label: "Locked by facilities", icon: "lock" };
     }
     return null;
@@ -3392,6 +3466,19 @@
   }
 
   /**
+   * Scoped availability windows carrying location context (Team day). Unlike
+   * `BLOCKED`/`EXTRA` they never refuse a slot by themselves: the green
+   * bookable wash already paints "available", and these ranges only answer
+   * *where* through `backgrounds.covering` (see `availabilityLocation()`).
+   * Several may cover the same range; the core never picks one, so callers
+   * select by `extendedProps.kind === "availability"`.
+   */
+  const AVAILABILITY = [
+    { resourceId: "room-a", from: 8 * 60, to: 12 * 60, location: "Site Nord", locationId: "site-nord", mode: "onsite" },
+    { resourceId: "room-b", from: 14 * 60, to: 18 * 60, location: "Visio", locationId: "visio", mode: "remote" },
+  ];
+
+  /**
    * Backgrounds of one kind out of a `getRangeContext()` snapshot. The two
    * buckets the core reports are exactly the two the rules need:
    * `overlapping` is a plain intersection - the shape of a blocker - and
@@ -3406,6 +3493,23 @@
     const list = context?.backgrounds?.[bucket];
     if (!Array.isArray(list)) return [];
     return list.filter((range) => range.classNames?.includes(className));
+  }
+
+  /**
+   * The availability range covering a proposed slot, if any. Several
+   * backgrounds may cover the same range and the core never picks one, so
+   * the application selects by the `availability` kind it painted itself;
+   * when several match, the first one wins (a priority rule would live
+   * here, not in the core). Carries `location`/`locationId`/`mode` as pure
+   * creation context — never a booking constraint.
+   *
+   * @param {any} context a `getRangeContext()` snapshot, or null
+   * @returns {any | null} the covering availability background, or null
+   */
+  function availabilityLocation(context) {
+    const list = context?.backgrounds?.covering;
+    if (!Array.isArray(list)) return null;
+    return list.find((range) => range.extendedProps?.kind === "availability") ?? null;
   }
 
   /**
@@ -3432,9 +3536,12 @@
    *
    * @param {{ start: string, end: string, resourceId: string | null }} slot
    * @param {any} [context] `detail.context` / the policy's context, when the caller has one
+   * @param {string | null} [excludeEventId] id to ignore inside
+   * `context.events.overlapping` (the moved event itself: move/resize
+   * snapshots are post-commit, so the event may overlap itself)
    * @returns {string | null} the reason, or null when the slot is bookable
    */
-  function violation({ start, end, resourceId }, context = null) {
+  function violation({ start, end, resourceId }, context = null, excludeEventId = null) {
     const day = start.slice(0, 10);
     const from = wallMinutesOf(start);
     const to = wallMinutesOf(end);
@@ -3487,6 +3594,18 @@
       return hit.resourceId === null || scope.length === 1
         ? blockedReason(hit.label, clock(hit.from), clock(hit.to), hit.resourceId)
         : "Every room is blocked at that time.";
+    }
+    // Event-level blockers: an application-owned flag, opaque to the core.
+    // Only events that opt in with `blocksAvailability: true` refuse a slot,
+    // so ordinary overlapping bookings stay allowed. The moved/resized event
+    // itself is excluded: its snapshot is post-commit and may overlap itself.
+    const blocker = context?.events?.overlapping?.find(
+      (event) =>
+        String(event.id) !== String(excludeEventId ?? "") &&
+        event.extendedProps?.blocksAvailability === true,
+    );
+    if (blocker) {
+      return blocker.extendedProps?.blockReason ?? "Unavailable at that time.";
     }
     return null;
   }
@@ -3588,6 +3707,29 @@
             classNames: ["sc-extra"],
             extendedProps: { label: range.label },
           });
+        }
+        // Scoped availability context: same "no column of its own" rule as
+        // the blockers above, so these only exist in resource views. They
+        // carry no paint of their own (`sc-avail` is transparent); the green
+        // wash says "available", they say "where".
+        if (resourceView) {
+          for (const range of AVAILABILITY) {
+            if (!activeRooms.has(range.resourceId)) continue;
+            ranges.push({
+              id: `avail-${range.resourceId}-${iso}-${range.from}`,
+              title: `Available · ${range.location}`,
+              resourceId: range.resourceId,
+              start: stamp(date, range.from),
+              end: stamp(date, range.to),
+              classNames: ["sc-avail"],
+              extendedProps: {
+                kind: "availability",
+                location: range.location,
+                locationId: range.locationId,
+                mode: range.mode,
+              },
+            });
+          }
         }
       }
     }
@@ -3741,7 +3883,8 @@
     }
     const reason = violation(
       { start, end, resourceId: target.resourceId },
-      allDay ? null : calendar.getRangeContext({ start, end, resourceId: target.resourceId }),
+      calendar.getRangeContext({ start, end, resourceId: target.resourceId }),
+      eventId,
     );
     if (reason) return reason;
     const conflicts = calendar
@@ -4179,7 +4322,7 @@
     // refused destination and the drop never happens. The commit-time
     // guard stays: it is the authority for programmatic moves, and it
     // owns the asynchronous half nobody can answer synchronously.
-    interactionPolicy({ target, context }) {
+    interactionPolicy({ event, target, context }) {
       // All-day bounds are civil dates with no wall clock; this shell's
       // rules are all wall-clock, and the lane only carries closures it
       // never lets the user move. The commit guard still sees them.
@@ -4192,6 +4335,7 @@
             resourceId: target.resourceId,
           },
           context,
+          event?.id ?? null,
         ) ?? true
       );
     },
@@ -4994,6 +5138,7 @@
       ["ban", "Hatched ranges are non-bookable. A slot that names no room is only refused when every room is blocked."],
       ["beach", "Saturdays are view-only, Sundays are not rendered."],
       ["lock", "Maintenance is owned by facilities and cannot be dragged."],
+      ["user-off", "Absences and external busy ranges block their own slots."],
       ["history", "Events that are over stay put — no drag, resize or rebooking into the past."],
       ["clipboard-check", "Deadlines are confirmed by the desk, and rolled back if refused."],
     ];
@@ -5125,7 +5270,7 @@
     const start = String(detail.current.start);
     const end = String(detail.current.end);
     const resourceId = detail.current.resourceId ?? detail.event?.resourceId ?? null;
-    const reason = violation({ start, end, resourceId }, detail.context);
+    const reason = violation({ start, end, resourceId }, detail.context, detail.event?.id ?? null);
     if (reason) {
       // Synchronous refusal: the core reverts the optimistic change itself.
       event.preventDefault();
@@ -5174,21 +5319,32 @@
 
   // --- Creation sheet ------------------------------------------------------
   const createDialog = document.getElementById("create-dialog");
-  /** @type {{ start: string, end: string, resourceId: string | null } | null} */
+  /** @type {{ start: string, end: string, resourceId: string | null, location: { location: string, locationId: string, mode: string } | null } | null} */
   let pendingSlot = null;
 
   /**
    * @param {string} startIso
    * @param {string} endIso
    * @param {string | null} resourceId
+   * @param {any} [context] range context of the slot, when the caller has one
    */
-  function openCreate(startIso, endIso, resourceId) {
-    pendingSlot = { start: startIso, end: endIso, resourceId };
+  function openCreate(startIso, endIso, resourceId, context = null) {
+    const availability = availabilityLocation(
+      context ?? calendar.getRangeContext({ start: startIso, end: endIso, resourceId }),
+    );
+    const location = availability
+      ? {
+          location: String(availability.extendedProps.location),
+          locationId: String(availability.extendedProps.locationId),
+          mode: String(availability.extendedProps.mode),
+        }
+      : null;
+    pendingSlot = { start: startIso, end: endIso, resourceId, location };
     document.getElementById("create-date").textContent = fmt.long.format(asDate(startIso));
     document.getElementById("create-range").textContent = `${wallClock(startIso)} – ${wallClock(endIso)}`;
     const minutes = wallMinutes(startIso, endIso);
     document.getElementById("create-duration").textContent =
-      `${minutes} min${resourceId ? ` · ${roomTitle(resourceId)}` : ""}`;
+      `${minutes} min${resourceId ? ` · ${roomTitle(resourceId)}` : ""}${location ? ` · ${location.location}` : ""}`;
     createDialog.showModal();
   }
 
@@ -5207,7 +5363,7 @@
       return;
     }
     record(`select ${start.slice(0, 16)} → ${end.slice(0, 16)}${resourceId ? ` · ${resourceId}` : ""}`);
-    openCreate(start, end, resourceId);
+    openCreate(start, end, resourceId, detail.context);
   });
 
   document.getElementById("new-booking").addEventListener("click", () => {
@@ -5240,7 +5396,13 @@
         start: pendingSlot.start,
         end: pendingSlot.end,
         ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
-        extendedProps: { kind: kind === "blocked" ? "blocked" : "review", seats: 2 },
+        extendedProps: {
+          kind: kind === "blocked" ? "blocked" : "review",
+          seats: 2,
+          // The covering availability range donates its location: the slot
+          // says where the booking would naturally happen, the form keeps it.
+          ...(pendingSlot.location ? { ...pendingSlot.location } : {}),
+        },
       };
       store.push(created);
       markFresh(id);

@@ -174,6 +174,79 @@ test("a non-bookable range refuses the drop it is drawn over", async ({ page }) 
   expect(outcome.after).toBe(outcome.before);
   await expect(page.locator("#toast")).toContainText("Daily reset");
 });
+test("event-level blockers refuse the slot they cover, with their own reason", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // Availability context only exists where a room owns a column.
+  await setView(page, "resourceDay");
+  const teamDay = await page.evaluate(() =>
+    String(
+      /** @type {any} */ (document.querySelector("calendar-view")).getEventById("team-absence").start,
+    ).slice(0, 10),
+  );
+  await gotoDate(page, teamDay);
+  // A green slot is not automatically free: the absence (room A) and the
+  // remote busy hour (room B) refuse with their own reason, while the same
+  // hour in room C stays allowed. `moveEvent` runs the commit-time guard,
+  // so a refusal reverts and explains itself.
+  const refused = await page.evaluate((day) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const before = String(calendar.getEventById("live").start);
+    const absence = calendar.moveEvent("live", {
+      start: `${day}T10:00:00[Europe/Brussels]`,
+      end: `${day}T10:30:00[Europe/Brussels]`,
+      resourceId: "room-a",
+    });
+    const busy = calendar.moveEvent("live", {
+      start: `${day}T15:30:00[Europe/Brussels]`,
+      end: `${day}T16:00:00[Europe/Brussels]`,
+      resourceId: "room-b",
+    });
+    return { absence, busy, after: String(calendar.getEventById("live").start), before };
+  }, teamDay);
+  expect(refused.absence).toBeNull();
+  expect(refused.busy).toBeNull();
+  expect(refused.after).toBe(refused.before);
+  await expect(page.locator("#toast")).toContainText("Busy in external calendar");
+  await expect(page.locator("#cockpit .sc-last")).toContainText("refused");
+
+  // The same hour without a blocker stays bookable, the covering background
+  // donates its location, and moving a blocker onto its own slot does not
+  // refuse itself (post-commit snapshots may overlap the moved event).
+  const allowed = await page.evaluate((day) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const free = calendar.checkInteraction({
+      action: "move",
+      event: calendar.getEventById("live"),
+      start: `${day}T10:00:00[Europe/Brussels]`,
+      end: `${day}T10:30:00[Europe/Brussels]`,
+      resourceId: "room-c",
+    });
+    const context = calendar.getRangeContext({
+      start: `${day}T10:00:00[Europe/Brussels]`,
+      end: `${day}T10:30:00[Europe/Brussels]`,
+      resourceId: "room-a",
+    });
+    const self = calendar.checkInteraction({
+      action: "move",
+      event: calendar.getEventById("team-remote-busy"),
+      start: `${day}T15:00:00[Europe/Brussels]`,
+      end: `${day}T16:00:00[Europe/Brussels]`,
+      resourceId: "room-b",
+    });
+    const availability = context.backgrounds.covering.find(
+      (/** @type {any} */ range) => range.extendedProps?.kind === "availability",
+    );
+    return {
+      free: free.ok,
+      self: self.ok,
+      location: availability?.extendedProps?.location ?? null,
+    };
+  }, teamDay);
+  expect(allowed.free).toBe(true);
+  expect(allowed.self).toBe(true);
+  expect(allowed.location).toBe("Site Nord");
+});
 test("bookable hours paint green with an amber late desk", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
