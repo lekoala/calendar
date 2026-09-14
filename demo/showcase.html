@@ -3552,23 +3552,30 @@
    * context built without a `resourceId` is a union across rooms and
    * cannot answer that, so the room-scoped constants do.
    *
-   * @param {{ start: string, end: string, resourceId: string | null }} slot
+   * @param {{ start: string, end: string, resourceId: string | null, allDay?: boolean }} slot
    * @param {any} [context] `detail.context` / the policy's context, when the caller has one
    * @param {string | null} [excludeEventId] id to ignore inside
    * `context.events.overlapping` (the moved event itself: move/resize
    * snapshots are post-commit, so the event may overlap itself)
    * @returns {string | null} the reason, or null when the slot is bookable
    */
-  function violation({ start, end, resourceId }, context = null, excludeEventId = null) {
+  function violation({ start, end, resourceId, allDay = false }, context = null, excludeEventId = null) {
     const day = start.slice(0, 10);
-    const from = wallMinutesOf(start);
-    const to = wallMinutesOf(end);
     if (beforeToday(start)) {
       return "That slot is already in the past.";
     }
     if (POLICY.closedWeekdays.includes(isoWeekday(day))) {
       return "Saturdays are staffed for viewing only.";
     }
+    // All-day placements are day-granular: the wall-clock rules below read
+    // minutes that a civil date does not carry (`wallMinutesOf` would see
+    // midnight on both ends), so only the day-level rules apply to them.
+    // A lane closure moved to another open day is a legitimate reschedule.
+    if (allDay) {
+      return null;
+    }
+    const from = wallMinutesOf(start);
+    const to = wallMinutesOf(end);
     // Extended desk hours widen the official range: a slot fully inside one
     // of them is bookable even past closing time. "Fully inside" is what
     // `backgrounds.covering` means, so the core answers it directly.
@@ -3923,7 +3930,11 @@
       end = stamp(target.date, (target.minutes ?? POLICY.opensAt) + duration);
     }
     const context = calendar.getRangeContext({ start, end, resourceId: target.resourceId });
-    const reason = violation({ start, end, resourceId: target.resourceId }, context, eventId);
+    const reason = violation(
+      { start, end, resourceId: target.resourceId, allDay },
+      context,
+      eventId,
+    );
     if (reason) return reason;
     const conflicts = context.events.overlapping.filter((entry) => String(entry.id) !== eventId);
     if (conflicts.length > 0) {
@@ -4360,8 +4371,9 @@
     // owns the asynchronous half nobody can answer synchronously.
     interactionPolicy({ event, target, context }) {
       // All-day bounds are civil dates with no wall clock; this shell's
-      // rules are all wall-clock, and the lane only carries closures it
-      // never lets the user move. The commit guard still sees them.
+      // wall-clock rules do not apply to them, so the gesture is allowed
+      // here and the commit guard applies the same reduced day-level rules
+      // (past day, viewing-only Saturday) to the placement.
       if (target.allDay) return true;
       return (
         violation(
@@ -5306,7 +5318,10 @@
     const start = String(detail.current.start);
     const end = String(detail.current.end);
     const resourceId = detail.current.resourceId ?? detail.event?.resourceId ?? null;
-    const reason = violation({ start, end, resourceId }, detail.context, detail.event?.id ?? null);
+    // All-day moves carry civil bounds; the normalized event says so, since
+    // `current` itself only holds `start`/`end`/`resourceId`.
+    const allDay = detail.event?.allDay === true;
+    const reason = violation({ start, end, resourceId, allDay }, detail.context, detail.event?.id ?? null);
     if (reason) {
       // Synchronous refusal: the core reverts the optimistic change itself.
       event.preventDefault();

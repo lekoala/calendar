@@ -153,6 +153,43 @@ test("the application refuses a move that breaks its own booking rules", async (
   await expect(page.locator("#toast")).toContainText("Bookings stay inside 08:00–18:00");
   await expect(page.locator("#cockpit .sc-last")).toContainText("refused");
 });
+test("an all-day move is judged by the day-level rules, not the wall clock", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-allday-event").first()).toBeVisible();
+  const anchor = await anchorDate(page);
+
+  // One day later, same three-civil-day span: a lane closure rescheduled to
+  // an open day is a legitimate placement. The commit guard must not read
+  // wall-clock minutes out of civil dates ("00:00 < 08:00").
+  const shifted = anchor.add({ days: 1 });
+  const outcome = await page.evaluate(
+    ([start, end]) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      const returned = calendar.moveEvent("seed-all-day", { start, end });
+      return {
+        returned: returned === null ? null : String(returned.start),
+        refused: document.querySelector("#cockpit .sc-last")?.textContent ?? "",
+      };
+    },
+    [shifted.toString(), anchor.add({ days: 4 }).toString()],
+  );
+  expect(outcome.returned).toBe(shifted.toString());
+  await expect(page.locator("#cockpit .sc-last")).toContainText("eventmove: seed-all-day");
+
+  // The day-level rules still apply: a Saturday is staffed for viewing
+  // only, and the move reverts.
+  const saturday = anchor.add({ days: (6 - anchor.dayOfWeek + 7) % 7 || 7 });
+  const refused = await page.evaluate((start) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const returned = calendar.moveEvent("seed-all-day", { start, end: "2099-01-01" });
+    return {
+      returned: returned === null ? null : String(returned.start),
+      now: String(calendar.getEventById("seed-all-day").start),
+    };
+  }, saturday.toString());
+  expect(refused.returned).toBeNull();
+  await expect(page.locator("#toast")).toContainText("Saturdays are staffed for viewing only");
+});
 test("a non-bookable range refuses the drop it is drawn over", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
