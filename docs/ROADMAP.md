@@ -44,9 +44,7 @@ Deliberately deferred (revisit only with a concrete use case):
 - keyed DOM reconciliation — 0.x renders by full replacement;
 - a consolidated pointer engine;
 - density policies per view: slot-row policy, `datesAboveResources`;
-- source-range caching;
-- a `--calendar-axis-size` custom property and a resource-row sticky-offset
-  seam — both hardcoded today and worked around in the showcase.
+- source-range caching.
 
 ## Milestone 0 — skeleton (this zip)
 

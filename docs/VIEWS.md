@@ -73,6 +73,16 @@ Mon | Tue | Wed | Mon | Tue | Wed    | Mon | Tue | Wed
 - Groups order the columns: `resourceGroups` array order wins, `resources` order holds inside a group. Resources with a missing/unknown `groupId` trail ungrouped with no group header, and a group without members renders no row.
 - Solo views render the day row only.
 
+### Geometry seams
+
+The axis strip and the sticky header rows are authored CSS custom properties, not hard-coded geometry:
+
+- `--calendar-axis-size` (default `3.5rem`) — the time-axis track the column list repeats after; the renderer names the same variable in its grid template, and the sticky axis/corner cells take their width from it;
+- `--calendar-resource-row-size` (default `3rem`) — the resource header row height and the sticky offset that pushes day headers below it;
+- `--calendar-group-row-size` (default falls back to the resource row size) — the group header row height and the offsets that stack the resource row and day headers below it.
+
+Overriding one variable moves the whole coupled set; an application compressing the header rows re-points nothing itself.
+
 ### Unassigned events and global backgrounds
 
 The two predicates are intentionally asymmetric — do not unify them:

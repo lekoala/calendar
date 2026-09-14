@@ -89,9 +89,19 @@ The application then runs the same `getEventOverlaps() → moveEvent()`
 path as paste; a refused target (structural or `validate`) suppresses the
 drop itself.
 
-HTML5 DnD is a desktop gesture: touch and keyboard go through the same
-placement via the paste/armed-item path instead of simulating drag. The
-grid draws nothing new until a registered source actually starts dragging.
+Mouse placement uses Pointer Events with capture after the source is pressed
+and a 4 px movement threshold. The latest pointer position paints once per
+animation frame, including while the grid autoscrolls. The ghost is reused;
+policy and source validation run on snapped-target changes or calendar state
+changes, and always run fresh at drop. A plain click still activates the
+source; a drag suppresses its residual click. Escape, pointer cancellation,
+lost capture, source removal and calendar disconnect cancel placement and
+clean up the ghost, animation frame and keyboard listener.
+
+Native HTML5 drag events remain supported. Touch and keyboard use the
+application's paste/armed-item path. The grid draws nothing new until a
+registered source actually starts dragging. In the showcase, workbench
+validation reuses the range context's overlapping events for conflict checks.
 
 Dragging an event out of the calendar is the inverse gesture: while the
 pointer is outside every column (grid edge, time axis strip) the dragged
@@ -100,7 +110,7 @@ parking panel glows via `:has()`), and releasing there dispatches
 `calendar:eventdropout`. The residual click on the source card is
 suppressed, so parking never falls through to `calendar:eventclick`.
 
-A viewport autoscroller advances the scroll while the pointer rests near the scroller edge. It is a separate helper, not part of layout math.
+A viewport autoscroller advances the scroll while the pointer rests near the scroller edge, on both axes: vertically while dragging along the time body, horizontally in wide resource grids whose columns overflow the viewport. It is a separate helper, not part of layout math.
 
 Event nodes use `touch-action: pan-x pan-y` so a touch gesture starting on an event can still scroll the grid; a scroll takeover fires `pointercancel`, which the drag/resize paths already treat as an abort without commit. Resize handles keep `touch-action: none` for precision. Touch range selection remains a later milestone.
 

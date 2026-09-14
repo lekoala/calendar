@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * M16 resource grouping acceptance: one level, declared group order wins,
+ * Resource grouping acceptance: one level, declared group order wins,
  * resources array order preserved within a group, unknown/missing group ids
  * trail ungrouped, first duplicate group id wins, and configured-but-empty
  * groups reserve no header space.

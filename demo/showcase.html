@@ -269,7 +269,7 @@
        @lekoala/date-picker, driven as a navigator. Two things only are ours:
        the BRIDGE from Actual's palette onto the component's public `--dp-*`
        tokens, and the application decorations under it. `.dp-*` class names
-       are deliberately not a styling API (date-picker DECISIONS D3), so
+       are deliberately not a styling API of that component, so
        every rule below hangs off the one marker node this shell returns
        from `renderDay()`; `:has()` lifts it to the cell and to the row
        without naming a single component class.
@@ -849,10 +849,11 @@
       --calendar-event-bg: var(--primary);
       --calendar-event-border: var(--primary);
       --calendar-column-min: 9rem;
-      /* The core sticks day headers below the resource row at a fixed
-         3rem. Both live here so shrinking one shrinks the other. */
-      --sc-resource-row: 2rem;
-      --sc-group-row: 1.5rem;
+      /* The shell compresses the sticky header rows; the core's own seams
+         carry both the row heights and the sticky offsets, so one variable
+         per row is the whole contract. */
+      --calendar-resource-row-size: 2rem;
+      --calendar-group-row-size: 1.5rem;
       --calendar-background-bg:
         repeating-linear-gradient(
           135deg,
@@ -948,7 +949,7 @@
        content hooks the rest of the render has), so the text is per policy
        and not per range. A closure the desk creates for a named reason
        ("Deep clean") still cannot say so on the grid - that one needs the
-       hook, and it is the strongest thing on the roadmap out of this pass.
+       hook.
 
        `container-type` is set here rather than inherited: the bands are
        absolutely positioned with an inline height, so each one can size its
@@ -1020,37 +1021,21 @@
 
     .actual-calendar .cv-resource-header {
       gap: 0.45rem;
-      min-height: var(--sc-resource-row);
       padding-block: 2px;
       font-size: var(--font-size-sm);
     }
 
-    .actual-calendar[data-view^="resource"] .cv-day-header {
-      top: var(--sc-resource-row);
-    }
-
-    /* One-level room groups. The core draws the row and owns the column
-       spans; this only skins it and re-points the sticky offsets, because
-       the shell compressed the header rows below the core's 3rem seam (the
-       same workaround the resource row already needed - roadmap debt). The
-       selectors key off a real `.cv-group-row`, so nothing shifts when no
-       group matches and the row is not rendered at all. */
+    /* One-level room groups. The core draws the row, owns the column spans
+       and the sticky offsets; this only skins it. The selectors key off a
+       real `.cv-group-row`, so nothing shifts when no group matches and the
+       row is not rendered at all. */
     .actual-calendar .cv-group-header {
       gap: 0.4rem;
-      min-height: var(--sc-group-row);
       padding-block: 2px;
       color: var(--text-muted);
       font-size: var(--font-size-xs);
       letter-spacing: 0.04em;
       text-transform: uppercase;
-    }
-
-    .actual-calendar .cv-group-row + .cv-resource-row {
-      top: var(--sc-group-row);
-    }
-
-    .actual-calendar .cv-group-row ~ .cv-grid .cv-day-header {
-      top: calc(var(--sc-group-row) + var(--sc-resource-row));
     }
 
     .sc-dow {
@@ -1312,7 +1297,7 @@
       filter: saturate(0.85);
     }
 
-    /* The core's temporal fact (M11): every event node carries
+     /* The core's temporal fact: every event node carries
        `data-temporal-state="past|current|future"`, derived from its own
        range against the render's `now`. The core ships no styling for it
        and never turns it into a permission - this is the application
@@ -2386,19 +2371,11 @@
         max-inline-size: 7.5rem;
       }
 
-      /* A 3.5rem axis is a tenth of a phone's width. The core hard-codes
-         it in three coupled places, so all three are narrowed together
-         until it becomes a custom property upstream. */
-      .actual-calendar .cv-grid {
-        grid-template-columns: 2.6rem repeat(auto-fit, minmax(var(--calendar-column-min), 1fr));
-      }
-
-      .actual-calendar .cv-axis,
-      .actual-calendar .cv-resource-corner {
-        width: 2.6rem;
-      }
-
+      /* A 3.5rem axis is a tenth of a phone's width; the core exposes it
+         as one custom property, so one narrowing covers the grid track and
+         both sticky corners. */
       .actual-calendar {
+        --calendar-axis-size: 2.6rem;
         --calendar-column-min: 5.5rem;
       }
 
@@ -2969,7 +2946,7 @@
   ];
 
   /**
-   * One level, on purpose (M16): the array order is the section order, the
+    * One level, on purpose: the array order is the section order, the
    * `ROOMS` order is the order inside a section, and a room whose `groupId`
    * matches nothing declared here simply trails without a header. Grouping
    * is a visual derivation in the resource grids - `calendar.resources`
@@ -3671,6 +3648,29 @@
    */
   let backgroundKey = "";
 
+  /**
+   * Backgrounds created at runtime ("Block this hour", the create form) are
+   * application-owned additions layered over the derived ones. They live
+   * here rather than being pushed straight into `calendar.backgrounds`, so
+   * `refreshBackgrounds()` re-merges them on every rebuild instead of
+   * silently dropping them at the next navigation. Month and list views
+   * still clear the calendar's projection; the app-side state survives the
+   * detour and comes back with the next time grid.
+   * @type {Array<object>}
+   */
+  const extraBackgrounds = [];
+
+  /**
+   * Registers a runtime background and makes sure the next repaint includes
+   * it even when the derived key has not changed.
+   * @param {object} range
+   */
+  function addExtraBackground(range) {
+    extraBackgrounds.push(range);
+    backgroundKey = "";
+    refreshChrome();
+  }
+
   function refreshBackgrounds() {
     const view = calendar.view;
     if (view === "month" || view === "list") {
@@ -3774,7 +3774,7 @@
         }
       }
     }
-    calendar.backgrounds = ranges;
+    calendar.backgrounds = [...ranges, ...extraBackgrounds];
   }
 
   // --- Locale ------------------------------------------------------------
@@ -3922,15 +3922,10 @@
       start = stamp(target.date, target.minutes ?? POLICY.opensAt);
       end = stamp(target.date, (target.minutes ?? POLICY.opensAt) + duration);
     }
-    const reason = violation(
-      { start, end, resourceId: target.resourceId },
-      calendar.getRangeContext({ start, end, resourceId: target.resourceId }),
-      eventId,
-    );
+    const context = calendar.getRangeContext({ start, end, resourceId: target.resourceId });
+    const reason = violation({ start, end, resourceId: target.resourceId }, context, eventId);
     if (reason) return reason;
-    const conflicts = calendar
-      .getEventOverlaps({ start, end }, { resourceIds: target.resourceId ? [target.resourceId] : [] })
-      .filter((entry) => String(entry.id) !== eventId);
+    const conflicts = context.events.overlapping.filter((entry) => String(entry.id) !== eventId);
     if (conflicts.length > 0) {
       return `“${conflicts[0].title ?? "Booking"}” already occupies that slot.`;
     }
@@ -4686,7 +4681,7 @@
   /**
    * Bookings the core currently reports as running. The fact is read off
    * the rendered nodes rather than recomputed: every event node carries
-   * `data-temporal-state` (M11), one event can occupy several nodes when it
+    * `data-temporal-state`, one event can occupy several nodes when it
    * spans days, and the core re-renders by itself at the next start/end
    * boundary. So this counter ages on its own - the shell owns no clock,
    * no interval and no `now` of its own for it.
@@ -5017,7 +5012,7 @@
   // The dots describe the events currently shown: the core already renders
   // on every mutation, so `calendar:render` is the one beat to watch.
   // `renderMiniMonth` only touches this shell's chrome, never the core.
-  // The one-shot aging timer (M11) re-renders at the next start/end
+  // The one-shot aging timer re-renders at the next start/end
   // boundary without any navigation, so the "in progress" counter has to
   // ride `calendar:render` rather than the navigation beats.
   calendar.addEventListener("calendar:render", () => {
@@ -5420,15 +5415,14 @@
     if (!kind || !pendingSlot) return;
     const id = `${kind}-${Date.now()}`;
     if (kind === "background") {
-      backgroundKey = "";
-      calendar.backgrounds = [...calendar.backgrounds, {
+      addExtraBackground({
         id,
         title: "Blocked range",
         start: pendingSlot.start,
         end: pendingSlot.end,
         classNames: ["sc-blocked"],
         ...(pendingSlot.resourceId ? { resourceId: pendingSlot.resourceId } : {}),
-      }];
+      });
       record("background created from selection");
     } else {
       const created = {
@@ -5856,15 +5850,14 @@
         disabled: frozenDay !== null,
         run: () => {
           const id = `blocked-${Date.now()}`;
-          backgroundKey = "";
-          calendar.backgrounds = [...calendar.backgrounds, {
+          addExtraBackground({
             id,
             title: "Blocked by the operator",
             start: stamp(date, minutes),
             end: stamp(date, minutes + 60),
             classNames: ["sc-blocked"],
             ...(resourceId ? { resourceId } : {}),
-          }];
+          });
           record(`blocked ${date} ${clock(minutes)} for an hour`);
         },
       },

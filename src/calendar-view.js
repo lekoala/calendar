@@ -177,11 +177,20 @@ export class CalendarViewElement extends HTMLElement {
    *   meta: ExternalDropMeta,
    *   onStart: (event: DragEvent) => void,
    *   onEnd: () => void,
+   *   onPointerDown: (event: PointerEvent) => void,
+   *   onClick: (event: MouseEvent) => void,
    * }>}
    */
   #externalDrops = new Map();
   /** The external drag in flight, read by the rendered grid to draw the preview. @type {{ payload: unknown, meta: ExternalDropMeta } | null} */
   #dragExternal = null;
+  /** @type {import("./render/time-grid.js").ExternalDropTarget | null} */
+  #externalDropTarget = null;
+  /** @type {(() => void) | null} */
+  #cancelExternalPointer = null;
+  /** @type {HTMLElement | null} */
+  #externalPointerSource = null;
+  #suppressExternalClick = false;
   /**
    * Application-proposed range painted as a read-only overlay (server slot
    * proposals, armed placement targets). Render state, re-painted on every
@@ -198,6 +207,7 @@ export class CalendarViewElement extends HTMLElement {
   #requestVersion = 0;
   #batchDepth = 0;
   #renderQueued = false;
+  #interactionRevision = 0;
   /**
    * Post-render callbacks, drained once the pending render inserted its
    * subtree. `cancel` runs instead of `run` when the queue is dropped, so a
@@ -207,6 +217,12 @@ export class CalendarViewElement extends HTMLElement {
   #afterRenderQueue = [];
   /** Latest pending live-region message; last write wins. @type {string | null} */
   #pendingAnnounce = null;
+  /**
+   * Scroll target requested before the scroller existed (e.g. during page
+   * init). Last write wins; applied once on the render seam, then cleared.
+   * @type {number | null}
+   */
+  #pendingScrollTop = null;
   /** Single cancellable announce frame for a11y timing. @type {number | null} */
   #announceFrame = null;
   /** One-shot aging timer to the next visible event boundary. @type {number | null} */
@@ -230,6 +246,9 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.#cancelExternalPointer?.();
+    this.#clearExternalDrag();
+    this.#externalDropTarget = null;
     this.#abortController?.abort();
     // No work survives a disconnect: drop queued post-render callbacks and
     // cancel the single pending announce frame, if any. Dropping is not
@@ -239,6 +258,7 @@ export class CalendarViewElement extends HTMLElement {
     this.#afterRenderQueue = [];
     for (const entry of dropped) entry.cancel?.();
     this.#pendingAnnounce = null;
+    this.#pendingScrollTop = null;
     if (this.#announceFrame !== null) {
       cancelAnimationFrame(this.#announceFrame);
       this.#announceFrame = null;
@@ -378,15 +398,38 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Scrolls the time-grid body so `value` sits at the top of the viewport.
+   * Charitable before the first render: a call during page init — before any
+   * rAF-rendered scroller exists — records the target and applies it on the
+   * post-render seam (last write wins). The return is always the requested
+   * offset in pixels, whether or not it has been applied yet.
+   *
    * @param {Temporal.PlainTime | string} value
    * @returns {number}
    */
   scrollToTime(value) {
-    const scroller = this.querySelector(".cv-scroller");
-    if (!scroller) return 0;
     const options = this.#options();
     const startMinutes = minutesFromMidnight(options.slotMin);
     const top = Math.max(0, (minutesFromMidnight(value) - startMinutes) * options.pxPerMinute);
+    const scroller = this.querySelector(".cv-scroller");
+    if (!scroller) {
+      if (this.#pendingScrollTop === null) {
+        this.#afterRender(
+          () => {
+            const target = this.#pendingScrollTop;
+            this.#pendingScrollTop = null;
+            if (target === null || !this.isConnected) return;
+            const pending = this.querySelector(".cv-scroller");
+            if (pending) pending.scrollTop = target;
+          },
+          () => {
+            this.#pendingScrollTop = null;
+          },
+        );
+      }
+      this.#pendingScrollTop = top;
+      return top;
+    }
     scroller.scrollTop = top;
     return top;
   }
@@ -910,6 +953,8 @@ export class CalendarViewElement extends HTMLElement {
    * a placement preview from `meta` and, on a real drop, dispatches
    * `calendar:externaldrop` with the opaque `payload` and the resolved
    * target anchor. The calendar never interprets the payload.
+   * Mouse placement follows captured pointer frames; native HTML5 drag
+   * events are also supported. Touch/keyboard placement stays application-owned.
    *
    * @param {HTMLElement} element
    * @param {unknown} payload opaque to the calendar
@@ -922,6 +967,11 @@ export class CalendarViewElement extends HTMLElement {
     const entry = { payload, meta };
     /** @param {DragEvent} event @returns {void} */
     const onStart = (event) => {
+      if (this.#cancelExternalPointer) {
+        event.preventDefault();
+        return;
+      }
+      this.#clearExternalDrag();
       this.#dragExternal = entry;
       // Informative only: `dataTransfer` cannot carry the opaque payload
       // once it leaves the page, the in-memory `#dragExternal` does.
@@ -929,11 +979,22 @@ export class CalendarViewElement extends HTMLElement {
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
     };
     const onEnd = () => {
-      this.#dragExternal = null;
+      this.#clearExternalDrag();
+    };
+    /** @param {PointerEvent} event */
+    const onPointerDown = (event) => this.#startExternalPointer(element, entry, event);
+    /** @param {MouseEvent} event */
+    const onClick = (event) => {
+      if (!this.#suppressExternalClick || event.detail === 0) return;
+      this.#suppressExternalClick = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
     };
     element.addEventListener("dragstart", onStart);
     element.addEventListener("dragend", onEnd);
-    this.#externalDrops.set(element, { ...entry, onStart, onEnd });
+    element.addEventListener("pointerdown", onPointerDown);
+    element.addEventListener("click", onClick, true);
+    this.#externalDrops.set(element, { ...entry, onStart, onEnd, onPointerDown, onClick });
     return this;
   }
 
@@ -946,10 +1007,105 @@ export class CalendarViewElement extends HTMLElement {
     if (!entry) return false;
     element.removeEventListener("dragstart", entry.onStart);
     element.removeEventListener("dragend", entry.onEnd);
+    element.removeEventListener("pointerdown", entry.onPointerDown);
+    element.removeEventListener("click", entry.onClick, true);
     element.draggable = false;
     this.#externalDrops.delete(element);
-    if (this.#dragExternal?.payload === entry.payload) this.#dragExternal = null;
+    if (this.#externalPointerSource === element) this.#cancelExternalPointer?.();
+    if (this.#dragExternal?.payload === entry.payload) {
+      this.#cancelExternalPointer?.();
+      this.#clearExternalDrag();
+    }
     return true;
+  }
+
+  #clearExternalDrag() {
+    this.#dragExternal = null;
+    this.#externalDropTarget?.clear();
+    for (const node of this.querySelectorAll(".cv-external-ghost")) node.remove();
+  }
+
+  /**
+   * Mouse placement uses captured pointer coordinates instead of the browser's
+   * throttled native dragover stream. Touch and keyboard keep their application
+   * placement controls; a click without crossing the threshold remains a click.
+   * @param {HTMLElement} element
+   * @param {{ payload: unknown, meta: ExternalDropMeta }} entry
+   * @param {PointerEvent} down
+   */
+  #startExternalPointer(element, entry, down) {
+    if (down.button !== 0 || down.pointerType !== "mouse" || !down.isPrimary || !this.isConnected) return;
+    this.#cancelExternalPointer?.();
+    this.#suppressExternalClick = false;
+    let active = false;
+    let x = down.clientX;
+    let y = down.clientY;
+    let frame = 0;
+    const cleanup = () => {
+      cancelAnimationFrame(frame);
+      element.removeEventListener("pointermove", move);
+      element.removeEventListener("pointerup", up);
+      element.removeEventListener("pointercancel", cancel);
+      element.removeEventListener("lostpointercapture", cancel);
+      element.ownerDocument.removeEventListener("keydown", key, true);
+      this.#cancelExternalPointer = null;
+      this.#externalPointerSource = null;
+      if (element.hasPointerCapture(down.pointerId)) element.releasePointerCapture(down.pointerId);
+      this.#clearExternalDrag();
+    };
+    const cancel = () => {
+      this.#suppressExternalClick = active;
+      cleanup();
+    };
+    const tick = () => {
+      if (!this.isConnected || !element.isConnected || !this.#externalDrops.has(element)) {
+        cancel();
+        return;
+      }
+      this.#externalDropTarget?.move(x, y);
+      if (this.#cancelExternalPointer === cancel) frame = requestAnimationFrame(tick);
+    };
+    /** @param {PointerEvent} event */
+    const move = (event) => {
+      if (event.pointerId !== down.pointerId) return;
+      x = event.clientX;
+      y = event.clientY;
+      if (!active && Math.hypot(x - down.clientX, y - down.clientY) >= 4) {
+        active = true;
+        this.#dragExternal = entry;
+        frame = requestAnimationFrame(tick);
+      }
+      if (active) event.preventDefault();
+    };
+    /** @param {PointerEvent} event */
+    const up = (event) => {
+      if (event.pointerId !== down.pointerId) return;
+      this.#suppressExternalClick = active;
+      try {
+        if (active) this.#externalDropTarget?.drop(event);
+      } finally {
+        cleanup();
+      }
+    };
+    /** @param {KeyboardEvent} event */
+    const key = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancel();
+    };
+    try {
+      element.setPointerCapture(down.pointerId);
+    } catch {
+      return;
+    }
+    this.#cancelExternalPointer = cancel;
+    this.#externalPointerSource = element;
+    element.addEventListener("pointermove", move);
+    element.addEventListener("pointerup", up);
+    element.addEventListener("pointercancel", cancel);
+    element.addEventListener("lostpointercapture", cancel);
+    element.ownerDocument.addEventListener("keydown", key, true);
   }
 
   /**
@@ -1038,6 +1194,7 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   #queueRender() {
+    this.#interactionRevision += 1;
     if (this.#batchDepth || this.#renderQueued) return;
     this.#renderQueued = true;
     requestAnimationFrame(() => {
@@ -1152,6 +1309,8 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   #render() {
+    this.#externalDropTarget?.clear();
+    this.#externalDropTarget = null;
     const options = this.#options();
 
     const dateOptions = this.#dateOptions();
@@ -1241,8 +1400,10 @@ export class CalendarViewElement extends HTMLElement {
             commitEventMove: (input) => this.#commitEventMove(input),
             commitEventResize: (input) => this.#commitEventResize(input),
             getExternalDrag: () => this.#dragExternal,
-            clearExternalDrag: () => {
-              this.#dragExternal = null;
+            clearExternalDrag: () => this.#clearExternalDrag(),
+            getInteractionRevision: () => this.#interactionRevision,
+            setExternalDropTarget: (target) => {
+              this.#externalDropTarget = target;
             },
             getPreview: () => this.#preview,
           },
@@ -1303,7 +1464,8 @@ export class CalendarViewElement extends HTMLElement {
       }
     }
 
-    // Rendering is full replacement by design in 0.x; keyed reconciliation
-    // and a consolidated pointer engine are roadmap debt (docs/ROADMAP.md).
+    // Rendering is full replacement by design in 0.x: every hook re-runs and
+    // app-applied DOM state is lost per render, which keyed reconciliation
+    // would address once a use case demands it.
   }
 }

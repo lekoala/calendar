@@ -54,24 +54,35 @@ test("event nodes carry data-temporal-state and hooks receive it", async ({ page
     { id: "current", title: "Current", ...current },
     { id: "future", title: "Future", ...future },
   ]);
-  await expect(page.locator('[data-event-id="past"]')).toHaveAttribute("data-temporal-state", "past");
-  await expect(page.locator('[data-event-id="current"]')).toHaveAttribute("data-temporal-state", "current");
-  await expect(page.locator('[data-event-id="future"]')).toHaveAttribute("data-temporal-state", "future");
-
-  const seen = await page.evaluate(() => {
+  await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    /** @type {Record<string, string>} */
-    const states = {};
+    /** @type {any} */ (window).seenStates = {};
     calendar.configure({
       eventContent: (/** @type {any} */ info) => {
-        states[info.event.id] = info.temporalState;
+        /** @type {any} */ (window).seenStates[info.event.id] = info.temporalState;
         return info.event.title;
       },
     });
-    return new Promise((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve(states))),
-    );
   });
+  // Relative ranges can land on the neighbouring civil day near midnight (a
+  // +60/+120 event at 23:30 lives entirely tomorrow), so each event is
+  // asserted on the civil date holding its own start. The states stay
+  // relative to the real clock; only the visible date moves.
+  for (const [id, state] of [
+    ["past", "past"],
+    ["current", "current"],
+    ["future", "future"],
+  ]) {
+    await page.evaluate((eventId) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      return calendar.gotoDate(calendar.getEventById(eventId).start.toPlainDate().toString());
+    }, id);
+    await flushRender(page);
+    await flushRender(page);
+    await expect(page.locator(`[data-event-id="${id}"]`)).toHaveAttribute("data-temporal-state", state);
+  }
+
+  const seen = await page.evaluate(() => /** @type {any} */ (window).seenStates);
   expect(seen).toEqual({ past: "past", current: "current", future: "future" });
 });
 
@@ -119,11 +130,13 @@ test("month and list nodes carry data-temporal-state", async ({ page }) => {
     /** @type {any} */ (document.querySelector("calendar-view")).setView("month");
   });
   await flushRender(page);
-  await expect(page.locator('.cv-month-event[data-event-id="past"]')).toHaveAttribute(
+  // An event straddling midnight renders one chip per civil day, so the
+  // same data-event-id resolves twice when the run crosses a day boundary.
+  await expect(page.locator('.cv-month-event[data-event-id="past"]').first()).toHaveAttribute(
     "data-temporal-state",
     "past",
   );
-  await expect(page.locator('.cv-month-event[data-event-id="future"]')).toHaveAttribute(
+  await expect(page.locator('.cv-month-event[data-event-id="future"]').first()).toHaveAttribute(
     "data-temporal-state",
     "future",
   );
@@ -131,11 +144,11 @@ test("month and list nodes carry data-temporal-state", async ({ page }) => {
     /** @type {any} */ (document.querySelector("calendar-view")).setView("list");
   });
   await flushRender(page);
-  await expect(page.locator('.cv-list-event[data-event-id="past"]')).toHaveAttribute(
+  await expect(page.locator('.cv-list-event[data-event-id="past"]').first()).toHaveAttribute(
     "data-temporal-state",
     "past",
   );
-  await expect(page.locator('.cv-list-event[data-event-id="future"]')).toHaveAttribute(
+  await expect(page.locator('.cv-list-event[data-event-id="future"]').first()).toHaveAttribute(
     "data-temporal-state",
     "future",
   );

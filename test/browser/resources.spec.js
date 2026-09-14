@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * M4 resourceTimeGrid acceptance: grouped headers, Temporal slicing,
+ * resourceTimeGrid acceptance: grouped headers, Temporal slicing,
  * unassigned-event policy, global backgrounds, capabilities, density,
  * state preservation and source races.
  *
@@ -277,4 +277,109 @@ test("late source response never overwrites newer resource state", async ({ page
   await page.waitForTimeout(200);
   await expect(page.locator('[data-event-id="fast"]')).toHaveCount(1);
   await expect(page.locator('[data-event-id="slow"]')).toHaveCount(0);
+});
+
+test("geometry seams resize the axis and sticky header rows together", async ({ page }) => {
+  await page.goto("/demo/resources.html");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.createElement("calendar-view"));
+    calendar.id = "seams";
+    calendar.setAttribute("date", "2026-09-03");
+    calendar.setAttribute("view", "resourceThreeDays");
+    calendar.style.setProperty("--calendar-axis-size", "2.5rem");
+    calendar.style.setProperty("--calendar-resource-row-size", "2rem");
+    calendar.style.setProperty("--calendar-group-row-size", "1.25rem");
+    calendar.resources = [
+      { id: "room-a", title: "Room A", groupId: "g1" },
+      { id: "room-b", title: "Room B", groupId: "g1" },
+    ];
+    calendar.resourceGroups = [{ id: "g1", title: "Suite" }];
+    document.body.append(calendar);
+  });
+  await flushRender(page);
+  await flushRender(page);
+  const geometry = await page.evaluate(() => {
+    /** @param {Element | null} node @returns {Record<string, string>} */
+    const probe = (node) => {
+      if (!node) return {};
+      const style = getComputedStyle(node);
+      return { width: style.width, top: style.top, minHeight: style.minHeight };
+    };
+    const grid = document.querySelector("#seams .cv-grid");
+    return {
+      axis: probe(document.querySelector("#seams .cv-axis")).width,
+      gridTrack: grid ? getComputedStyle(grid).gridTemplateColumns.split(" ")[0] : "",
+      resourceRow: probe(document.querySelector("#seams .cv-resource-header")).minHeight,
+      groupRow: probe(document.querySelector("#seams .cv-group-header")).minHeight,
+      groupOffset: probe(document.querySelector("#seams .cv-resource-row")).top,
+      stackedOffset: probe(document.querySelector("#seams .cv-day-header")).top,
+    };
+  });
+  expect(geometry.axis).toBe("40px");
+  expect(geometry.gridTrack).toBe("40px");
+  expect(geometry.resourceRow).toBe("32px");
+  expect(geometry.groupRow).toBe("20px");
+  expect(geometry.groupOffset).toBe("20px");
+  expect(geometry.stackedOffset).toBe("52px");
+  await page.evaluate(() => document.getElementById("seams")?.remove());
+});
+
+test("dragging toward the horizontal edge autoscrolls the wide resource grid", async ({ page }) => {
+  await page.goto("/demo/resources.html");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.createElement("calendar-view"));
+    calendar.id = "wide";
+    calendar.setAttribute("date", "2026-09-03");
+    calendar.setAttribute("view", "resourceDay");
+    calendar.configure({ timeZone: "Europe/Brussels" });
+    calendar.resources = Array.from({ length: 12 }, (_, index) => ({
+      id: `room-${index}`,
+      title: `Room ${index}`,
+    }));
+    calendar.events = [
+      {
+        id: "drag",
+        resourceId: "room-0",
+        title: "Drag me",
+        start: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T11:00:00+02:00[Europe/Brussels]",
+      },
+    ];
+    document.body.append(calendar);
+  });
+  await flushRender(page);
+  await flushRender(page);
+  const before = await page.evaluate(() => document.querySelector("#wide .cv-scroller")?.scrollLeft ?? -1);
+  expect(before).toBe(0);
+
+  // Dragging past the grid's right edge parks the pointer in the horizontal
+  // autoscroll band: the frame loop keeps advancing scrollLeft on its own
+  // until the hidden columns are revealed.
+  const card = page.locator('#wide [data-event-id="drag"]');
+  // The demo page pushes the fresh calendar below the default viewport; the
+  // pointer only reaches nodes that are actually in view.
+  await card.scrollIntoViewIfNeeded();
+  const box = await card.boundingBox();
+  if (!box) throw new Error("expected the dragged card to be laid out");
+  const scroller = await page.locator("#wide .cv-scroller").boundingBox();
+  if (!scroller) throw new Error("expected the scroller to be laid out");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(scroller.x + scroller.width - 8, box.y + box.height / 2, { steps: 10 });
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+
+  const after = await page.evaluate(() => {
+    const scroller = document.querySelector("#wide .cv-scroller");
+    const headers = [...document.querySelectorAll("#wide .cv-resource-header")];
+    const viewport = scroller?.getBoundingClientRect();
+    const header = headers[headers.length - 1]?.getBoundingClientRect();
+    return {
+      scrollLeft: scroller?.scrollLeft ?? -1,
+      lastVisible: viewport && header ? header.right > viewport.left && header.left < viewport.right : false,
+    };
+  });
+  expect(after.scrollLeft).toBeGreaterThan(0);
+  expect(after.lastVisible).toBe(true);
+  await page.evaluate(() => document.getElementById("wide")?.remove());
 });

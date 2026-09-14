@@ -31,6 +31,13 @@ import { temporalState } from "../core/temporal.js";
 import { createAutoscroller } from "./autoscroll.js";
 
 /**
+ * @typedef {object} ExternalDropTarget
+ * @property {(x: number, y: number) => void} move
+ * @property {(event: PointerEvent) => void} drop
+ * @property {() => void} clear
+ */
+
+/**
  * Narrow host seam between the element and the renderer. The grid never
  * touches element internals: the class injects bound callbacks, so its own
  * state and helpers can stay truly private (`#field`).
@@ -63,6 +70,8 @@ import { createAutoscroller } from "./autoscroll.js";
  * }) => import("../core/model.js").NormalizedEvent | null} commitEventResize
  * @property {() => { payload: unknown, meta: import("../calendar-view.js").ExternalDropMeta } | null} getExternalDrag
  * @property {() => void} clearExternalDrag
+ * @property {() => number} getInteractionRevision changes when canonical state or configuration changes
+ * @property {(target: ExternalDropTarget) => void} setExternalDropTarget register pointer placement callbacks for this rendered grid
  * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null} getPreview application-proposed range overlay, or null
  */
 
@@ -151,8 +160,9 @@ export function renderTimeGrid({
     resourceView && sections.length > 0 ? sections.flatMap((section) => section.resources) : resources;
   const columns = resourceView ? getResourceColumns(orderedResources, dates) : getTimeGridColumns(dates);
   // One axis track plus one per date column, so the all-day lane can mirror
-  // the exact same tracks when it spans them.
-  const gridTemplate = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
+  // the exact same tracks when it spans them. The axis width is authored CSS
+  // (`--calendar-axis-size`); the renderer only names the track.
+  const gridTemplate = `var(--calendar-axis-size) repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
 
   // Grouped resource headers row: one header per group spanning its member
   // columns, above the resource row. Rendered only when at least one real
@@ -1423,7 +1433,7 @@ export function renderTimeGrid({
             mirror.setAttribute("aria-hidden", "true");
             node.classList.add("cv-drag-source");
           }
-          autoscroll?.update(moveEvent.clientY);
+          autoscroll?.update(moveEvent.clientX, moveEvent.clientY);
           const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
           // Outside every column the drag arms "drop out of the calendar":
           // the application lights its parking target while the pointer
@@ -1811,11 +1821,14 @@ export function renderTimeGrid({
   // anchor to the application on drop. `meta.validate` may forbid the target.
   /** @type {{ kind: "grid" | "lane", node: HTMLElement } | null} */
   let externalGhost = null;
+  /** @type {{ source: ReturnType<TimeGridHost["getExternalDrag"]>, revision: number, key: string, placement: ReturnType<typeof resolveExternal> } | null} */
+  let externalPreview = null;
 
   /** @returns {void} */
   function removeExternalGhost() {
     externalGhost?.node.remove();
     externalGhost = null;
+    externalPreview = null;
   }
 
   /**
@@ -1844,6 +1857,7 @@ export function renderTimeGrid({
    *
    * @param {number} clientX
    * @param {number} clientY
+   * @param {boolean} [refresh] force a fresh decision at drop, even for the last previewed slot
    * @returns {{
    *   kind: "grid",
    *   index: number,
@@ -1861,13 +1875,31 @@ export function renderTimeGrid({
    *   reason: string | null,
    * } | null}
    */
-  function resolveExternal(clientX, clientY) {
+  function resolveExternal(clientX, clientY, refresh = false) {
     const external = host.getExternalDrag();
     if (!external) return null;
     const meta = external.meta;
+    const revision = host.getInteractionRevision();
+    /** @param {string} key */
+    const cached = (key) =>
+      !refresh &&
+      externalGhost?.node.isConnected &&
+      externalPreview?.source === external &&
+      externalPreview.revision === revision &&
+      externalPreview.key === key
+        ? externalPreview.placement
+        : null;
+    /** @param {string} key @param {NonNullable<ReturnType<typeof resolveExternal>>} placement */
+    const remember = (key, placement) => {
+      externalPreview = { source: external, revision, key, placement };
+      return placement;
+    };
     if (meta.allDay === true || (columnIndexAtX(clientX) >= 0 && isOverLane(clientY))) {
       const index = columnIndexAtX(clientX);
       if (index < 0) return null;
+      const key = `lane:${index}`;
+      const previous = cached(key);
+      if (previous) return previous;
       const column = columns[index];
       const resourceId = column.resource?.id ?? null;
       // Global interaction policy first, source-specific `validate` second;
@@ -1881,13 +1913,13 @@ export function renderTimeGrid({
         allDay: true,
       });
       if (!policy.ok) {
-        return {
+        return remember(key, {
           kind: "lane",
           index,
           target: { date: column.date, time: null, resourceId, allDay: true },
           ok: false,
           reason: policy.reason,
-        };
+        });
       }
       const validity = externalTargetValidity(
         column.date,
@@ -1896,13 +1928,13 @@ export function renderTimeGrid({
         true,
         column.resource?.droppable !== false,
       );
-      return {
+      return remember(key, {
         kind: "lane",
         index,
         target: { date: column.date, time: null, resourceId, allDay: true },
         ok: validity.ok,
         reason: validity.reason,
-      };
+      });
     }
     const hit = gridHit(clientX, clientY);
     if (!hit) return null;
@@ -1917,6 +1949,9 @@ export function renderTimeGrid({
     );
     if (start < startMinutes) return null;
     const end = start + duration;
+    const key = `grid:${hit.column}:${start}:${end}`;
+    const previous = cached(key);
+    if (previous) return previous;
     const column = columns[hit.column];
     const time = zonedDateTimeAt(column.date, start, timeZone);
     const resourceId = column.resource?.id ?? null;
@@ -1929,7 +1964,7 @@ export function renderTimeGrid({
       resourceId,
     });
     if (!policy.ok) {
-      return {
+      return remember(key, {
         kind: "grid",
         index: hit.column,
         start,
@@ -1938,7 +1973,7 @@ export function renderTimeGrid({
         target: { date: column.date, time, resourceId, allDay: false },
         ok: false,
         reason: policy.reason,
-      };
+      });
     }
     const validity = externalTargetValidity(
       column.date,
@@ -1947,7 +1982,7 @@ export function renderTimeGrid({
       false,
       column.resource?.droppable !== false,
     );
-    return {
+    return remember(key, {
       kind: "grid",
       index: hit.column,
       start,
@@ -1956,7 +1991,7 @@ export function renderTimeGrid({
       target: { date: column.date, time, resourceId, allDay: false },
       ok: validity.ok,
       reason: validity.reason,
-    };
+    });
   }
 
   /** @param {number} clientY */
@@ -1973,37 +2008,40 @@ export function renderTimeGrid({
    * @returns {void}
    */
   function paintExternalGhost(placement) {
-    removeExternalGhost();
+    if (!placement) {
+      removeExternalGhost();
+      return;
+    }
     const external = host.getExternalDrag();
-    if (!placement) return;
-    let node;
-    if (placement.kind === "grid") {
+    let node = externalGhost?.node;
+    if (!node?.isConnected || externalGhost?.kind !== placement.kind) {
+      node?.remove();
       node = document.createElement("div");
       node.className = "cv-external-ghost";
       node.setAttribute("aria-hidden", "true");
+      const label = document.createElement("span");
+      label.className = "cv-external-ghost-label";
+      node.append(label);
+      externalGhost = { kind: placement.kind, node };
+    }
+    const label = /** @type {HTMLElement} */ (node.firstElementChild);
+    const title = external?.meta.title ?? "";
+    if (label.textContent !== title) label.textContent = title;
+    if (placement.kind === "grid") {
       node.style.top = `${(placement.start - startMinutes) * pxPerMinute}px`;
       node.style.height = `${(placement.end - placement.start) * pxPerMinute}px`;
-      if (external?.meta.title) {
-        const label = document.createElement("span");
-        label.className = "cv-external-ghost-label";
-        label.textContent = external.meta.title;
-        node.append(label);
-      }
-      bodies[placement.index].body.append(node);
+      const body = bodies[placement.index].body;
+      if (node.parentNode !== body) body.append(node);
     } else {
-      node = document.createElement("div");
-      node.className = "cv-external-ghost cv-external-ghost-lane";
-      node.setAttribute("aria-hidden", "true");
+      node.classList.add("cv-external-ghost-lane");
+      label.className = "";
       node.style.gridColumn = `${placement.index + 2} / ${placement.index + 3}`;
       node.style.gridRow = "1 / -1";
-      if (external?.meta.title) node.textContent = external.meta.title;
-      lane.append(node);
+      if (node.parentNode !== lane) lane.append(node);
     }
-    if (!placement.ok) {
-      node.classList.add("cv-invalid");
-      if (placement.reason) node.dataset.reason = placement.reason;
-    }
-    externalGhost = { kind: placement.kind, node };
+    node.classList.toggle("cv-invalid", !placement.ok);
+    if (placement.reason) node.dataset.reason = placement.reason;
+    else delete node.dataset.reason;
   }
 
   root.addEventListener("dragover", (event) => {
@@ -2020,11 +2058,12 @@ export function renderTimeGrid({
     removeExternalGhost();
   });
 
-  root.addEventListener("drop", (event) => {
+  /** @param {DragEvent | PointerEvent} event */
+  function dropExternal(event) {
     const external = host.getExternalDrag();
     if (!external) return;
     event.preventDefault();
-    const placement = resolveExternal(event.clientX, event.clientY);
+    const placement = resolveExternal(event.clientX, event.clientY, true);
     removeExternalGhost();
     if (!placement?.ok) return;
     // `context` covers the range the ghost previewed and validated: the real
@@ -2059,6 +2098,35 @@ export function renderTimeGrid({
         },
       }),
     );
+  }
+  root.addEventListener("drop", dropExternal);
+
+  /** @type {ReturnType<typeof createAutoscroller> | null} */
+  let externalAutoscroll = null;
+  /** @param {number} x @param {number} y */
+  function pointerOverGrid(x, y) {
+    const element = document.elementFromPoint(x, y);
+    return element !== null && root.contains(element);
+  }
+  host.setExternalDropTarget({
+    move(x, y) {
+      if (!pointerOverGrid(x, y)) {
+        externalAutoscroll?.stop();
+        removeExternalGhost();
+        return;
+      }
+      const scroller = root.closest(".cv-scroller");
+      if (!externalAutoscroll && scroller) externalAutoscroll = createAutoscroller(scroller);
+      externalAutoscroll?.update(x, y);
+      paintExternalGhost(resolveExternal(x, y));
+    },
+    drop(event) {
+      if (pointerOverGrid(event.clientX, event.clientY)) dropExternal(event);
+    },
+    clear() {
+      externalAutoscroll?.stop();
+      removeExternalGhost();
+    },
   });
 
   fragment.append(root);

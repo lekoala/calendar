@@ -82,6 +82,24 @@ test("scrollToTime moves the scroller to the requested hour", async ({ page }) =
   expect(top.scrollTop).toBe(2 * 60 * 1.8);
 });
 
+test("scrollToTime before the first render is applied once the scroller exists", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  const top = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.createElement("calendar-view"));
+    calendar.setAttribute("slot-min", "08:00");
+    calendar.setAttribute("slot-max", "18:00");
+    calendar.events = [];
+    // Called while detached, before any scroller exists: the target is
+    // recorded and applied on the first post-render seam.
+    const value = calendar.scrollToTime("10:00");
+    document.body.append(calendar);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return { value, scrollTop: calendar.querySelector(".cv-scroller")?.scrollTop ?? -1 };
+  });
+  expect(top.value).toBe(2 * 60 * 1.8);
+  expect(top.scrollTop).toBe(2 * 60 * 1.8);
+});
+
 test("pointer click dispatches calendar:eventclick", async ({ page }) => {
   await page.goto("/demo/basic.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();

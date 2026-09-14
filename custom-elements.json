@@ -116,7 +116,8 @@
             },
             {
               "kind": "method",
-              "name": "scrollToTime"
+              "name": "scrollToTime",
+              "description": "Scrolls the time-grid body so `value` sits at the top of the viewport."
             },
             {
               "kind": "method",
@@ -243,6 +244,9 @@
               "name": "--calendar-accent"
             },
             {
+              "name": "--calendar-axis-size"
+            },
+            {
               "name": "--calendar-background-bg"
             },
             {
@@ -258,6 +262,9 @@
               "name": "--calendar-event-border"
             },
             {
+              "name": "--calendar-group-row-size"
+            },
+            {
               "name": "--calendar-line"
             },
             {
@@ -265,6 +272,9 @@
             },
             {
               "name": "--calendar-muted"
+            },
+            {
+              "name": "--calendar-resource-row-size"
             },
             {
               "name": "--calendar-surface"

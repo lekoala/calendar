@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * External placement (USE_CASES §12, P2): an application source registers
+ * External placement: an application source registers
  * with `addExternalDrop`; dragging it over the grid draws a real-duration
  * ghost and `calendar:externaldrop` delivers only the anchor. The core
  * judges structural geometry; `meta.validate` adds application policy.
@@ -143,6 +143,328 @@ test("dragover paints a ghost shaped by the real duration", async ({ page }) => 
     root.dispatchEvent(new DragEvent("dragleave", { bubbles: true, relatedTarget: null }));
   });
   await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+});
+
+for (const demo of ["basic", "resources"]) {
+  test(`${demo}: repeated external hover reuses its ghost and validates only new slots`, async ({ page }) => {
+    await page.goto(`/demo/${demo}.html`);
+    await expect(page.locator(".cv-day").first()).toBeVisible();
+    const result = await page.evaluate(() => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      const source = document.createElement("button");
+      document.body.append(source);
+      let validations = 0;
+      let refused = false;
+      calendar.addExternalDrop(
+        source,
+        {},
+        {
+          duration: 30,
+          title: "External event",
+          validate: () => {
+            validations += 1;
+            return refused ? "Range refused" : true;
+          },
+        },
+      );
+      const dt = new DataTransfer();
+      source.dispatchEvent(new DragEvent("dragstart", { dataTransfer: dt }));
+      const root = /** @type {HTMLElement} */ (calendar.querySelector(".cv-grid"));
+      const bodies = root.querySelectorAll(".cv-day-body");
+      const first = bodies[0].getBoundingClientRect();
+      /** @param {number} x @param {number} y */
+      const over = (x, y) =>
+        root.dispatchEvent(
+          new DragEvent("dragover", {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: dt,
+            clientX: x,
+            clientY: y,
+          }),
+        );
+      const x = first.left + first.width / 2;
+      const y = first.top + 190;
+      over(x, y);
+      const ghost = /** @type {HTMLElement} */ (root.querySelector(".cv-external-ghost"));
+      const observer = new MutationObserver(() => {});
+      observer.observe(root, { childList: true, subtree: true });
+      for (let i = 0; i < 40; i += 1) over(x + (i % 2), y + (i % 2));
+      const repeated = { validations, mutations: observer.takeRecords().length };
+      observer.disconnect();
+      refused = true;
+      over(x, y + 80);
+      const invalid = ghost.classList.contains("cv-invalid") && ghost.dataset.reason === "Range refused";
+      refused = false;
+      const next = bodies[1].getBoundingClientRect();
+      over(next.left + next.width / 2, next.top + 190);
+      return {
+        repeated,
+        validations,
+        invalid,
+        sameNode: root.querySelector(".cv-external-ghost") === ghost,
+        movedColumn: ghost.parentNode === bodies[1],
+        cleared: !ghost.classList.contains("cv-invalid") && !ghost.hasAttribute("data-reason"),
+      };
+    });
+    expect(result).toEqual({
+      repeated: { validations: 1, mutations: 0 },
+      validations: 3,
+      invalid: true,
+      sameNode: true,
+      movedColumn: true,
+      cleared: true,
+    });
+  });
+}
+
+test("external hover invalidates on data changes and drop rechecks application state", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await expect(page.locator(".cv-day")).toHaveCount(3);
+  const result = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    let calls = 0;
+    let refused = false;
+    calendar.configure({
+      interactionPolicy: (
+        /** @type {import("../../src/calendar-view.js").InteractionPolicyInput} */ { action, context },
+      ) => {
+        if (action !== "external") return true;
+        calls += 1;
+        return refused || context.events.overlapping.some((/** @type {any} */ item) => item.id === "blocker")
+          ? "Range refused"
+          : true;
+      },
+    });
+    await new Promise(requestAnimationFrame);
+    const source = document.createElement("button");
+    document.body.append(source);
+    calendar.addExternalDrop(source, {}, { duration: 30 });
+    const dt = new DataTransfer();
+    source.dispatchEvent(new DragEvent("dragstart", { dataTransfer: dt }));
+    const root = /** @type {HTMLElement} */ (calendar.querySelector(".cv-grid"));
+    const body = /** @type {HTMLElement} */ (root.querySelector(".cv-day-body"));
+    const rect = body.getBoundingClientRect();
+    /** @param {string} type */
+    const dispatch = (type) =>
+      root.dispatchEvent(
+        new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dt,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + 190,
+        }),
+      );
+    dispatch("dragover");
+    dispatch("dragover");
+    const initialCalls = calls;
+    // Data changes invalidate the cache even before their queued render runs.
+    calendar.addEvent({
+      id: "blocker",
+      start: "2026-09-03T08:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T18:00:00+02:00[Europe/Brussels]",
+    });
+    dispatch("dragover");
+    const invalidated =
+      calls === initialCalls + 1 &&
+      root.querySelector(".cv-external-ghost")?.classList.contains("cv-invalid");
+    calendar.removeEvent("blocker");
+    dispatch("dragover");
+    const validAgain = !root.querySelector(".cv-external-ghost")?.classList.contains("cv-invalid");
+    refused = true;
+    const beforeDrop = calls;
+    let drops = 0;
+    calendar.addEventListener("calendar:externaldrop", () => {
+      drops += 1;
+    });
+    dispatch("drop");
+    return {
+      initialCalls,
+      invalidated,
+      validAgain,
+      rechecked: calls === beforeDrop + 1,
+      drops,
+      ghosts: root.querySelectorAll(".cv-external-ghost").length,
+    };
+  });
+  expect(result).toEqual({
+    initialCalls: 1,
+    invalidated: true,
+    validAgain: true,
+    rechecked: true,
+    drops: 0,
+    ghosts: 0,
+  });
+});
+
+for (const end of ["dragend", "remove", "disconnect"]) {
+  test(`external ghost is cleared on ${end}`, async ({ page }) => {
+    await page.goto("/demo/basic.html");
+    await expect(page.locator(".cv-day")).toHaveCount(3);
+    await injectSource(page, {}, { duration: 30 });
+    const point = await gridPoint(page);
+    await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
+    await expect(page.locator(".cv-external-ghost")).toHaveCount(1);
+    const remaining = await page.evaluate((end) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      const source = /** @type {HTMLElement} */ (document.getElementById("ext-src"));
+      if (end === "dragend") source.dispatchEvent(new DragEvent("dragend"));
+      else if (end === "remove") calendar.removeExternalDrop(source);
+      else calendar.remove();
+      return calendar.querySelectorAll(".cv-external-ghost").length;
+    }, end);
+    expect(remaining).toBe(0);
+  });
+}
+
+/** @param {import("@playwright/test").Page} page */
+async function pointerSource(page) {
+  await injectSource(page, {}, { duration: 30, title: "External event" });
+  await page.evaluate(() => {
+    const source = /** @type {HTMLElement} */ (document.getElementById("ext-src"));
+    source.style.cssText = "position:fixed;top:4px;right:4px;z-index:100";
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const state = { clicks: 0, drops: 0, pointerDrop: false, nativeOvers: 0 };
+    /** @type {any} */ (globalThis).__pointerExternal = state;
+    source.addEventListener("click", () => {
+      state.clicks += 1;
+    });
+    calendar.addEventListener("dragover", () => {
+      state.nativeOvers += 1;
+    });
+    calendar.addEventListener("calendar:externaldrop", (/** @type {any} */ event) => {
+      event.preventDefault();
+      state.drops += 1;
+      state.pointerDrop = event.detail.nativeEvent instanceof PointerEvent;
+    });
+  });
+  const source = await page.locator("#ext-src").boundingBox();
+  if (!source) throw new Error("Expected the external source");
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+}
+
+for (const demo of ["basic", "resources"]) {
+  test(`${demo}: mouse placement follows pointer frames and suppresses the source click`, async ({
+    page,
+  }) => {
+    await page.goto(`/demo/${demo}.html`);
+    await expect(page.locator(".cv-day").first()).toBeVisible();
+    await pointerSource(page);
+    const point = await gridPoint(page);
+    await page.mouse.move(point.x, point.y);
+    await expect(page.locator(".cv-external-ghost")).toBeVisible();
+    const before = await page.locator(".cv-external-ghost").getAttribute("style");
+    await page.mouse.move(point.x, point.y + 70);
+    await expect(page.locator(".cv-external-ghost")).not.toHaveAttribute("style", String(before));
+    await page.mouse.up();
+    await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+    expect(await page.evaluate(() => /** @type {any} */ (globalThis).__pointerExternal)).toEqual({
+      clicks: 0,
+      drops: 1,
+      pointerDrop: true,
+      nativeOvers: 0,
+    });
+    await page.locator("#ext-src").click();
+    expect(await page.evaluate(() => /** @type {any} */ (globalThis).__pointerExternal.clicks)).toBe(1);
+  });
+}
+
+for (const end of ["escape", "pointercancel", "lostpointercapture", "remove", "disconnect"]) {
+  test(`pointer external placement cancels on ${end} and releases keyboard handling`, async ({ page }) => {
+    await page.goto("/demo/basic.html");
+    await expect(page.locator(".cv-day")).toHaveCount(3);
+    await pointerSource(page);
+    const point = await gridPoint(page);
+    await page.mouse.move(point.x, point.y);
+    await expect(page.locator(".cv-external-ghost")).toBeVisible();
+    if (end === "escape") await page.keyboard.press("Escape");
+    else
+      await page.evaluate((end) => {
+        const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+        const source = /** @type {HTMLElement} */ (document.getElementById("ext-src"));
+        if (end === "remove") calendar.removeExternalDrop(source);
+        else if (end === "disconnect") calendar.remove();
+        else source.dispatchEvent(new PointerEvent(end));
+      }, end);
+    await page.mouse.up();
+    await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+    expect(
+      await page.evaluate(() => {
+        const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true, bubbles: true });
+        document.dispatchEvent(event);
+        return {
+          handled: event.defaultPrevented,
+          drops: /** @type {any} */ (globalThis).__pointerExternal.drops,
+        };
+      }),
+    ).toEqual({ handled: false, drops: 0 });
+  });
+}
+
+test("pointer external preview survives a data render and follows stationary edge autoscroll", async ({
+  page,
+}) => {
+  await page.goto("/demo/basic.html");
+  await expect(page.locator(".cv-day")).toHaveCount(3);
+  await pointerSource(page);
+  const point = await gridPoint(page);
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator(".cv-external-ghost")).toBeVisible();
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.addEvent({
+      id: "remote",
+      start: "2026-10-03T08:00:00+02:00[Europe/Brussels]",
+      end: "2026-10-03T09:00:00+02:00[Europe/Brussels]",
+    });
+  });
+  await flushRender(page);
+  await expect(page.locator(".cv-external-ghost")).toBeVisible();
+  const edge = await page.evaluate(() => {
+    const scroller = /** @type {HTMLElement} */ (document.querySelector(".cv-scroller"));
+    scroller.style.height = "300px";
+    const rect = scroller.getBoundingClientRect();
+    const body = /** @type {HTMLElement} */ (scroller.querySelector(".cv-day-body"));
+    const column = body.getBoundingClientRect();
+    return { x: column.left + column.width / 2, y: rect.bottom - 12, scrollTop: scroller.scrollTop };
+  });
+  await page.mouse.move(edge.x, edge.y);
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector(".cv-scroller")?.scrollTop ?? 0))
+    .toBeGreaterThan(edge.scrollTop + 35);
+  await expect(page.locator(".cv-external-ghost")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  const scrollTop = await page.evaluate(() => document.querySelector(".cv-scroller")?.scrollTop);
+  await flushRender(page);
+  expect(await page.evaluate(() => document.querySelector(".cv-scroller")?.scrollTop)).toBe(scrollTop);
+  await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+});
+
+test("pointer external placement can enter the all-day lane and leave the grid without a drop", async ({
+  page,
+}) => {
+  await page.goto("/demo/basic.html");
+  await expect(page.locator(".cv-day")).toHaveCount(3);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.addEvent({ id: "civil", allDay: true, start: "2026-09-03", end: "2026-09-04" });
+  });
+  await flushRender(page);
+  await pointerSource(page);
+  const point = await gridPoint(page);
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator(".cv-external-ghost:not(.cv-external-ghost-lane)")).toBeVisible();
+  const lane = await page.locator(".cv-allday").boundingBox();
+  if (!lane) throw new Error("Expected the all-day lane");
+  await page.mouse.move(point.x, lane.y + lane.height / 2);
+  await expect(page.locator(".cv-external-ghost-lane")).toContainText("External event");
+  await page.mouse.move(1, 1);
+  await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+  await page.mouse.up();
+  expect(await page.evaluate(() => /** @type {any} */ (globalThis).__pointerExternal.drops)).toBe(0);
 });
 
 test("an application refusal marks the ghost invalid and suppresses the drop", async ({ page }) => {

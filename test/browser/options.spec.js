@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * M8 contract gaps: source observability, a render signal, class application
+ * Contract gaps: source observability, a render signal, class application
  * across every renderer, an activatable `+n more`, axis label policy, and the
  * `firstDay` / `hiddenDays` date derivation seen through the DOM.
  *

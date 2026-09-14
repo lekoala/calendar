@@ -9,6 +9,14 @@
   --calendar-event-border: #2563eb;
   --calendar-background-bg: color-mix(in srgb, var(--calendar-accent) 10%, transparent);
   --calendar-column-min: 10rem;
+  /* Width of the time axis strip the column tracks repeat after, shared
+     with the renderer's own grid template. */
+  --calendar-axis-size: 3.5rem;
+  /* Sticky header row heights: the resource row sits above the day headers,
+     the group row above the resource row, and the sticky offsets stack the
+     same way. The group row falls back to the resource height. */
+  --calendar-resource-row-size: 3rem;
+  --calendar-group-row-size: var(--calendar-resource-row-size);
   display: block;
   min-width: 0;
   color: var(--calendar-text);
@@ -32,7 +40,7 @@
 
 .cv-grid {
   display: grid;
-  grid-template-columns: 3.5rem repeat(auto-fit, minmax(var(--calendar-column-min), 1fr));
+  grid-template-columns: var(--calendar-axis-size) repeat(auto-fit, minmax(var(--calendar-column-min), 1fr));
   align-items: start;
   min-width: max-content;
 }
@@ -41,7 +49,7 @@
   position: sticky;
   inset-inline-start: 0;
   z-index: 3;
-  width: 3.5rem;
+  width: var(--calendar-axis-size);
   background: var(--calendar-bg);
 }
 
@@ -94,14 +102,14 @@
   position: sticky;
   inset-inline-start: 0;
   z-index: 3;
-  width: 3.5rem;
+  width: var(--calendar-axis-size);
   background: var(--calendar-bg);
 }
 
 .cv-resource-header {
   display: flex;
   align-items: center;
-  min-height: 3rem;
+  min-height: var(--calendar-resource-row-size);
   padding: 0.75rem;
   overflow: hidden;
   border-inline-start: 1px solid var(--calendar-line);
@@ -129,14 +137,14 @@
   position: sticky;
   inset-inline-start: 0;
   z-index: 3;
-  width: 3.5rem;
+  width: var(--calendar-axis-size);
   background: var(--calendar-bg);
 }
 
 .cv-group-header {
   display: flex;
   align-items: center;
-  min-height: 3rem;
+  min-height: var(--calendar-group-row-size);
   padding: 0.75rem;
   overflow: hidden;
   border-inline-start: 1px solid var(--calendar-line);
@@ -203,20 +211,19 @@
 
 /* Grouped resource headers stick above the day headers. */
 .calendar-view[data-view^="resource"] .cv-day-header {
-  top: 3rem;
+  top: var(--calendar-resource-row-size);
 }
 
 /* A real group row above the resource row pushes both sticky offsets down
    one row. The sibling selector keys off the presence of an actual
    `.cv-group-row`, so `resourceGroups` configured without matching
-   resources reserves no space. Row heights stay the existing hardcoded 3rem
-   seam (roadmap debt), shared with the resource row. */
+   resources reserves no space. */
 .cv-group-row + .cv-resource-row {
-  top: 3rem;
+  top: var(--calendar-group-row-size);
 }
 
 .calendar-view .cv-group-row ~ .cv-grid .cv-day-header {
-  top: 6rem;
+  top: calc(var(--calendar-group-row-size) + var(--calendar-resource-row-size));
 }
 
 .cv-empty {
@@ -664,4 +671,5 @@
 }
 
 /* Selection/hover/drop overlays are implemented above; density policies
-   per `data-view` (all-day lane, slot-row policy) are roadmap M9c. */
+   per `data-view` (an all-day lane outside time grids, a slot-row policy)
+   remain open design space rather than shipped behavior. */

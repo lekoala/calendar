@@ -371,6 +371,74 @@ test("the empty-slot context menu proposes a real range", async ({ page }) => {
   await expect(page.locator("#context-menu")).toContainText("Block this hour");
 });
 
+test("a runtime-blocked hour survives navigation and view detours", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "resourceDay");
+
+  // Driven through the intent event rather than pointer geometry, like the
+  // other empty-slot verbs: today (or the next opening day) is never frozen,
+  // so "Block this hour" is enabled there.
+  const { iso, resourceId } = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const anchor = Temporal.PlainDate.from(calendar.getAttribute("date"));
+    let date = anchor;
+    while (date.dayOfWeek > 5) date = date.add({ days: 1 });
+    return { iso: date.toString(), resourceId: String(calendar.resources[0].id) };
+  });
+  await gotoDate(page, iso);
+  await page.evaluate(
+    ([day, room]) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      calendar.dispatchEvent(
+        new CustomEvent("calendar:eventcontextmenu", {
+          bubbles: true,
+          composed: true,
+          detail: {
+            event: null,
+            date: day,
+            time: `${day}T10:00:00[Europe/Brussels]`,
+            resourceId: room,
+            clientX: 0,
+            clientY: 0,
+          },
+        }),
+      );
+    },
+    [iso, resourceId],
+  );
+  const menu = page.locator("#context-menu");
+  await expect(menu).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Block this hour" }).click();
+
+  const extras = () =>
+    page.evaluate(() => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      return (calendar.backgrounds ?? []).filter(
+        (/** @type {any} */ background) => background.title === "Blocked by the operator",
+      ).length;
+    });
+  await expect.poll(extras).toBe(1);
+  const painted = await page.locator(".cv-background.sc-blocked").count();
+
+  // Navigation rebuilds the derived ranges; the app-side addition must be
+  // re-merged rather than dropped.
+  await page.evaluate(() => /** @type {any} */ (document.querySelector("calendar-view")).next());
+  await flushRender(page);
+  await page.evaluate(() => /** @type {any} */ (document.querySelector("calendar-view")).prev());
+  await flushRender(page);
+  await expect(extras()).resolves.toBe(1);
+  await expect(page.locator(".cv-background.sc-blocked")).toHaveCount(painted);
+
+  // Month and list clear the calendar's projection; the shell keeps its own
+  // state and restores it with the next time grid.
+  await setView(page, "month");
+  await expect(page.locator(".cv-background")).toHaveCount(0);
+  await setView(page, "resourceDay");
+  await expect(page.locator(".cv-background.sc-blocked")).toHaveCount(painted);
+  await expect(extras()).resolves.toBe(1);
+});
+
 /**
  * Latest opening day strictly before the anchor that carries a booking. The
  * fixture seeds behind the anchor, but how far back and how densely is
@@ -715,6 +783,43 @@ test("dragging a workbench row onto the grid places it", async ({ page, isMobile
   expect(outcome.rows).toBe(1);
   expect(outcome.active).toBe(String(id));
 });
+test("a workbench row follows mouse movement and places without activating another row", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await openPanel(page);
+  const empty = await emptyDayFrom(page, (await anchorDate(page)).add({ days: 21 }));
+  const node = page.locator('.cv-event[data-kind="planning"]').first();
+  const id = await node.getAttribute("data-event-id");
+  await node.click({ button: "right" });
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
+  await gotoDate(page, empty);
+  await scrollToMorning(page);
+  const row = page.locator(`#workbench-list button[data-event-id="${id}"]`);
+  const source = await row.boundingBox();
+  if (!source) throw new Error("Expected a visible workbench row");
+  const point = await page.evaluate(() => {
+    const body = /** @type {HTMLElement} */ (document.querySelector(".cv-day-body"));
+    const rect = body.getBoundingClientRect();
+    const ten = [...document.querySelectorAll(".cv-axis-label")].find((label) =>
+      label.textContent?.trim().startsWith("10"),
+    );
+    return { x: rect.left + rect.width / 2, y: (ten?.getBoundingClientRect().y ?? rect.top + 220) + 12 };
+  });
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator(".cv-external-ghost")).toBeVisible();
+  await expect(page.locator(".cv-external-ghost")).not.toHaveClass(/cv-invalid/);
+  await page.mouse.up();
+  await expect(page.locator("#workbench-list li")).toHaveCount(0);
+  await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+  const start = await page.evaluate(
+    (id) => String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById(id).start),
+    id,
+  );
+  expect(start.slice(0, 10)).toBe(empty.toString());
+});
+
 test("pasting the armed item places it, and an occupied slot keeps it", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
@@ -834,7 +939,7 @@ test("an armed placement previews its target until pasted or cleared", async ({ 
   const empty = await emptyDayFrom(page, anchor.add({ days: 21 }));
   // Park a timed booking: it is armed, so a later empty-slot target previews
   // at the real duration once the context menu closes (the keyboard target
-  // was invisible before M15).
+  // is otherwise invisible).
   const node = page.locator('.cv-event[data-kind="planning"]').first();
   await node.click({ button: "right" });
   await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
@@ -1058,7 +1163,7 @@ test("right-clicking a day header queues that day's bookings", async ({ page }) 
 });
 
 /**
- * M13 in the shell: `violation()` used to answer only once the drop had
+ * Shell-side interaction policy: `violation()` used to answer only once the drop had
  * committed - the booking was accepted, snapped back, and explained by a
  * toast. As an interaction policy the same function answers while the
  * pointer is still down, so these tests assert the refusal is visible
@@ -1201,9 +1306,10 @@ test("a refused selection drag paints its own ghost", async ({ page }) => {
 });
 
 /**
- * M11 in the shell: the core marks every rendered node past/current/future
- * against the render's own `now`, and re-renders by itself at the next
- * boundary. The cockpit counter reads that fact instead of keeping a clock.
+ * Shell-side temporal state: the core marks every rendered node
+ * past/current/future against the render's own `now`, and re-renders by
+ * itself at the next boundary. The cockpit counter reads that fact instead
+ * of keeping a clock.
  */
 test("the cockpit counts what the core marks as running", async ({ page }) => {
   await page.goto("/demo/showcase.html");
@@ -1234,11 +1340,15 @@ test("the cockpit counts what the core marks as running", async ({ page }) => {
   });
   await flushRender(page);
 
-  await expect(page.locator('[data-event-id="probe-running"]')).toHaveAttribute(
-    "data-temporal-state",
-    "current",
-  );
-  await expect(page.locator('[data-event-id="probe-done"]')).toHaveAttribute("data-temporal-state", "past");
+  // Near midnight a probe spans two days and legitimately has two slices.
+  for (const [id, state] of [
+    ["probe-running", "current"],
+    ["probe-done", "past"],
+  ]) {
+    const slices = page.locator(`[data-event-id="${id}"]`);
+    await expect(slices.first()).toHaveAttribute("data-temporal-state", state);
+    for (const slice of await slices.all()) await expect(slice).toHaveAttribute("data-temporal-state", state);
+  }
   // The chip counts events, not nodes: a booking spanning several days owns
   // several nodes, and the fixture may already have something running.
   const distinct = await page.evaluate(() => {
@@ -1450,7 +1560,7 @@ test("a building-wide closure is drawn in a combined view, and refuses there", a
 });
 
 /**
- * M16 in the shell: one level of room grouping. The core derives the
+ * Shell-side room grouping: one level. The core derives the
  * sections and owns the column spans; the shell only declares the groups,
  * skins the row and mirrors the same sections in its own filter - grouping
  * never becomes a core filter.

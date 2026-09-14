@@ -2,11 +2,14 @@
  * Viewport autoscroll for pointer drag operations.
  *
  * Kept separate from layout math on purpose: it only reads the scroller
- * geometry and advances `scrollTop` while the pointer rests near an edge.
+ * geometry and advances `scrollTop`/`scrollLeft` while the pointer rests
+ * near an edge. Each axis is independent: one stops as soon as the pointer
+ * leaves its edge zone, and the loop stops entirely once neither axis wants
+ * to scroll.
  *
  * ```js
  * const autoscroll = createAutoscroller(scroller);
- * node.addEventListener("pointermove", (event) => autoscroll.update(event.clientY));
+ * node.addEventListener("pointermove", (event) => autoscroll.update(event.clientX, event.clientY));
  * node.addEventListener("pointerup", () => autoscroll.stop());
  * ```
  *
@@ -20,10 +23,11 @@ export declare function createAutoscroller(scroller: Element, { edge, speed }?: 
     speed?: number;
 }): {
     /**
+     * @param {number} clientX
      * @param {number} clientY
      * @returns {void}
      */
-    update(clientY: number): void;
+    update(clientX: number, clientY: number): void;
     /** @returns {void} */
     stop(): void;
 };

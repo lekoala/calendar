@@ -1,5 +1,5 @@
 /**
- * Application-owned move workbench (USE_CASES §12).
+ * Application-owned move workbench: the cut/copy/park queue of the shell.
  *
  * Holds the list of events waiting to be placed elsewhere, plus the one
  * currently armed ("active") for a paste or drag. The workbench is the

@@ -266,6 +266,12 @@ calendar.scrollToTime("10:00")
 act on the loaded state can await a single load instead of firing a second
 one. Ignoring the return keeps the previous fire-and-forget behavior.
 
+`scrollToTime()` is charitable before the first render: a call made while
+the grid does not exist yet (typical page-init order) is recorded and
+applied once the first render has produced the scroller, last write
+winning. The return value is always the requested pixel offset, applied or
+not.
+
 ## Reveal
 
 Search happens outside the core; the result carries the anchor, so the
@@ -547,8 +553,16 @@ Rules:
   calendar's own state via `calendar.getEventOverlaps(target)`;
 - the drop dispatches `calendar:externaldrop` with only the anchor; a
   non-validatable target suppresses the drop silently;
-- the drop is HTML5-DnD only, so touch/keyboard use the paste path installed
-  by the application (e.g. the move workbench pastes the armed item).
+- mouse drags use Pointer Events with capture and one preview update per
+  animation frame; native HTML5 drag events also remain supported;
+- the ghost is reused and validation runs on snapped-target or calendar
+  state changes, then runs fresh on drop. Changes only to application-owned
+  policy state are picked up at the next target change or drop;
+- Escape, pointer cancellation, lost capture, source removal and calendar
+  disconnect cancel placement. A drag suppresses the residual source click;
+- touch/keyboard use the paste path installed by the application (e.g. the
+  move workbench pastes the armed item). `nativeEvent` is the originating
+  `PointerEvent` for mouse placement or `DragEvent` for native HTML5 DnD.
 
 ## DOM events
 

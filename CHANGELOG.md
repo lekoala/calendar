@@ -37,13 +37,35 @@ query subsystem, resource tree or source cache was added.
   group order winning over the `resources` array order, ungrouped resources
   trailing without a header, and the first duplicate group id winning.
   Hierarchy/expand/collapse stays out of scope by design.
+* Two-axis viewport autoscroll: dragging along a column body keeps scrolling
+  vertically as before, and now also scrolls horizontally while the pointer
+  rests near the scroller edge, so wide resource grids can be dragged
+  through columns that are off screen.
+* Geometry seams for the time-grid chrome: `--calendar-axis-size` (the
+  axis track the column list repeats after, shared with the renderer's grid
+  template), `--calendar-resource-row-size` (resource header height and the
+  sticky offset it imposes on day headers) and `--calendar-group-row-size`
+  (group header height and its stacked offsets, defaulting to the resource
+  row size). Overriding one variable moves the whole coupled set; the
+  showcase no longer re-points those offsets itself.
 
 ### Fixed
 
+* External mouse placement follows captured pointer coordinates once per
+  animation frame, reuses the ghost and skips repeated validation within a
+  snapped slot. Calendar state changes invalidate the preview decision; drop
+  always revalidates. Escape, cancellation and disconnect clean up the gesture.
+* Overlap queries compare canonical zoned boundaries directly by instant,
+  avoiding unnecessary time-zone projections. The showcase workbench reuses
+  its range context for conflict checks instead of scanning events again.
 * A policy-refused resize and a policy-refused selection drag now paint the
   refusal: both already carried `cv-invalid` and `data-reason`, but only the
   drag mirror and the external ghost had a stylesheet rule, so those two
   looked identical to an accepted gesture.
+* `scrollToTime()` before the first render is no longer a silent no-op: the
+  requested offset is recorded and applied once the first render has
+  produced the scroller (last write wins), and the return value is always
+  the requested pixel offset instead of `0`.
 
 ### Notes
 

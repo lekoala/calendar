@@ -4130,6 +4130,12 @@
   }
 
   // src/core/overlaps.js
+  function comparisonRange(start, end, timeZone) {
+    if (start instanceof Temporal2.ZonedDateTime && end instanceof Temporal2.ZonedDateTime) {
+      return { start, end };
+    }
+    return instantRangeOf(start, end, timeZone);
+  }
   function queryRangeContext({
     events = [],
     backgrounds = [],
@@ -4140,7 +4146,7 @@
     if (!range || range.start == null || range.end == null) {
       throw new TypeError("getRangeContext requires { start, end }");
     }
-    const { start: rangeStart, end: rangeEnd } = instantRangeOf(range.start, range.end, timeZone);
+    const { start: rangeStart, end: rangeEnd } = comparisonRange(range.start, range.end, timeZone);
     const startMs = rangeStart.epochMilliseconds;
     const endMs = rangeEnd.epochMilliseconds;
     const context = { events: { overlapping: [] }, backgrounds: { overlapping: [], covering: [] } };
@@ -4150,7 +4156,7 @@
     for (const event of events) {
       if (scoped !== null && (event.resourceId ?? null) !== scoped)
         continue;
-      const { start: eventStart, end: eventEnd } = instantRangeOf(event.start, event.end, timeZone);
+      const { start: eventStart, end: eventEnd } = comparisonRange(event.start, event.end, timeZone);
       if (!rangesOverlap(startMs, endMs, eventStart.epochMilliseconds, eventEnd.epochMilliseconds))
         continue;
       context.events.overlapping.push(event);
@@ -4158,7 +4164,7 @@
     for (const background of backgrounds) {
       if (scoped !== null && background.resourceId != null && background.resourceId !== scoped)
         continue;
-      const { start: backgroundStart, end: backgroundEnd } = instantRangeOf(background.start, background.end, timeZone);
+      const { start: backgroundStart, end: backgroundEnd } = comparisonRange(background.start, background.end, timeZone);
       const backgroundStartMs = backgroundStart.epochMilliseconds;
       const backgroundEndMs = backgroundEnd.epochMilliseconds;
       if (!rangesOverlap(startMs, endMs, backgroundStartMs, backgroundEndMs))
@@ -4185,7 +4191,7 @@
     if (!range || range.start == null || range.end == null) {
       throw new TypeError("getEventOverlaps requires { start, end }");
     }
-    const { start: startInstant, end: endInstant } = instantRangeOf(range.start, range.end, timeZone);
+    const { start: startInstant, end: endInstant } = comparisonRange(range.start, range.end, timeZone);
     const startMs = startInstant.epochMilliseconds;
     const endMs = endInstant.epochMilliseconds;
     if (!(endMs > startMs))
@@ -4195,7 +4201,7 @@
     for (const event of events) {
       if (scoped.length > 0 && !scoped.includes(event.resourceId))
         continue;
-      const { start: eventStart, end: eventEnd } = instantRangeOf(event.start, event.end, timeZone);
+      const { start: eventStart, end: eventEnd } = comparisonRange(event.start, event.end, timeZone);
       if (!rangesOverlap(startMs, endMs, eventStart.epochMilliseconds, eventEnd.epochMilliseconds))
         continue;
       const entry = { kind: "event", event };
@@ -4208,7 +4214,7 @@
         if (scoped.length > 0 && background.resourceId != null && !scoped.includes(background.resourceId)) {
           continue;
         }
-        const { start: backgroundStart, end: backgroundEnd } = instantRangeOf(background.start, background.end, timeZone);
+        const { start: backgroundStart, end: backgroundEnd } = comparisonRange(background.start, background.end, timeZone);
         if (!rangesOverlap(startMs, endMs, backgroundStart.epochMilliseconds, backgroundEnd.epochMilliseconds)) {
           continue;
         }
@@ -4605,7 +4611,8 @@
 
   // src/render/autoscroll.js
   function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
-    let delta = 0;
+    let deltaX = 0;
+    let deltaY = 0;
     let frame = 0;
     const cancel = () => {
       if (frame === 0)
@@ -4615,27 +4622,33 @@
     };
     const tick = () => {
       if (!scroller.isConnected) {
-        delta = 0;
+        deltaX = 0;
+        deltaY = 0;
         frame = 0;
         return;
       }
-      scroller.scrollTop += delta;
+      scroller.scrollTop += deltaY;
+      scroller.scrollLeft += deltaX;
       frame = requestAnimationFrame(tick);
     };
     return {
-      update(clientY) {
+      update(clientX, clientY) {
         const rect = scroller.getBoundingClientRect();
-        const next = clientY < rect.top + edge ? -speed : clientY > rect.bottom - edge ? speed : 0;
-        if (next === delta)
+        const nextY = clientY < rect.top + edge ? -speed : clientY > rect.bottom - edge ? speed : 0;
+        const nextX = clientX < rect.left + edge ? -speed : clientX > rect.right - edge ? speed : 0;
+        if (nextX === deltaX && nextY === deltaY)
           return;
-        delta = next;
-        if (delta !== 0 && frame === 0 && scroller.isConnected)
+        deltaX = nextX;
+        deltaY = nextY;
+        if ((deltaX !== 0 || deltaY !== 0) && frame === 0 && scroller.isConnected) {
           frame = requestAnimationFrame(tick);
-        if (delta === 0)
+        }
+        if (deltaX === 0 && deltaY === 0)
           cancel();
       },
       stop() {
-        delta = 0;
+        deltaX = 0;
+        deltaY = 0;
         cancel();
       }
     };
@@ -4665,7 +4678,7 @@
     const sections = resourceView ? groupResources(resources, resourceGroups) : [];
     const orderedResources = resourceView && sections.length > 0 ? sections.flatMap((section) => section.resources) : resources;
     const columns = resourceView ? getResourceColumns(orderedResources, dates) : getTimeGridColumns(dates);
-    const gridTemplate = `3.5rem repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
+    const gridTemplate = `var(--calendar-axis-size) repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
     if (resourceView) {
       const declaredSections = sections.filter((section) => section.group != null);
       if (declaredSections.length > 0) {
@@ -5550,7 +5563,7 @@
               mirror.setAttribute("aria-hidden", "true");
               node.classList.add("cv-drag-source");
             }
-            autoscroll?.update(moveEvent.clientY);
+            autoscroll?.update(moveEvent.clientX, moveEvent.clientY);
             const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
             if (hit)
               node.removeAttribute("data-dropout");
@@ -5959,9 +5972,11 @@
       }
     }
     let externalGhost = null;
+    let externalPreview = null;
     function removeExternalGhost() {
       externalGhost?.node.remove();
       externalGhost = null;
+      externalPreview = null;
     }
     function externalTargetValidity(date, time, resourceId, allDay, droppable) {
       if (!droppable)
@@ -5974,15 +5989,25 @@
         return { ok: false, reason: result };
       return { ok: true, reason: null };
     }
-    function resolveExternal(clientX, clientY) {
+    function resolveExternal(clientX, clientY, refresh = false) {
       const external = host.getExternalDrag();
       if (!external)
         return null;
       const meta = external.meta;
+      const revision = host.getInteractionRevision();
+      const cached = (key) => !refresh && externalGhost?.node.isConnected && externalPreview?.source === external && externalPreview.revision === revision && externalPreview.key === key ? externalPreview.placement : null;
+      const remember = (key, placement) => {
+        externalPreview = { source: external, revision, key, placement };
+        return placement;
+      };
       if (meta.allDay === true || columnIndexAtX(clientX) >= 0 && isOverLane(clientY)) {
         const index = columnIndexAtX(clientX);
         if (index < 0)
           return null;
+        const key = `lane:${index}`;
+        const previous = cached(key);
+        if (previous)
+          return previous;
         const column = columns[index];
         const resourceId = column.resource?.id ?? null;
         const policy = host.checkInteraction({
@@ -5994,22 +6019,22 @@
           allDay: true
         });
         if (!policy.ok) {
-          return {
+          return remember(key, {
             kind: "lane",
             index,
             target: { date: column.date, time: null, resourceId, allDay: true },
             ok: false,
             reason: policy.reason
-          };
+          });
         }
         const validity = externalTargetValidity(column.date, null, resourceId, true, column.resource?.droppable !== false);
-        return {
+        return remember(key, {
           kind: "lane",
           index,
           target: { date: column.date, time: null, resourceId, allDay: true },
           ok: validity.ok,
           reason: validity.reason
-        };
+        });
       }
       const hit = gridHit(clientX, clientY);
       if (!hit)
@@ -6022,6 +6047,10 @@
       if (start < startMinutes)
         return null;
       const end = start + duration;
+      const key = `grid:${hit.column}:${start}:${end}`;
+      const previous = cached(key);
+      if (previous)
+        return previous;
       const column = columns[hit.column];
       const time = zonedDateTimeAt(column.date, start, timeZone);
       const resourceId = column.resource?.id ?? null;
@@ -6033,7 +6062,7 @@
         resourceId
       });
       if (!policy.ok) {
-        return {
+        return remember(key, {
           kind: "grid",
           index: hit.column,
           start,
@@ -6042,10 +6071,10 @@
           target: { date: column.date, time, resourceId, allDay: false },
           ok: false,
           reason: policy.reason
-        };
+        });
       }
       const validity = externalTargetValidity(column.date, time, resourceId, false, column.resource?.droppable !== false);
-      return {
+      return remember(key, {
         kind: "grid",
         index: hit.column,
         start,
@@ -6054,47 +6083,52 @@
         target: { date: column.date, time, resourceId, allDay: false },
         ok: validity.ok,
         reason: validity.reason
-      };
+      });
     }
     function isOverLane(clientY) {
       const rect = lane.getBoundingClientRect();
       return rect.height > 0 && clientY >= rect.top && clientY <= rect.bottom;
     }
     function paintExternalGhost(placement) {
-      removeExternalGhost();
-      const external = host.getExternalDrag();
-      if (!placement)
+      if (!placement) {
+        removeExternalGhost();
         return;
-      let node;
-      if (placement.kind === "grid") {
+      }
+      const external = host.getExternalDrag();
+      let node = externalGhost?.node;
+      if (!node?.isConnected || externalGhost?.kind !== placement.kind) {
+        node?.remove();
         node = document.createElement("div");
         node.className = "cv-external-ghost";
         node.setAttribute("aria-hidden", "true");
+        const label = document.createElement("span");
+        label.className = "cv-external-ghost-label";
+        node.append(label);
+        externalGhost = { kind: placement.kind, node };
+      }
+      const label = node.firstElementChild;
+      const title = external?.meta.title ?? "";
+      if (label.textContent !== title)
+        label.textContent = title;
+      if (placement.kind === "grid") {
         node.style.top = `${(placement.start - startMinutes) * pxPerMinute}px`;
         node.style.height = `${(placement.end - placement.start) * pxPerMinute}px`;
-        if (external?.meta.title) {
-          const label = document.createElement("span");
-          label.className = "cv-external-ghost-label";
-          label.textContent = external.meta.title;
-          node.append(label);
-        }
-        bodies[placement.index].body.append(node);
+        const body = bodies[placement.index].body;
+        if (node.parentNode !== body)
+          body.append(node);
       } else {
-        node = document.createElement("div");
-        node.className = "cv-external-ghost cv-external-ghost-lane";
-        node.setAttribute("aria-hidden", "true");
+        node.classList.add("cv-external-ghost-lane");
+        label.className = "";
         node.style.gridColumn = `${placement.index + 2} / ${placement.index + 3}`;
         node.style.gridRow = "1 / -1";
-        if (external?.meta.title)
-          node.textContent = external.meta.title;
-        lane.append(node);
+        if (node.parentNode !== lane)
+          lane.append(node);
       }
-      if (!placement.ok) {
-        node.classList.add("cv-invalid");
-        if (placement.reason)
-          node.dataset.reason = placement.reason;
-      }
-      externalGhost = { kind: placement.kind, node };
+      node.classList.toggle("cv-invalid", !placement.ok);
+      if (placement.reason)
+        node.dataset.reason = placement.reason;
+      else
+        delete node.dataset.reason;
     }
     root.addEventListener("dragover", (event) => {
       if (!host.getExternalDrag())
@@ -6112,12 +6146,12 @@
         return;
       removeExternalGhost();
     });
-    root.addEventListener("drop", (event) => {
+    function dropExternal(event) {
       const external = host.getExternalDrag();
       if (!external)
         return;
       event.preventDefault();
-      const placement = resolveExternal(event.clientX, event.clientY);
+      const placement = resolveExternal(event.clientX, event.clientY, true);
       removeExternalGhost();
       if (!placement?.ok)
         return;
@@ -6142,6 +6176,34 @@
           nativeEvent: event
         }
       }));
+    }
+    root.addEventListener("drop", dropExternal);
+    let externalAutoscroll = null;
+    function pointerOverGrid(x, y) {
+      const element = document.elementFromPoint(x, y);
+      return element !== null && root.contains(element);
+    }
+    host.setExternalDropTarget({
+      move(x, y) {
+        if (!pointerOverGrid(x, y)) {
+          externalAutoscroll?.stop();
+          removeExternalGhost();
+          return;
+        }
+        const scroller = root.closest(".cv-scroller");
+        if (!externalAutoscroll && scroller)
+          externalAutoscroll = createAutoscroller(scroller);
+        externalAutoscroll?.update(x, y);
+        paintExternalGhost(resolveExternal(x, y));
+      },
+      drop(event) {
+        if (pointerOverGrid(event.clientX, event.clientY))
+          dropExternal(event);
+      },
+      clear() {
+        externalAutoscroll?.stop();
+        removeExternalGhost();
+      }
     });
     fragment.append(root);
     return fragment;
@@ -6179,14 +6241,20 @@
     #backgrounds = [];
     #externalDrops = new Map;
     #dragExternal = null;
+    #externalDropTarget = null;
+    #cancelExternalPointer = null;
+    #externalPointerSource = null;
+    #suppressExternalClick = false;
     #preview = null;
     #config = {};
     #abortController = null;
     #requestVersion = 0;
     #batchDepth = 0;
     #renderQueued = false;
+    #interactionRevision = 0;
     #afterRenderQueue = [];
     #pendingAnnounce = null;
+    #pendingScrollTop = null;
     #announceFrame = null;
     #agingTimer = null;
     #revealTimer = null;
@@ -6199,12 +6267,16 @@
       this.#queueRender();
     }
     disconnectedCallback() {
+      this.#cancelExternalPointer?.();
+      this.#clearExternalDrag();
+      this.#externalDropTarget = null;
       this.#abortController?.abort();
       const dropped = this.#afterRenderQueue;
       this.#afterRenderQueue = [];
       for (const entry of dropped)
         entry.cancel?.();
       this.#pendingAnnounce = null;
+      this.#pendingScrollTop = null;
       if (this.#announceFrame !== null) {
         cancelAnimationFrame(this.#announceFrame);
         this.#announceFrame = null;
@@ -6300,12 +6372,27 @@
       this.gotoDate(Temporal2.Now.plainDateISO(timeZone));
     }
     scrollToTime(value) {
-      const scroller = this.querySelector(".cv-scroller");
-      if (!scroller)
-        return 0;
       const options = this.#options();
       const startMinutes = minutesFromMidnight(options.slotMin);
       const top = Math.max(0, (minutesFromMidnight(value) - startMinutes) * options.pxPerMinute);
+      const scroller = this.querySelector(".cv-scroller");
+      if (!scroller) {
+        if (this.#pendingScrollTop === null) {
+          this.#afterRender(() => {
+            const target = this.#pendingScrollTop;
+            this.#pendingScrollTop = null;
+            if (target === null || !this.isConnected)
+              return;
+            const pending = this.querySelector(".cv-scroller");
+            if (pending)
+              pending.scrollTop = target;
+          }, () => {
+            this.#pendingScrollTop = null;
+          });
+        }
+        this.#pendingScrollTop = top;
+        return top;
+      }
       scroller.scrollTop = top;
       return top;
     }
@@ -6596,17 +6683,32 @@
       element.draggable = true;
       const entry = { payload, meta };
       const onStart = (event) => {
+        if (this.#cancelExternalPointer) {
+          event.preventDefault();
+          return;
+        }
+        this.#clearExternalDrag();
         this.#dragExternal = entry;
         event.dataTransfer?.setData("text/plain", String(payload ?? ""));
         if (event.dataTransfer)
           event.dataTransfer.effectAllowed = "copy";
       };
       const onEnd = () => {
-        this.#dragExternal = null;
+        this.#clearExternalDrag();
+      };
+      const onPointerDown = (event) => this.#startExternalPointer(element, entry, event);
+      const onClick = (event) => {
+        if (!this.#suppressExternalClick || event.detail === 0)
+          return;
+        this.#suppressExternalClick = false;
+        event.preventDefault();
+        event.stopImmediatePropagation();
       };
       element.addEventListener("dragstart", onStart);
       element.addEventListener("dragend", onEnd);
-      this.#externalDrops.set(element, { ...entry, onStart, onEnd });
+      element.addEventListener("pointerdown", onPointerDown);
+      element.addEventListener("click", onClick, true);
+      this.#externalDrops.set(element, { ...entry, onStart, onEnd, onPointerDown, onClick });
       return this;
     }
     removeExternalDrop(element) {
@@ -6615,11 +6717,102 @@
         return false;
       element.removeEventListener("dragstart", entry.onStart);
       element.removeEventListener("dragend", entry.onEnd);
+      element.removeEventListener("pointerdown", entry.onPointerDown);
+      element.removeEventListener("click", entry.onClick, true);
       element.draggable = false;
       this.#externalDrops.delete(element);
-      if (this.#dragExternal?.payload === entry.payload)
-        this.#dragExternal = null;
+      if (this.#externalPointerSource === element)
+        this.#cancelExternalPointer?.();
+      if (this.#dragExternal?.payload === entry.payload) {
+        this.#cancelExternalPointer?.();
+        this.#clearExternalDrag();
+      }
       return true;
+    }
+    #clearExternalDrag() {
+      this.#dragExternal = null;
+      this.#externalDropTarget?.clear();
+      for (const node of this.querySelectorAll(".cv-external-ghost"))
+        node.remove();
+    }
+    #startExternalPointer(element, entry, down) {
+      if (down.button !== 0 || down.pointerType !== "mouse" || !down.isPrimary || !this.isConnected)
+        return;
+      this.#cancelExternalPointer?.();
+      this.#suppressExternalClick = false;
+      let active = false;
+      let x = down.clientX;
+      let y = down.clientY;
+      let frame = 0;
+      const cleanup = () => {
+        cancelAnimationFrame(frame);
+        element.removeEventListener("pointermove", move);
+        element.removeEventListener("pointerup", up);
+        element.removeEventListener("pointercancel", cancel);
+        element.removeEventListener("lostpointercapture", cancel);
+        element.ownerDocument.removeEventListener("keydown", key, true);
+        this.#cancelExternalPointer = null;
+        this.#externalPointerSource = null;
+        if (element.hasPointerCapture(down.pointerId))
+          element.releasePointerCapture(down.pointerId);
+        this.#clearExternalDrag();
+      };
+      const cancel = () => {
+        this.#suppressExternalClick = active;
+        cleanup();
+      };
+      const tick = () => {
+        if (!this.isConnected || !element.isConnected || !this.#externalDrops.has(element)) {
+          cancel();
+          return;
+        }
+        this.#externalDropTarget?.move(x, y);
+        if (this.#cancelExternalPointer === cancel)
+          frame = requestAnimationFrame(tick);
+      };
+      const move = (event) => {
+        if (event.pointerId !== down.pointerId)
+          return;
+        x = event.clientX;
+        y = event.clientY;
+        if (!active && Math.hypot(x - down.clientX, y - down.clientY) >= 4) {
+          active = true;
+          this.#dragExternal = entry;
+          frame = requestAnimationFrame(tick);
+        }
+        if (active)
+          event.preventDefault();
+      };
+      const up = (event) => {
+        if (event.pointerId !== down.pointerId)
+          return;
+        this.#suppressExternalClick = active;
+        try {
+          if (active)
+            this.#externalDropTarget?.drop(event);
+        } finally {
+          cleanup();
+        }
+      };
+      const key = (event) => {
+        if (event.key !== "Escape")
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        cancel();
+      };
+      try {
+        element.setPointerCapture(down.pointerId);
+      } catch {
+        return;
+      }
+      this.#cancelExternalPointer = cancel;
+      this.#externalPointerSource = element;
+      element.addEventListener("pointermove", move);
+      element.addEventListener("pointerup", up);
+      element.addEventListener("pointercancel", cancel);
+      element.addEventListener("lostpointercapture", cancel);
+      element.ownerDocument.addEventListener("keydown", key, true);
     }
     batch(callback) {
       this.#batchDepth += 1;
@@ -6678,6 +6871,7 @@
       }));
     }
     #queueRender() {
+      this.#interactionRevision += 1;
       if (this.#batchDepth || this.#renderQueued)
         return;
       this.#renderQueued = true;
@@ -6747,6 +6941,8 @@
       };
     }
     #render() {
+      this.#externalDropTarget?.clear();
+      this.#externalDropTarget = null;
       const options = this.#options();
       const dateOptions = this.#dateOptions();
       const dates2 = getVisibleDates(this.date, this.view, dateOptions);
@@ -6816,8 +7012,10 @@
             commitEventMove: (input) => this.#commitEventMove(input),
             commitEventResize: (input) => this.#commitEventResize(input),
             getExternalDrag: () => this.#dragExternal,
-            clearExternalDrag: () => {
-              this.#dragExternal = null;
+            clearExternalDrag: () => this.#clearExternalDrag(),
+            getInteractionRevision: () => this.#interactionRevision,
+            setExternalDropTarget: (target) => {
+              this.#externalDropTarget = target;
             },
             getPreview: () => this.#preview
           },

@@ -1,4 +1,9 @@
 import { Temporal } from "temporal-polyfill";
+export type ExternalDropTarget = {
+    move: (x: number, y: number) => void;
+    drop: (event: PointerEvent) => void;
+    clear: () => void;
+};
 export type TimeGridHost = {
     editable?: boolean;
     isConnected: () => boolean;
@@ -57,6 +62,14 @@ export type TimeGridHost = {
     } | null;
     clearExternalDrag: () => void;
     /**
+     * changes when canonical state or configuration changes
+     */
+    getInteractionRevision: () => number;
+    /**
+     * register pointer placement callbacks for this rendered grid
+     */
+    setExternalDropTarget: (target: ExternalDropTarget) => void;
+    /**
      * application-proposed range overlay, or null
      */
     getPreview: () => {
@@ -107,6 +120,12 @@ export type ActiveSelection = {
     end: number;
 };
 /**
+ * @typedef {object} ExternalDropTarget
+ * @property {(x: number, y: number) => void} move
+ * @property {(event: PointerEvent) => void} drop
+ * @property {() => void} clear
+ */
+/**
  * Narrow host seam between the element and the renderer. The grid never
  * touches element internals: the class injects bound callbacks, so its own
  * state and helpers can stay truly private (`#field`).
@@ -139,6 +158,8 @@ export type ActiveSelection = {
  * }) => import("../core/model.js").NormalizedEvent | null} commitEventResize
  * @property {() => { payload: unknown, meta: import("../calendar-view.js").ExternalDropMeta } | null} getExternalDrag
  * @property {() => void} clearExternalDrag
+ * @property {() => number} getInteractionRevision changes when canonical state or configuration changes
+ * @property {(target: ExternalDropTarget) => void} setExternalDropTarget register pointer placement callbacks for this rendered grid
  * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null} getPreview application-proposed range overlay, or null
  */
 /**

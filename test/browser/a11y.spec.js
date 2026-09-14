@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * M5 mobile + accessibility hardening: keyboard navigation and mutation,
+ * Accessibility and mobile hardening: keyboard navigation and mutation,
  * context intents (right-click + press-and-hold), live announcements,
  * human-readable names, reduced motion, forced colors and narrow viewports.
  *

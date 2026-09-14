@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * M6 month + list: summary grid and chronological list over shared state,
+ * Month + list: summary grid and chronological list over shared state,
  * alternate representations without resource matrices.
  *
  * @param {import("@playwright/test").Page} page

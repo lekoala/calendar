@@ -220,6 +220,12 @@ export declare class CalendarViewElement extends HTMLElement {
     next(): void;
     today(): void;
     /**
+     * Scrolls the time-grid body so `value` sits at the top of the viewport.
+     * Charitable before the first render: a call during page init — before any
+     * rAF-rendered scroller exists — records the target and applies it on the
+     * post-render seam (last write wins). The return is always the requested
+     * offset in pixels, whether or not it has been applied yet.
+     *
      * @param {Temporal.PlainTime | string} value
      * @returns {number}
      */
@@ -416,6 +422,8 @@ export declare class CalendarViewElement extends HTMLElement {
      * a placement preview from `meta` and, on a real drop, dispatches
      * `calendar:externaldrop` with the opaque `payload` and the resolved
      * target anchor. The calendar never interprets the payload.
+     * Mouse placement follows captured pointer frames; native HTML5 drag
+     * events are also supported. Touch/keyboard placement stays application-owned.
      *
      * @param {HTMLElement} element
      * @param {unknown} payload opaque to the calendar

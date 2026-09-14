@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Temporal } from "temporal-polyfill";
 import { normalizeBackground, normalizeEvent } from "../../src/core/model.js";
 import { queryOverlaps, queryRangeContext, rangesOverlap } from "../../src/core/overlaps.js";
 
@@ -10,6 +11,25 @@ const at = (clock) => `2026-09-03T${clock}:00+02:00[Europe/Brussels]`;
 const events = (list) => list.map(normalizeEvent);
 /** @param {import("../../src/core/model.js").BackgroundInput[]} list */
 const backgrounds = (list) => list.map(normalizeBackground);
+
+test("normalized overlap comparisons preserve instants across zones and a DST fold", () => {
+  const event = normalizeEvent({
+    id: "fold",
+    start: "2026-10-25T02:15:00+02:00[Europe/Brussels]",
+    end: "2026-10-25T02:45:00+01:00[Europe/Brussels]",
+  });
+  const background = normalizeBackground({ id: "range", start: event.start, end: event.end });
+  const range = {
+    start: Temporal.ZonedDateTime.from("2026-10-24T21:00:00-04:00[America/New_York]"),
+    end: Temporal.ZonedDateTime.from("2026-10-24T21:30:00-04:00[America/New_York]"),
+  };
+  const query = { events: [event], backgrounds: [background], range, timeZone: "Asia/Tokyo" };
+  assert.deepEqual(queryOverlaps({ ...query, includeBackgrounds: true }), [event, background]);
+  assert.deepEqual(queryRangeContext(query), {
+    events: { overlapping: [event] },
+    backgrounds: { overlapping: [background], covering: [background] },
+  });
+});
 
 test("rangesOverlap is half-open: adjacency is not overlap", () => {
   assert.equal(rangesOverlap(0, 60, 60, 120), false);

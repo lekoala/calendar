@@ -1,4 +1,19 @@
+import { Temporal } from "temporal-polyfill";
 import { instantRangeOf } from "./slicing.js";
+
+/**
+ * Zoned boundaries already carry absolute instants. Comparison needs no
+ * wall-clock projection; only civil or unnormalized input needs conversion.
+ * @param {unknown} start
+ * @param {unknown} end
+ * @param {string} timeZone
+ */
+function comparisonRange(start, end, timeZone) {
+  if (start instanceof Temporal.ZonedDateTime && end instanceof Temporal.ZonedDateTime) {
+    return { start, end };
+  }
+  return instantRangeOf(start, end, timeZone);
+}
 
 /**
  * Public read surface over canonical event/background state.
@@ -71,7 +86,7 @@ export function queryRangeContext({
   if (!range || range.start == null || range.end == null) {
     throw new TypeError("getRangeContext requires { start, end }");
   }
-  const { start: rangeStart, end: rangeEnd } = instantRangeOf(range.start, range.end, timeZone);
+  const { start: rangeStart, end: rangeEnd } = comparisonRange(range.start, range.end, timeZone);
   const startMs = rangeStart.epochMilliseconds;
   const endMs = rangeEnd.epochMilliseconds;
   /** @type {RangeContext} */
@@ -82,14 +97,14 @@ export function queryRangeContext({
 
   for (const event of events) {
     if (scoped !== null && (event.resourceId ?? null) !== scoped) continue;
-    const { start: eventStart, end: eventEnd } = instantRangeOf(event.start, event.end, timeZone);
+    const { start: eventStart, end: eventEnd } = comparisonRange(event.start, event.end, timeZone);
     if (!rangesOverlap(startMs, endMs, eventStart.epochMilliseconds, eventEnd.epochMilliseconds)) continue;
     context.events.overlapping.push(event);
   }
 
   for (const background of backgrounds) {
     if (scoped !== null && background.resourceId != null && background.resourceId !== scoped) continue;
-    const { start: backgroundStart, end: backgroundEnd } = instantRangeOf(
+    const { start: backgroundStart, end: backgroundEnd } = comparisonRange(
       background.start,
       background.end,
       timeZone,
@@ -135,7 +150,7 @@ export function queryOverlaps({
   if (!range || range.start == null || range.end == null) {
     throw new TypeError("getEventOverlaps requires { start, end }");
   }
-  const { start: startInstant, end: endInstant } = instantRangeOf(range.start, range.end, timeZone);
+  const { start: startInstant, end: endInstant } = comparisonRange(range.start, range.end, timeZone);
   const startMs = startInstant.epochMilliseconds;
   const endMs = endInstant.epochMilliseconds;
   if (!(endMs > startMs)) return [];
@@ -146,7 +161,7 @@ export function queryOverlaps({
 
   for (const event of events) {
     if (scoped.length > 0 && !scoped.includes(/** @type {string} */ (event.resourceId))) continue;
-    const { start: eventStart, end: eventEnd } = instantRangeOf(event.start, event.end, timeZone);
+    const { start: eventStart, end: eventEnd } = comparisonRange(event.start, event.end, timeZone);
     if (!rangesOverlap(startMs, endMs, eventStart.epochMilliseconds, eventEnd.epochMilliseconds)) continue;
     const entry = { kind: /** @type {"event"} */ ("event"), event };
     if (filter && !filter(entry)) continue;
@@ -158,7 +173,7 @@ export function queryOverlaps({
       if (scoped.length > 0 && background.resourceId != null && !scoped.includes(background.resourceId)) {
         continue;
       }
-      const { start: backgroundStart, end: backgroundEnd } = instantRangeOf(
+      const { start: backgroundStart, end: backgroundEnd } = comparisonRange(
         background.start,
         background.end,
         timeZone,

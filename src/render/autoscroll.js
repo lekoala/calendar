@@ -2,11 +2,14 @@
  * Viewport autoscroll for pointer drag operations.
  *
  * Kept separate from layout math on purpose: it only reads the scroller
- * geometry and advances `scrollTop` while the pointer rests near an edge.
+ * geometry and advances `scrollTop`/`scrollLeft` while the pointer rests
+ * near an edge. Each axis is independent: one stops as soon as the pointer
+ * leaves its edge zone, and the loop stops entirely once neither axis wants
+ * to scroll.
  *
  * ```js
  * const autoscroll = createAutoscroller(scroller);
- * node.addEventListener("pointermove", (event) => autoscroll.update(event.clientY));
+ * node.addEventListener("pointermove", (event) => autoscroll.update(event.clientX, event.clientY));
  * node.addEventListener("pointerup", () => autoscroll.stop());
  * ```
  *
@@ -17,7 +20,9 @@
  */
 export function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
   /** @type {number} */
-  let delta = 0;
+  let deltaX = 0;
+  /** @type {number} */
+  let deltaY = 0;
   /** @type {number} */
   let frame = 0;
 
@@ -34,30 +39,41 @@ export function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
     // replaces the subtree) and no pointer event follows. The loop owns its
     // own liveness so it never outlives its target.
     if (!scroller.isConnected) {
-      delta = 0;
+      deltaX = 0;
+      deltaY = 0;
       frame = 0;
       return;
     }
-    scroller.scrollTop += delta;
+    scroller.scrollTop += deltaY;
+    scroller.scrollLeft += deltaX;
     frame = requestAnimationFrame(tick);
   };
 
   return {
     /**
+     * @param {number} clientX
      * @param {number} clientY
      * @returns {void}
      */
-    update(clientY) {
+    update(clientX, clientY) {
       const rect = scroller.getBoundingClientRect();
-      const next = clientY < rect.top + edge ? -speed : clientY > rect.bottom - edge ? speed : 0;
-      if (next === delta) return;
-      delta = next;
-      if (delta !== 0 && frame === 0 && scroller.isConnected) frame = requestAnimationFrame(tick);
-      if (delta === 0) cancel();
+      const nextY = clientY < rect.top + edge ? -speed : clientY > rect.bottom - edge ? speed : 0;
+      // `scrollLeft` follows the scroll origin, so its numeric direction
+      // differs under RTL; adding the delta still moves the content toward
+      // the edge the pointer rests on in every engine.
+      const nextX = clientX < rect.left + edge ? -speed : clientX > rect.right - edge ? speed : 0;
+      if (nextX === deltaX && nextY === deltaY) return;
+      deltaX = nextX;
+      deltaY = nextY;
+      if ((deltaX !== 0 || deltaY !== 0) && frame === 0 && scroller.isConnected) {
+        frame = requestAnimationFrame(tick);
+      }
+      if (deltaX === 0 && deltaY === 0) cancel();
     },
     /** @returns {void} */
     stop() {
-      delta = 0;
+      deltaX = 0;
+      deltaY = 0;
       cancel();
     },
   };

@@ -647,7 +647,7 @@ test("the two card skins are one attribute, and switching keeps the same cards",
   // what a skin does to a full card rather than what a container query
   // does to a short one.
   await page.evaluate(() => {
-    const cards = [...document.querySelectorAll(".cv-event")];
+    const cards = /** @type {HTMLElement[]} */ ([...document.querySelectorAll(".cv-event")]);
     const tallest = cards.reduce((best, card) => (card.clientHeight > best.clientHeight ? card : best));
     tallest.dataset.skinProbe = "1";
   });

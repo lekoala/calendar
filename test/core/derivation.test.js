@@ -11,7 +11,7 @@ import {
 } from "../../src/core/dates.js";
 
 /**
- * M8 date derivation: week anchoring, `firstDay` and `hiddenDays`.
+ * Date derivation: week anchoring, `firstDay` and `hiddenDays`.
  * 2026-09-03 is a Thursday.
  *
  * @param {Array<{ toString(): string }>} dates
