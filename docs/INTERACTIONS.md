@@ -65,7 +65,9 @@ The engine must eventually support:
 
 Resource `droppable: false` or event `movable: false` must prevent drag before it starts. Dropping on a non-droppable resource reverts silently without dispatching.
 
-During a drag the original node stays in place while a detached mirror follows the pointer across time, days and resources. The calendar commits optimistically on drop and re-renders; the residual click after a moved drag is suppressed.
+A column carries no new assignment when it has no resource of its own: dropping inside a solo (resource-less) grid keeps the event's existing `resourceId` instead of writing `null` over it, so a resource-bound event still belongs to its room when the view changes back.
+
+During a drag the original node stays in place while a detached mirror follows the pointer across time, days and resources. The calendar commits optimistically on drop and re-renders; the residual click after a moved drag is suppressed, including when the destination was refused.
 
 Dragging a slice of a multi-day event shifts the whole event: the day delta between source and target columns plus the wall-clock minute delta apply to both `start` and `end`, so the total duration is preserved (same contract as `Shift` + arrows). A single `click` handler in the capture phase both dispatches `calendar:eventclick` and drops the residual click after a drag, resize or long-press.
 

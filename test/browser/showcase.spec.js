@@ -190,6 +190,82 @@ test("an all-day move is judged by the day-level rules, not the wall clock", asy
   expect(refused.returned).toBeNull();
   await expect(page.locator("#toast")).toContainText("Saturdays are staffed for viewing only");
 });
+test("an all-day drag paints a refused day under the pointer, and only open days commit", async ({
+  page,
+}) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-allday-event").first()).toBeVisible();
+  await setView(page, "week");
+  // Two weeks out the fixture has thinned to nothing: an open week with a
+  // Saturday to refuse on. The lane needs the event inside it first -
+  // `moveEvent` shares the commit contract, so the bar lands there the way
+  // a drop would have placed it.
+  const monday = weekdayFrom((await anchorDate(page)).add({ days: 14 }), 1);
+  await gotoDate(page, monday);
+  const moved = await page.evaluate(
+    ([start, end]) =>
+      String(
+        /** @type {any} */ (document.querySelector("calendar-view")).moveEvent("seed-all-day", {
+          start,
+          end,
+        })?.start ?? null,
+      ),
+    [monday.toString(), monday.add({ days: 2 }).toString()],
+  );
+  expect(moved).toBe(monday.toString());
+  await flushRender(page);
+  // The lane scrolls away with the bodies and the grid opens on business
+  // hours, so the bar stays out of reach until the scroller is back at 0.
+  await page.evaluate(() => {
+    /** @type {HTMLElement} */ (document.querySelector(".cv-scroller")).scrollTop = 0;
+  });
+  /** @param {string} iso */
+  const columnX = (iso) =>
+    page.evaluate((date) => {
+      const cell = [...document.querySelectorAll(".cv-day[data-date]")].find(
+        (day) => /** @type {HTMLElement} */ (day).dataset.date === date,
+      );
+      const rect = cell?.getBoundingClientRect();
+      return rect ? rect.x + rect.width / 2 : null;
+    }, iso);
+  const saturdayX = await columnX(monday.add({ days: 5 }).toString());
+  const thursdayX = await columnX(monday.add({ days: 3 }).toString());
+  const bar = page.locator(".cv-allday-event[data-event-id='seed-all-day']");
+  const box = await bar.boundingBox();
+  if (!box || saturdayX === null || thursdayX === null) {
+    throw new Error("expected the all-day bar and the target columns on screen");
+  }
+
+  await page.mouse.move(box.x + 20, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(saturdayX, box.y + box.height / 2, { steps: 10 });
+  const mirror = page.locator(".cv-drag-mirror");
+  await expect(mirror).toHaveClass(/cv-invalid/);
+  await expect(mirror).toHaveAttribute("data-reason", /Saturdays are staffed for viewing only/);
+  await page.mouse.up();
+  await flushRender(page);
+  // Prevention, not correction: the drop never happened, so the closure
+  // kept its place and the commit guard had no refusal to toast.
+  const stayed = await page.evaluate(() =>
+    String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById("seed-all-day").start),
+  );
+  expect(stayed).toBe(monday.toString());
+  await expect(page.locator("#toast")).not.toHaveClass(/is-open/);
+
+  const box2 = await bar.boundingBox();
+  if (!box2) throw new Error("expected the all-day bar to still have a box");
+  await page.mouse.move(box2.x + 20, box2.y + box2.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(thursdayX, box2.y + box2.height / 2, { steps: 10 });
+  await expect(page.locator(".cv-drag-mirror")).not.toHaveClass(/cv-invalid/);
+  await page.mouse.up();
+  await flushRender(page);
+  const landed = await page.evaluate(() =>
+    String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById("seed-all-day").start),
+  );
+  expect(landed).toBe(monday.add({ days: 3 }).toString());
+  await expect(page.locator("#cockpit .sc-last")).toContainText("eventmove: seed-all-day");
+});
 test("a non-bookable range refuses the drop it is drawn over", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
@@ -711,6 +787,139 @@ test("cut parks the booking in the workbench and Escape disarms it", async ({ pa
   await page.locator("#workbench-clear").click();
   await expect(page.locator("#workbench-panel")).toBeHidden();
   await expect(page.locator(`.cv-event[data-event-id="${id}"][data-parked="true"]`)).toHaveCount(0);
+});
+test("a parked booking dropped on the grid leaves the workbench and its waiting look", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // A movable, still-open booking: past events fail the start gate and a
+  // deadline would revert asynchronously, muddying what the drop asserts.
+  const id = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const node = [...document.querySelectorAll("calendar-view .cv-event")].find((candidate) => {
+      const element = /** @type {HTMLElement} */ (candidate);
+      const item = calendar.getEventById(element.dataset.eventId);
+      return (
+        item &&
+        element.dataset.temporalState !== "past" &&
+        element.dataset.locked !== "true" &&
+        item.extendedProps?.kind !== "deadline"
+      );
+    });
+    return node ? /** @type {HTMLElement} */ (node).dataset.eventId : null;
+  });
+  if (!id) throw new Error("expected a movable booking on the grid");
+  const node = page.locator(`calendar-view .cv-event[data-event-id="${id}"]`);
+  await node.click({ button: "right" });
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
+  await expect(node).toHaveAttribute("data-parked", "true");
+  await expect(page.locator("#workbench-list li")).toHaveCount(1);
+
+  // The queue's own verdict is stricter than the booking rules - it also
+  // refuses slots another booking covers - so the target is the first
+  // (day column, hour) `checkInteraction` accepts for the queued booking.
+  // Probed after the cut: the panel opening shifts the columns, and only
+  // then is the booking inside the workbench branch of the policy.
+  const probe = () =>
+    page.evaluate((eventId) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      const item = calendar.getEventById(eventId);
+      const slotMin = String(calendar.getAttribute("slot-min") ?? "08:00");
+      const [slotH, slotM] = slotMin.split(":").map(Number);
+      const slotMinMin = slotH * 60 + slotM;
+      // The shell's own configure() value, restated: there is no public
+      // getter for it and the drop point needs the same scale the grid uses.
+      const pxPerMinute = 1.5;
+      const duration = item.end.since(item.start);
+      const card = /** @type {HTMLElement} */ (
+        document.querySelector(`calendar-view .cv-event[data-event-id="${eventId}"]`)
+      ).getBoundingClientRect();
+      const grabOffsetMin = card.height / 2 / pxPerMinute;
+      for (const day of document.querySelectorAll(".cv-day[data-date]")) {
+        const cell = /** @type {HTMLElement} */ (day);
+        const iso = cell.dataset.date ?? "";
+        const [year, month, dayOfMonth] = iso.split("-").map(Number);
+        const resourceId = cell.dataset.resourceId ?? null;
+        for (let hour = 8; hour <= 16; hour++) {
+          const start = item.start.with({ year, month, day: dayOfMonth, hour, minute: 0 });
+          if (String(start) === String(item.start) && resourceId === (item.resourceId ?? null)) {
+            continue;
+          }
+          const verdict = calendar.checkInteraction({
+            action: "move",
+            event: item,
+            start,
+            end: start.add(duration),
+            resourceId,
+          });
+          if (!verdict.ok) continue;
+          const body = day.querySelector(".cv-day-body")?.getBoundingClientRect();
+          if (!body) continue;
+          const x = body.x + body.width / 2;
+          const y = body.top + (hour * 60 + grabOffsetMin - slotMinMin) * pxPerMinute;
+          // A drop near a scroller edge triggers autoscroll mid-drag, and
+          // one outside the grid reads as a dropout: the target has to sit
+          // comfortably inside the viewport.
+          if (x < 120 || x > innerWidth - 120 || y < 200 || y > innerHeight - 240) continue;
+          return { gx: card.x + card.width / 2, gy: card.y + card.height / 2, x, y };
+        }
+      }
+      return null;
+    }, id);
+  let plan = await probe();
+  if (!plan) {
+    // Nothing free in the hours on screen: the seeded days are dense, so
+    // the afternoon gets its own pass instead of assuming a gap exists.
+    await page.evaluate(() =>
+      /** @type {any} */ (document.querySelector("calendar-view")).scrollToTime("13:00"),
+    );
+    plan = await probe();
+  }
+  if (!plan) throw new Error("expected a free slot for the parked booking");
+
+  // A straight pointer drag is a placement like Paste or the sidebar drop:
+  // the booking commits and leaves the queue instead of keeping its muted
+  // "waiting" look on the slot it now owns.
+  await page.mouse.move(plan.gx, plan.gy);
+  await page.mouse.down();
+  await page.mouse.move(plan.x, plan.y, { steps: 8 });
+  await page.mouse.up();
+  await flushRender(page);
+  await expect(page.locator("#cockpit .sc-last")).toContainText(`eventmove: ${id}`);
+  await expect(
+    page.locator(`calendar-view .cv-event[data-event-id="${id}"][data-parked="true"]`),
+  ).toHaveCount(0);
+  await expect(page.locator("#workbench-list li")).toHaveCount(0);
+});
+test("a refused async placement sends the booking back to the workbench", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // `seed-overlap` carries the deadline kind, the one the desk reviews
+  // asynchronously: the move commits optimistically, then the round-trip
+  // answer rolls it back.
+  const node = page.locator('calendar-view .cv-event[data-event-id="seed-overlap"]');
+  await node.click({ button: "right" });
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
+  await expect(page.locator("#workbench-list li")).toHaveCount(1);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const item = calendar.getEventById("seed-overlap");
+    calendar.moveEvent("seed-overlap", {
+      start: String(item.start).replace(/T\d\d:\d\d/, "T14:00"),
+      end: String(item.end).replace(/T\d\d:\d\d/, "T15:00"),
+    });
+  });
+  // Placed means out of the queue, even while the desk's answer is pending.
+  await expect(page.locator("#workbench-list li")).toHaveCount(0);
+  await expect(node).not.toHaveAttribute("data-parked", "true");
+  // The rollback puts the booking back where it was and back in line: the
+  // queue and the waiting look return together, armed for another try.
+  await expect(page.locator("#toast")).toContainText("did not confirm", { timeout: 3000 });
+  await flushRender(page);
+  await expect(page.locator("#workbench-list button[aria-current='true']")).toHaveAttribute(
+    "data-event-id",
+    "seed-overlap",
+  );
+  await expect(node).toHaveAttribute("data-parked", "true");
 });
 test("replanning the current day queues its bookings, which survive navigation", async ({ page }) => {
   await page.goto("/demo/showcase.html");

@@ -4969,7 +4969,7 @@
         if (index !== laneKey) {
           laneKey = index;
           const dayDelta = index - startDay;
-          const resourceId = columns[index].resource?.id ?? null;
+          const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
           let decision = { ok: true, reason: null };
           if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
             decision = host.checkInteraction({
@@ -5003,15 +5003,19 @@
         cleanup();
         if (longPressConsumed)
           return;
-        if (!wasMoved || !range?.droppable)
+        if (!wasMoved)
           return;
+        if (!range?.droppable) {
+          suppressClick = true;
+          return;
+        }
         if (!laneOk) {
           suppressClick = true;
           return;
         }
         suppressClick = true;
         const dayDelta = range.index - startDay;
-        const resourceId = columns[range.index].resource?.id ?? null;
+        const resourceId = columns[range.index].resource?.id ?? event.resourceId ?? null;
         const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
         if (next) {
           host.announce(describeEvent(next, timeZone, labels.untitledEvent));
@@ -5588,7 +5592,7 @@
                 event,
                 start: zonedDateTimeAt(target.column.date, start, timeZone),
                 end: zonedDateTimeAt(target.column.date, start + duration, timeZone),
-                resourceId: target.column.resource?.id ?? null
+                resourceId: target.column.resource?.id ?? event.resourceId ?? null
               });
               dragOk = decision.ok;
               if (decision.reason)
@@ -5626,10 +5630,10 @@
               }));
               return;
             }
-            if (!range)
+            if (!range?.droppable) {
+              suppressClick = true;
               return;
-            if (!range.droppable)
-              return;
+            }
             if (!dragOk) {
               suppressClick = true;
               return;
@@ -5645,7 +5649,7 @@
               current: {
                 start: startZoned.add({ days: dayDelta, minutes: minuteDelta }),
                 end: endZoned.add({ days: dayDelta, minutes: minuteDelta }),
-                resourceId: range.column.resource?.id ?? null
+                resourceId: range.column.resource?.id ?? event.resourceId ?? null
               },
               nativeEvent: upEvent
             });

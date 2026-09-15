@@ -384,6 +384,31 @@ test("dragging an event across resources changes its resource", async ({ page })
   expect(move.resourceId).toBe("room-b");
 });
 
+test("dragging inside a resource-less grid keeps the event's resource", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await trackMoves(page);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.updateEvent({ ...calendar.getEventById("a"), resourceId: "room-a" });
+  });
+  await flushRender(page);
+  const box = await eventBox(page, "a");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 90, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => readMoves(page)).toHaveLength(1);
+  const [move] = await readMoves(page);
+  // A resource-less column carries no new assignment: the move keeps the
+  // event's own resource instead of writing null over it.
+  expect(move.previousResourceId).toBe("room-a");
+  expect(move.resourceId).toBe("room-a");
+  const kept = await page.evaluate(
+    () => /** @type {any} */ (document.querySelector("calendar-view")).getEventById("a").resourceId,
+  );
+  expect(kept).toBe("room-a");
+});
+
 test("a rejected move reverts to its previous position", async ({ page }) => {
   await page.goto("/demo/basic.html");
   await page.evaluate(() => {

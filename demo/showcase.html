@@ -4369,18 +4369,41 @@
     // refused destination and the drop never happens. The commit-time
     // guard stays: it is the authority for programmatic moves, and it
     // owns the asynchronous half nobody can answer synchronously.
-    interactionPolicy({ event, target, context }) {
-      // All-day bounds are civil dates with no wall clock; this shell's
-      // wall-clock rules do not apply to them, so the gesture is allowed
-      // here and the commit guard applies the same reduced day-level rules
-      // (past day, viewing-only Saturday) to the placement.
-      if (target.allDay) return true;
+    interactionPolicy({ action, event, target, context }) {
+      const allDay = target.allDay === true;
+      // A booking queued in the workbench obeys the queue's own placement
+      // rules: the same verdict its sidebar ghost and Paste return, so a
+      // pointer drag over an occupied or blocked slot reads as refused
+      // before it is ever dropped. The verdict judges destinations only:
+      // the booking may sit on a slot that is occupied or blocked already
+      // (often the very reason it was queued), and refusing its current
+      // position would freeze it there instead of letting the pointer
+      // carry it out.
+      if (action === "move" && event && workbench.has(String(event.id))) {
+        const unchanged =
+          String(target.start) === String(event.start) &&
+          String(target.end) === String(event.end) &&
+          (target.resourceId ?? null) === (event.resourceId ?? null);
+        if (unchanged) return true;
+        return (
+          workbenchTargetReason(String(event.id), {
+            date: String(target.date),
+            minutes: allDay ? null : wallMinutesOf(String(target.start)),
+            resourceId: target.resourceId,
+            allDay,
+          }) ?? true
+        );
+      }
+      // All-day bounds are civil dates with no wall clock; `violation()`
+      // applies the day-level rules (past day, viewing-only Saturday) to
+      // them and skips the wall-clock ones, matching the commit guard.
       return (
         violation(
           {
             start: String(target.start),
             end: String(target.end),
             resourceId: target.resourceId,
+            allDay,
           },
           context,
           event?.id ?? null,
@@ -5336,6 +5359,12 @@
       stored.end = end;
       if (resourceId) stored.resourceId = resourceId;
     }
+    // A queued booking placed by a straight drag is placed: the pointer
+    // move is a placement like Paste or the sidebar drop, so it leaves the
+    // workbench instead of keeping its waiting look.
+    const queuedId = String(detail.event?.id ?? "");
+    const wasQueued = kind === "move" && queuedId !== "" && workbench.has(queuedId);
+    if (wasQueued) workbench.complete(queuedId);
     // All-day boundaries are civil dates without a wall clock, so the log
     // names the span by its dates instead of reading minutes out of thin air.
     const label = (iso) => (iso.length > 10 ? wallClock(iso) : iso.slice(0, 10));
@@ -5355,6 +5384,15 @@
           stored.start = previousStart;
           stored.end = previousEnd;
           if (previousRoom) stored.resourceId = previousRoom;
+        }
+        // The desk refused the placement after all: a dequeued booking goes
+        // back to waiting, like a refused paste would have kept it.
+        if (wasQueued) {
+          const live = calendar.getEventById(queuedId);
+          if (live) {
+            workbench.add(live);
+            workbench.activate(queuedId);
+          }
         }
         record(`event${kind} rolled back by the desk: ${detail.event?.id}`);
         toast("The scheduling desk did not confirm that deadline — reverted.", "warning");

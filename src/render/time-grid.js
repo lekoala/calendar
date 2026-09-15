@@ -595,7 +595,7 @@ export function renderTimeGrid({
       if (index !== laneKey) {
         laneKey = index;
         const dayDelta = index - startDay;
-        const resourceId = columns[index].resource?.id ?? null;
+        const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
         /** @type {import("../core/policy.js").PolicyDecision} */
         let decision = { ok: true, reason: null };
         if (event.start instanceof Temporal.PlainDate && event.end instanceof Temporal.PlainDate) {
@@ -630,7 +630,12 @@ export function renderTimeGrid({
       const range = pending;
       cleanup();
       if (longPressConsumed) return;
-      if (!wasMoved || !range?.droppable) return;
+      if (!wasMoved) return;
+      // A moved press never leaks a click, even on a refused target.
+      if (!range?.droppable) {
+        suppressClick = true;
+        return;
+      }
       // A destination the policy refused while dragging commits nothing.
       if (!laneOk) {
         suppressClick = true;
@@ -638,7 +643,9 @@ export function renderTimeGrid({
       }
       suppressClick = true;
       const dayDelta = range.index - startDay;
-      const resourceId = columns[range.index].resource?.id ?? null;
+      // A column with no resource carries no new assignment: the bar keeps
+      // its current resource instead of being silently unassigned.
+      const resourceId = columns[range.index].resource?.id ?? event.resourceId ?? null;
       const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
       if (next) {
         host.announce(describeEvent(next, timeZone, labels.untitledEvent));
@@ -1460,7 +1467,7 @@ export function renderTimeGrid({
               event,
               start: zonedDateTimeAt(target.column.date, start, timeZone),
               end: zonedDateTimeAt(target.column.date, start + duration, timeZone),
-              resourceId: target.column.resource?.id ?? null,
+              resourceId: target.column.resource?.id ?? event.resourceId ?? null,
             });
             dragOk = decision.ok;
             if (decision.reason) mirror.dataset.reason = decision.reason;
@@ -1510,8 +1517,11 @@ export function renderTimeGrid({
             );
             return;
           }
-          if (!range) return;
-          if (!range.droppable) return;
+          // A moved press never leaks a click, even on a refused target.
+          if (!range?.droppable) {
+            suppressClick = true;
+            return;
+          }
           // A destination the policy refused while dragging commits
           // nothing: the invalid mirror already showed the refusal.
           if (!dragOk) {
@@ -1532,7 +1542,10 @@ export function renderTimeGrid({
             current: {
               start: startZoned.add({ days: dayDelta, minutes: minuteDelta }),
               end: endZoned.add({ days: dayDelta, minutes: minuteDelta }),
-              resourceId: range.column.resource?.id ?? null,
+              // A column with no resource carries no new assignment: the
+              // event keeps its current resource instead of being silently
+              // unassigned by a move inside a resource-less grid.
+              resourceId: range.column.resource?.id ?? event.resourceId ?? null,
             },
             nativeEvent: upEvent,
           });
