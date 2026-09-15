@@ -255,6 +255,29 @@
       letter-spacing: 0;
     }
 
+    /* Collapsible groups use a native details/summary: the summary wears
+       the same title styling, the UA marker is replaced by a chevron that
+       rotates open. */
+    details.sc-group > summary {
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+
+    details.sc-group > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.sc-group > summary .sc-disclosure {
+      margin-inline-start: auto;
+      font-size: 12px;
+      transition: rotate 120ms var(--ease-exit);
+    }
+
+    details.sc-group[open] > summary .sc-disclosure {
+      rotate: 90deg;
+    }
+
     .sc-sidebar-foot {
       display: grid;
       gap: var(--space-20);
@@ -733,11 +756,20 @@
       display: none;
     }
 
+    /* Stats read as bordered pills; the newest-intent message stays bare
+       text so the strip keeps a quiet end. */
     .sc-cockpit > span {
       display: inline-flex;
       align-items: center;
       gap: 0.4em;
       white-space: nowrap;
+    }
+
+    .sc-cockpit > span:not(.sc-last) {
+      padding: 1px 0.65em;
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-full);
+      background: var(--surface);
     }
 
     .sc-cockpit strong {
@@ -892,7 +924,7 @@
     }
 
     .actual-calendar .cv-now {
-      border-top-color: var(--danger);
+      color: var(--danger);
     }
 
     /* Application background ranges. The core hard-codes no meaning, so
@@ -904,21 +936,22 @@
     }
 
     .actual-calendar .cv-background.sc-blocked {
-      border-inline-start: 2px solid color-mix(in oklab, var(--danger), transparent 45%);
+      border-inline-start: 2px solid color-mix(in oklab, var(--danger), transparent 60%);
       background:
         repeating-linear-gradient(
           135deg,
-          color-mix(in oklab, var(--danger), transparent 76%) 0 6px,
-          transparent 6px 12px
+          color-mix(in oklab, var(--danger), transparent 84%) 0 2px,
+          transparent 2px 11px
         );
     }
 
-    /* Bookable hours inside the official range read as a soft green wash;
-       extended desk hours add an amber one. Both paint under events and
-       under the hatched non-bookable ranges. */
+    /* Bookable hours are the default state, so the green wash is a
+       whisper - just enough to keep the open window told apart from the
+       closed grey at the day's edges. Extended desk hours get a slightly
+       stronger amber, because that one is the exception worth seeing. */
     .actual-calendar .cv-background.sc-open {
       border-inline-start: 0;
-      background: color-mix(in oklab, var(--success), transparent 84%);
+      background: color-mix(in oklab, var(--success), transparent 94%);
     }
 
     .actual-calendar .cv-background.sc-extra {
@@ -963,9 +996,9 @@
 
     .actual-calendar .cv-background.sc-blocked::after {
       content: "Not bookable";
-      color: var(--text-subtle);
+      color: color-mix(in oklab, var(--text-subtle), transparent 20%);
       font-size: 10px;
-      font-weight: var(--font-weight-bold);
+      font-weight: var(--font-weight-semibold);
       letter-spacing: 0.04em;
       text-transform: uppercase;
     }
@@ -976,32 +1009,14 @@
       }
     }
 
-    /* The core owns the now line: one bare, `aria-hidden` div per column
-       whose date is today, positioned by the same geometry as the events.
-       What it looks like is the application's, and 2px of accent read as a
-       range boundary rather than an instant - so it thins to a hairline and
-       gains a dot at the column's leading edge, which is what makes it
-       legible as "now" at a glance. The dot bleeds half its width into the
-       gutter on purpose; the column body does not clip.
-
-       What is not reachable from here is the time itself in the axis, the
-       way calendar apps print it: the node is inside the column body, it
-       takes no content, and the axis is a separate sticky column. That one
-       is the core's to give. */
+    /* The core owns the now line and its leading-edge dot; this shell only
+       retints both through `color` (above) and thins the line to a
+       hairline. What is not reachable from here is the time itself in the
+       axis, the way calendar apps print it: the node is inside the column
+       body, it takes no content, and the axis is a separate sticky column.
+       That one is the core's to give. */
     .actual-calendar .cv-now {
       border-top-width: 1px;
-    }
-
-    .actual-calendar .cv-now::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      inset-inline-start: 0;
-      inline-size: 7px;
-      block-size: 7px;
-      border-radius: var(--radius-full);
-      background: var(--danger);
-      transform: translate(-50%, -50%);
     }
 
     /* Day and resource headers take application content; the core keeps
@@ -1087,19 +1102,20 @@
     /* ---------------------------------------------------------------- */
     /* 3. EVENT SKINS - two of them, one hue per application kind.       */
     /*                                                                   */
-    /* `solid` fills the card with the kind's tone and writes on it in   */
-    /* the tone's foreground. `soft` washes the tone into the surface,   */
-    /* keeps the tone as a left rail and writes in the page's own ink.   */
-    /* Neither hard-codes a colour: both read `--sc-tone`, which comes   */
-    /* from Actual's semantic tokens. Skin and theme are therefore       */
-    /* orthogonal - two skins across every theme and both colour        */
-    /* schemes, with no per-combination exception to write.              */
+    /* `solid` fills the card with a saturated pastel of the kind's tone   */
+    /* and edges it with the same hue darkened; `soft` floats a paler     */
+    /* wash of the tone inside a transparent margin, with no rail at all. */
+    /* Both write in the page's own ink, and neither hard-codes a colour: */
+    /* they read `--sc-tone`, which comes from Actual's semantic tokens.  */
+    /* Skin and theme are therefore orthogonal - two skins across every   */
+    /* theme and both colour schemes, with no per-combination exception   */
+    /* to write.                                                          */
     /*                                                                   */
     /* The two are mutually exclusive selectors, so their specificity     */
     /* relative to each other never matters; what matters is that every  */
     /* rule which overrides a property the skin base sets (the temporal  */
-    /* states own the left rail and the shadow) lives inside a skin      */
-    /* block too, or the base would outrank it.                          */
+    /* states own the border treatment and the shadow) lives inside a    */
+    /* skin block too, or the base would outrank it.                     */
     /* ---------------------------------------------------------------- */
     [data-kind="review"] {
       --sc-tone: var(--primary);
@@ -1146,7 +1162,7 @@
     }
 
     /* Geometry and the container query are the same in both skins: only
-       colour, radius and rail weight change, so the card's own layout
+       colour, radius and edge treatment change, so the card's own layout
        contract is stated once. */
     .actual-calendar .cv-event {
       container-type: size;
@@ -1160,8 +1176,12 @@
     }
 
     /* --- `solid` ---------------------------------------------------- */
+    /* Full-tone fill writing in the tone's own foreground: this skin is
+       the loud one, where a card carries its kind's colour at strength.
+       The rail is the same hue darkened - it stays visible where the fill
+       meets the column, which is where the eye counts lanes. */
     [data-skin="solid"] .actual-calendar .cv-event {
-      border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 34%);
+      border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 30%);
       border-radius: var(--radius-sm);
       background: var(--sc-tone, var(--primary));
       color: var(--sc-tone-fg, var(--primary-fg));
@@ -1171,31 +1191,30 @@
     /* All-day lane bars wear the same tone cards as timed events: the core
        styles them neutrally, so the kind token does the reskinning here. */
     [data-skin="solid"] .actual-calendar .cv-allday-event {
-      border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 34%);
+      border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 30%);
       background: var(--sc-tone, var(--primary));
       color: var(--sc-tone-fg, var(--primary-fg));
     }
 
     /* --- `soft` ----------------------------------------------------- */
-    /* Canonical Actual soft recipe: the fill, rim and ink below resolve
-       through `--soft-bg-mix`, `--soft-border-mix` and `--intent-soft-fg`
-       (with the `--soft-fg-mix` derivation as fallback) - the same tokens
-       Actual's own `.soft` and `.badge` read, so every theme tunes these
-       cards without an exception here. The rim is removed by pointing
-       `--soft-border-mix` at `--soft-bg-mix` on the calendar, the dial
-       Actual documents for borderless soft; delete that one declaration
-       to get the tinted contour back. Only the left rail stays
-       application-owned: Actual has no rail concept. */
-    [data-skin="soft"] .actual-calendar {
-      --soft-border-mix: var(--soft-bg-mix);
-    }
+    /* Borderless pastel. The fill and ink resolve through the canonical
+       Actual soft tokens - `--soft-bg-mix` and `--intent-soft-fg` (with
+       the `--soft-fg-mix` derivation as fallback), the same ones Actual's
+       own `.soft` and `.badge` read, so every theme tunes these cards
+       without an exception here.
 
+       What changed is the shape: no rail, no rim. A transparent border
+       insets the fill from the grid and `background-clip: padding-box`
+       stops the wash at the padding edge, so the border area shows
+       through to the column and a dense grid reads as spaced cards
+       instead of one tinted wall. The kind is carried by the wash plus
+       the row-1 badge; the title writes in the page's ink. */
     [data-skin="soft"] .actual-calendar .cv-event,
     [data-skin="soft"] .actual-calendar .cv-allday-event {
-      border: var(--border-width) solid var(--border);
-      border-inline-start: 4px solid var(--sc-tone, var(--primary));
-      border-radius: 7px;
+      border: 3px solid transparent;
       background: var(--surface-subtle);
+      background-clip: padding-box;
+      border-radius: 10px;
       color: var(--text);
       box-shadow: none;
     }
@@ -1205,8 +1224,7 @@
       [data-skin="soft"] .actual-calendar .cv-allday-event {
         --sc-soft-fill: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--sc-tone, var(--primary)));
         --sc-soft-ink: var(--intent-soft-fg, color-mix(in oklab, var(--text), var(--sc-tone, var(--primary)) var(--soft-fg-mix)));
-        border-color: color-mix(in oklab, var(--surface) var(--soft-border-mix), var(--sc-tone, var(--primary)));
-        background: var(--sc-soft-fill);
+        background-color: var(--sc-soft-fill);
         color: var(--sc-soft-ink);
       }
     }
@@ -1228,12 +1246,13 @@
     /* Hover moves the fill toward the tone by `--soft-hover-alpha`, the
        same state change Actual's own soft treatments use - so the resting
        and hovered fills stay a theme decision, not a per-card one. The
-       rim follows the fill so the card stays rimless while hovered. */
+       border stays transparent: `background-color` (not the shorthand) so
+       the padding-box clip - and with it the air around the card - is
+       preserved. */
     @supports (color: color-mix(in oklab, red, white)) {
       [data-skin="soft"] .actual-calendar .cv-event:hover {
         --sc-soft-fill: color-mix(in oklab, var(--surface) calc(var(--soft-bg-mix) - var(--soft-hover-alpha)), var(--sc-tone, var(--primary)));
-        border-color: var(--sc-soft-fill);
-        background: var(--sc-soft-fill);
+        background-color: var(--sc-soft-fill);
       }
     }
 
@@ -1255,17 +1274,17 @@
     }
 
     [data-skin="soft"] .actual-calendar .cv-background.sc-blocked {
-      border-inline-start-color: color-mix(in oklab, var(--danger), transparent 55%);
+      border-inline-start-color: color-mix(in oklab, var(--danger), transparent 70%);
       background:
         repeating-linear-gradient(
           135deg,
-          color-mix(in oklab, var(--text), transparent 92%) 0 7px,
-          transparent 7px 14px
+          color-mix(in oklab, var(--text), transparent 94%) 0 2px,
+          transparent 2px 11px
         );
     }
 
     [data-skin="soft"] .actual-calendar .cv-background.sc-open {
-      background: color-mix(in oklab, var(--success), transparent 91%);
+      background: color-mix(in oklab, var(--success), transparent 96%);
     }
 
     [data-skin="soft"] .actual-calendar .cv-background.sc-extra {
@@ -1307,7 +1326,7 @@
        single timer to the next visible boundary, so a booking crosses from
        `current` to `past` on screen while nobody touches the page.
 
-       Both states own the left rail and the shadow, which the skin bases
+       Both states own the border treatment and the shadow, which the skin bases
        also set, so each skin states them itself: a single shared rule at
        lower specificity would be outranked by whichever base is active. */
     [data-skin="solid"] .actual-calendar .cv-event[data-temporal-state="past"] {
@@ -1328,8 +1347,6 @@
        The halfway point derives from `--soft-bg-mix`, so a theme that
        tunes its wash tunes its past state along with it. */
     [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="past"] {
-      border-color: color-mix(in oklab, var(--border), transparent 20%);
-      border-inline-start-color: color-mix(in oklab, var(--sc-tone, var(--primary)), var(--surface) 45%);
       background: var(--surface-subtle);
       color: var(--text-muted);
     }
@@ -1337,13 +1354,14 @@
     @supports (color: color-mix(in oklab, red, white)) {
       [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="past"] {
         --sc-soft-fill: color-mix(in oklab, var(--surface) calc(var(--soft-bg-mix) + (100% - var(--soft-bg-mix)) / 2), var(--sc-tone, var(--primary)));
-        border-color: var(--sc-soft-fill);
-        background: var(--sc-soft-fill);
+        background-color: var(--sc-soft-fill);
       }
     }
 
+    /* With no rail to recolour, "running" gets a tinted rim plus the ring:
+       the whole border band turns success-green instead of one edge. */
     [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="current"] {
-      border-inline-start-color: var(--success, #16a34a);
+      border-color: color-mix(in oklab, var(--success, #16a34a), transparent 55%);
       box-shadow: 0 0 0 2px color-mix(in oklab, var(--success, #16a34a), transparent 60%);
     }
 
@@ -1463,8 +1481,8 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* `solid` writes on the tone, so its three lines separate by opacity
-       against a single ink colour. */
+    /* `solid` writes on the tone in its own foreground, so the three lines
+       separate by opacity against a single ink colour. */
     [data-skin="solid"] .sc-card strong {
       font-size: var(--font-size-xs);
     }
@@ -1476,6 +1494,7 @@
 
     [data-skin="solid"] .sc-card .sc-when {
       font-size: 10.5px;
+      font-weight: var(--font-weight-semibold);
       opacity: 0.9;
     }
 
@@ -1508,7 +1527,7 @@
 
     [data-skin="soft"] .sc-card strong {
       grid-area: 2 / 1 / auto / -1;
-      color: var(--intent-soft-fg, color-mix(in oklab, var(--text), var(--sc-tone, var(--primary)) var(--soft-fg-mix)));
+      color: var(--text);
       font-size: 12px;
     }
 
@@ -1563,11 +1582,19 @@
       margin-block-start: 2px;
       padding: 0 0.45em;
       border-radius: var(--radius-full);
-      background: color-mix(in oklab, currentcolor, transparent 80%);
+      background: color-mix(in oklab, var(--surface), transparent 55%);
       font-size: 9.5px;
       font-weight: var(--font-weight-bold);
       letter-spacing: 0.05em;
       text-transform: uppercase;
+    }
+
+    /* On the full-tone fill the chip reads as a near-white pill with the
+       page's ink - the same pairing Actual's `.badge` uses on a strong
+       surface. */
+    [data-skin="solid"] .sc-card .sc-tag {
+      background: color-mix(in oklab, var(--surface), transparent 10%);
+      color: var(--text);
     }
 
     /* `soft` restyles the chip into a badge instead of dropping it. The
@@ -1598,8 +1625,43 @@
 
        Both nodes are always in the markup; only CSS decides which shows,
        so switching skins never re-renders a card. */
-    .sc-card .sc-kind {
+    .sc-card .sc-kind,
+    .sc-card .sc-avatar {
       display: none;
+    }
+
+    /* The resource initial is `soft`'s avatar: a tone-tinted chip that
+       identifies the room where no column header does. `solid` hides it -
+       its saturated card is already the loudest thing in the column, and
+       one more badge would crowd the meta line it sits on.
+
+       `soft` turns the meta line into a flex row so the chip centres on
+       the text; the truncation moves to `.sc-meta-text` because a flex
+       container's own `text-overflow` can no longer reach the ellipsis. */
+    [data-skin="soft"] .sc-card .sc-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.35em;
+    }
+
+    .sc-card .sc-meta-text {
+      min-inline-size: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    [data-skin="soft"] .sc-card .sc-avatar {
+      display: inline-grid;
+      flex: none;
+      place-items: center;
+      inline-size: 1.35em;
+      block-size: 1.35em;
+      border-radius: var(--radius-full);
+      background: color-mix(in oklab, var(--sc-tone, var(--primary)) 32%, var(--surface));
+      color: color-mix(in oklab, var(--sc-tone, var(--primary)), #000 42%);
+      font-size: 8px;
+      font-weight: var(--font-weight-bold);
     }
 
     /* Short bookings drop detail instead of clipping it. The hover tooltip
@@ -1665,26 +1727,6 @@
     @container (max-width: 5.5rem) {
       .sc-card .sc-kind {
         display: none;
-      }
-    }
-
-    /* `soft` lifts the grid off the chrome: the calendar becomes a rounded
-       panel on the subtle ground instead of a slab running edge to edge
-       between two hairlines. Desktop only - below 64rem the whole point of
-       the responsive section is that the grid keeps every pixel it can, and
-       a margin there would spend three of them on decoration. */
-    @media (min-width: 64rem) {
-      [data-skin="soft"] .sc-main {
-        background: var(--surface-subtle);
-      }
-
-      [data-skin="soft"] .actual-calendar {
-        margin: var(--space-20) var(--space-30) var(--space-30);
-        border: var(--border-width) solid var(--border);
-        border-radius: 14px;
-        box-shadow:
-          0 1px 2px rgb(0 0 0 / 0.04),
-          0 8px 24px -12px rgb(0 0 0 / 0.16);
       }
     }
 
@@ -2492,10 +2534,13 @@
         <ul class="sc-legend" id="kind-legend"></ul>
       </section>
 
-      <section class="sc-group">
-        <h2 class="sc-group-title"><i class="ti ti-shield-check" aria-hidden="true"></i> Booking rules</h2>
+      <details class="sc-group">
+        <summary class="sc-group-title">
+          <i class="ti ti-shield-check" aria-hidden="true"></i> Booking rules
+          <i class="ti ti-chevron-right sc-disclosure" aria-hidden="true"></i>
+        </summary>
         <ul class="sc-rules" id="rules"></ul>
-      </section>
+      </details>
 
       <div class="sc-sidebar-foot">
         <button type="button" class="btn sm neutral ghost" id="shortcuts-open">
@@ -3760,13 +3805,35 @@
         classNames: ["sc-closed"],
       });
       if (!closed) {
-        ranges.push({
-          id: `open-${iso}`,
-          title: "Bookable hours",
-          start: stamp(date, POLICY.opensAt),
-          end: stamp(date, POLICY.closesAt),
-          classNames: ["sc-open"],
-        });
+        if (date.dayOfWeek === 3) {
+          // Wednesdays show a banded window: green bookable morning, an
+          // unpainted lunch gap, then an amber afternoon - the same
+          // vocabulary as the other days, split so the band edges read.
+          // This is paint only: `violation()` still answers from POLICY,
+          // and the gap stays bookable.
+          ranges.push({
+            id: `open-${iso}`,
+            title: "Bookable hours",
+            start: stamp(date, POLICY.opensAt),
+            end: stamp(date, 13 * 60),
+            classNames: ["sc-open"],
+          });
+          ranges.push({
+            id: `open-pm-${iso}`,
+            title: "Afternoon window",
+            start: stamp(date, 14 * 60),
+            end: stamp(date, POLICY.closesAt),
+            classNames: ["sc-extra"],
+          });
+        } else {
+          ranges.push({
+            id: `open-${iso}`,
+            title: "Bookable hours",
+            start: stamp(date, POLICY.opensAt),
+            end: stamp(date, POLICY.closesAt),
+            classNames: ["sc-open"],
+          });
+        }
         ranges.push({
           id: `closed-pm-${iso}`,
           title: "Closed",
@@ -4581,8 +4648,22 @@
       // The kind used to lead this line and was said twice on every card,
       // once here in words and once in the chip below it. The chip is now a
       // badge in the clock line, so the meta line carries only what nothing
-      // else does.
-      meta.textContent = `${event.extendedProps?.seats ?? "?"} seats`;
+      // else does: a resource initial (a tiny avatar, soft-only in CSS) and
+      // the room's short name - useful where no column header names it.
+      const room = roomTitle(String(event.resourceId ?? ""));
+      let metaText = `${event.extendedProps?.seats ?? "?"} seats`;
+      if (room) {
+        const [code, name] = room.split("·").map((part) => part.trim());
+        const avatar = document.createElement("span");
+        avatar.className = "sc-avatar";
+        avatar.textContent = code.slice(-1);
+        meta.append(avatar);
+        metaText = `${name ?? room} · ${metaText}`;
+      }
+      const metaLabel = document.createElement("span");
+      metaLabel.className = "sc-meta-text";
+      metaLabel.textContent = metaText;
+      meta.append(metaLabel);
       const tag = document.createElement("span");
       tag.className = "sc-tag";
       tag.textContent = kind;

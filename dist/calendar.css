@@ -59,6 +59,9 @@
   color: var(--calendar-muted);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  /* End-aligned so a label that fills or wraps inside a narrow axis still
+     reads against the column edge instead of floating to the far side. */
+  text-align: end;
   transform: translateY(-0.5em);
 }
 
@@ -444,7 +447,7 @@
   }
 
   .cv-now {
-    border-top-color: Highlight;
+    color: Highlight;
   }
 
   /* A refusal must not collapse into a plain overlay: Mark stays distinct
@@ -639,6 +642,28 @@
   touch-action: none;
 }
 
+/* Grip affordance: a small centred pill inside each handle, revealed on
+   hover/keyboard focus. The handles themselves stay invisible at rest so
+   quiet cards keep clean edges. */
+.cv-resize-handle::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 50%;
+  top: 50%;
+  inline-size: 1.1rem;
+  block-size: 0.25rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--calendar-text) 35%, transparent);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.12s ease;
+}
+
+.cv-event:hover .cv-resize-handle::before,
+.cv-event:focus-visible .cv-resize-handle::before {
+  opacity: 1;
+}
+
 .cv-resize-n {
   top: 0;
 }
@@ -647,12 +672,28 @@
   bottom: 0;
 }
 
+/* The now indicator is one colour end to end: `currentColor` ties the line
+   and its leading dot to a single `color` declaration, so a skin retints
+   both by overriding `color` alone. */
 .cv-now {
   position: absolute;
   inset-inline: 0;
   z-index: 2;
-  border-top: 2px solid var(--calendar-accent);
+  border-top: 2px solid currentColor;
+  color: var(--calendar-accent);
   pointer-events: none;
+}
+
+.cv-now::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
 }
 
 .cv-hover,
