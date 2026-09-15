@@ -51,6 +51,19 @@ query subsystem, resource tree or source cache was added.
 
 ### Fixed
 
+* A pointer drag whose day and minute deltas disagree in sign (e.g. one day
+  backward and a few hours forward) no longer dies on an invalid mixed-sign
+  `Temporal.Duration`: the commit resolves the dropped start as a wall-clock
+  target and shifts the end by the same amount, so the drop commits instead
+  of silently snapping back.
+* Interaction ghosts that carry `data-reason` (drag mirrors, resize and
+  selection ghosts, external placement ghosts) now render the reason as a
+  chip inside the ghost, so a refused destination says why, not just turns
+  red.
+* A moved event dropped into a resource-less column keeps its existing
+  `resourceId` instead of being silently unassigned (which hid it when the
+  view switched back to a resource grid), and a moved press suppresses its
+  residual click on refused destinations as well as committed ones.
 * External mouse placement follows captured pointer coordinates once per
   animation frame, reuses the ghost and skips repeated validation within a
   snapped slot. Calendar state changes invalidate the preview decision; drop

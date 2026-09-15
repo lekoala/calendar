@@ -3636,6 +3636,57 @@
   }
 
   /**
+   * Whether an interaction target names the slot an event already holds.
+   * Compared by civil date and wall minutes rather than by string form:
+   * `checkInteraction` callers may hand the policy a differently-formatted
+   * equivalent (no offset, no seconds) for the very same slot.
+   *
+   * @param {{ date: unknown, start: unknown, end: unknown, resourceId: string | null }} target
+   * @param {any} event normalized calendar event
+   * @param {boolean} allDay
+   * @returns {boolean}
+   */
+  function sameSlot(target, event, allDay) {
+    if (String(target.date) !== String(event.start).slice(0, 10)) return false;
+    if ((target.resourceId ?? null) !== (event.resourceId ?? null)) return false;
+    if (allDay) return String(target.end) === String(event.end);
+    return (
+      wallMinutesOf(String(target.start)) === wallMinutesOf(String(event.start)) &&
+      wallMinutesOf(String(target.end)) === wallMinutesOf(String(event.end))
+    );
+  }
+
+  /**
+   * Occupancy verdict shared by every placement path — pointer move,
+   * resize, selection, external drop, paste and workbench placement.
+   * Bookings only compete inside their own granularity and room: a timed
+   * booking for its hours, an all-day bar for its civil days, and two
+   * rooms never share a "slot". A proposal with no room collides only
+   * with roomless bookings. A flagged blocker inside the conflicts keeps
+   * its own reason; `excludeEventId` removes the moved event itself from
+   * the judgement.
+   *
+   * @param {any} context a `getRangeContext()` snapshot, or null
+   * @param {{ allDay?: boolean, room?: string | null, excludeEventId?: string | null }} [options]
+   * @returns {string | null} refusal reason, or null when the slot is free
+   */
+  function occupancyReason(context, { allDay = false, room = null, excludeEventId = null } = {}) {
+    const conflicts = (context?.events?.overlapping ?? []).filter(
+      (entry) =>
+        String(entry.id) !== String(excludeEventId ?? "") &&
+        (entry.allDay === true) === allDay &&
+        (entry.resourceId ?? null) === room,
+    );
+    const flagged = conflicts.find((entry) => entry.extendedProps?.blocksAvailability === true);
+    if (flagged) {
+      return flagged.extendedProps?.blockReason ?? "Unavailable at that time.";
+    }
+    return conflicts.length > 0
+      ? `“${conflicts[0].title ?? "Booking"}” already occupies that slot.`
+      : null;
+  }
+
+  /**
    * @param {string} label
    * @param {string} from wall clock, `HH:MM`
    * @param {string} to wall clock, `HH:MM`
@@ -3936,11 +3987,19 @@
       eventId,
     );
     if (reason) return reason;
-    const conflicts = context.events.overlapping.filter((entry) => String(entry.id) !== eventId);
-    if (conflicts.length > 0) {
-      return `“${conflicts[0].title ?? "Booking"}” already occupies that slot.`;
-    }
-    return null;
+    // The slot the booking already holds is always a legal target: it may
+    // sit on an occupied slot already (often the very reason it was
+    // queued), and refusing its own position would freeze it there.
+    const unchanged =
+      String(item.start) === String(start) &&
+      String(item.end) === String(end) &&
+      (item.resourceId ?? null) === target.resourceId;
+    if (unchanged) return null;
+    return occupancyReason(context, {
+      allDay,
+      room: target.resourceId ?? item.resourceId ?? null,
+      excludeEventId: eventId,
+    });
   }
 
   /**
@@ -4322,10 +4381,12 @@
     const item = calendar.getEventById(copyClipboard.id);
     const start = stamp(slot.date, slot.minutes);
     const end = stamp(slot.date, slot.minutes + copyClipboard.durationMin);
-    const reason = violation(
-      { start, end, resourceId: slot.resourceId },
-      calendar.getRangeContext({ start, end, resourceId: slot.resourceId }),
-    );
+    const context = calendar.getRangeContext({ start, end, resourceId: slot.resourceId });
+    const reason =
+      violation({ start, end, resourceId: slot.resourceId }, context) ??
+      // The source stays in place but never refuses its own copy: a paste
+      // on the source's slot duplicates the booking there on purpose.
+      occupancyReason(context, { room: slot.resourceId, excludeEventId: copyClipboard.id });
     if (reason) {
       record(`paste refused: ${reason}`);
       toast(reason);
@@ -4380,11 +4441,7 @@
       // position would freeze it there instead of letting the pointer
       // carry it out.
       if (action === "move" && event && workbench.has(String(event.id))) {
-        const unchanged =
-          String(target.start) === String(event.start) &&
-          String(target.end) === String(event.end) &&
-          (target.resourceId ?? null) === (event.resourceId ?? null);
-        if (unchanged) return true;
+        if (sameSlot(target, event, allDay)) return true;
         return (
           workbenchTargetReason(String(event.id), {
             date: String(target.date),
@@ -4394,9 +4451,18 @@
           }) ?? true
         );
       }
+      // The slot the event already holds is always a legal destination:
+      // it may sit on an occupied or blocked slot already (often the very
+      // reason it is being moved), and refusing its current position
+      // would freeze it in place instead of letting the pointer carry it
+      // out. Same exemption the workbench branch gives its queued items.
+      if (event != null && sameSlot(target, event, allDay)) return true;
       // All-day bounds are civil dates with no wall clock; `violation()`
       // applies the day-level rules (past day, viewing-only Saturday) to
       // them and skips the wall-clock ones, matching the commit guard.
+      // Occupancy is the same rule the workbench applies to a placement:
+      // a slot another same-room booking occupies refuses a move, a
+      // resize, a selection and an external drop alike.
       return (
         violation(
           {
@@ -4407,7 +4473,13 @@
           },
           context,
           event?.id ?? null,
-        ) ?? true
+        ) ??
+        occupancyReason(context, {
+          allDay,
+          room: target.resourceId ?? event?.resourceId ?? null,
+          excludeEventId: event?.id ?? null,
+        }) ??
+        true
       );
     },
     eventContent({ event, element }) {
@@ -5344,7 +5416,22 @@
     // All-day moves carry civil bounds; the normalized event says so, since
     // `current` itself only holds `start`/`end`/`resourceId`.
     const allDay = detail.event?.allDay === true;
-    const reason = violation({ start, end, resourceId, allDay }, detail.context, detail.event?.id ?? null);
+    // Occupancy applies to the new slot only when the booking actually
+    // moves: its previous slot is never refused, matching the hover
+    // policy's unchanged exemption for a slot already occupied.
+    const movedSlot =
+      String(detail.previous.start) !== start ||
+      String(detail.previous.end) !== end ||
+      (detail.previous.resourceId ?? null) !== resourceId;
+    const reason =
+      violation({ start, end, resourceId, allDay }, detail.context, detail.event?.id ?? null) ??
+      (movedSlot
+        ? occupancyReason(detail.context, {
+            allDay,
+            room: resourceId,
+            excludeEventId: detail.event?.id ?? null,
+          })
+        : null);
     if (reason) {
       // Synchronous refusal: the core reverts the optimistic change itself.
       event.preventDefault();
@@ -5406,6 +5493,28 @@
   calendar.addEventListener("calendar:eventmove", (event) => guard(event, "move"));
   calendar.addEventListener("calendar:eventresize", (event) => guard(event, "resize"));
 
+  // A pointer drop the policy refuses commits nothing and dispatches
+  // nothing, so `guard` never sees it: the gesture just ends. The painted
+  // ghost still carries its `data-reason` in the capture phase - before the
+  // core's own pointerup removes it - which is the one place the shell can
+  // read why the card snapped back and say it out loud. Two releases are not
+  // refusals even with a stale reason on the ghost: a drop out of the grid
+  // is a parking intent (`data-dropout` on the source), and a release
+  // outside the calendar commits nothing at all.
+  window.addEventListener(
+    "pointerup",
+    (event) => {
+      const refused = calendar.querySelector(
+        ".cv-drag-mirror[data-reason], .cv-select-ghost[data-reason], .cv-external-ghost[data-reason], .cv-event.cv-invalid[data-reason]",
+      );
+      if (!refused || calendar.querySelector("[data-dropout]")) return;
+      const under = document.elementFromPoint(event.clientX, event.clientY);
+      if (!under || !calendar.contains(under)) return;
+      toast(/** @type {HTMLElement} */ (refused).dataset.reason ?? "Placement refused.", "warning");
+    },
+    { capture: true },
+  );
+
   // --- Creation sheet ------------------------------------------------------
   const createDialog = document.getElementById("create-dialog");
   /** @type {{ start: string, end: string, resourceId: string | null, location: { location: string, locationId: string, mode: string } | null } | null} */
@@ -5444,7 +5553,12 @@
     const resourceId = detail.resourceId;
     // A slot that cannot take a drop cannot take a booking either: the same
     // rule answers both, so the shell never offers what it will refuse.
-    const reason = violation({ start, end, resourceId }, detail.context);
+    const reason =
+      violation({ start, end, resourceId }, detail.context) ??
+      occupancyReason(detail.context, {
+        allDay: detail.allDay === true,
+        room: resourceId,
+      });
     if (reason) {
       event.preventDefault();
       record(`select refused: ${reason}`);
@@ -5832,15 +5946,10 @@
     if (copyClipboard) {
       const pasteStart = stamp(date, minutes);
       const pasteEnd = stamp(date, minutes + copyClipboard.durationMin);
-      const pasteReason = violation(
-        { start: pasteStart, end: pasteEnd, resourceId },
-        calendar.getRangeContext({ start: pasteStart, end: pasteEnd, resourceId }),
-      ) ??
-        (calendar
-          .getEventOverlaps({ start: pasteStart, end: pasteEnd }, { resourceIds: resourceId ? [resourceId] : [] })
-          .some((entry) => entry.id !== copyClipboard?.id)
-          ? "That slot is already occupied."
-          : null);
+      const pasteContext = calendar.getRangeContext({ start: pasteStart, end: pasteEnd, resourceId });
+      const pasteReason =
+        violation({ start: pasteStart, end: pasteEnd, resourceId }, pasteContext) ??
+        occupancyReason(pasteContext, { room: resourceId, excludeEventId: copyClipboard.id });
       slotActions.push({
         label: `Paste a copy of “${copyClipboard.title}” here`,
         icon: "clipboard",
@@ -5885,10 +5994,10 @@
         run: () => {
           const start = stamp(date, minutes);
           const end = stamp(date, minutes + 30);
-          const reason = violation(
-            { start, end, resourceId },
-            calendar.getRangeContext({ start, end, resourceId }),
-          );
+          const context = calendar.getRangeContext({ start, end, resourceId });
+          const reason =
+            violation({ start, end, resourceId }, context) ??
+            occupancyReason(context, { room: resourceId });
           if (reason) {
             record(`create refused: ${reason}`);
             toast(reason);

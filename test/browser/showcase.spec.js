@@ -245,12 +245,14 @@ test("an all-day drag paints a refused day under the pointer, and only open days
   await page.mouse.up();
   await flushRender(page);
   // Prevention, not correction: the drop never happened, so the closure
-  // kept its place and the commit guard had no refusal to toast.
+  // kept its place. The refusal still explains itself: the shell reads the
+  // reason off the ghost as the pointer releases and toasts it.
   const stayed = await page.evaluate(() =>
     String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById("seed-all-day").start),
   );
   expect(stayed).toBe(monday.toString());
-  await expect(page.locator("#toast")).not.toHaveClass(/is-open/);
+  await expect(page.locator("#toast")).toHaveClass(/is-open/);
+  await expect(page.locator("#toast")).toContainText("Saturdays are staffed for viewing only");
 
   const box2 = await bar.boundingBox();
   if (!box2) throw new Error("expected the all-day bar to still have a box");
@@ -325,16 +327,27 @@ test("event-level blockers refuse the slot they cover, with their own reason", a
 
   // The same hour without a blocker stays bookable, the covering background
   // donates its location, and moving a blocker onto its own slot does not
-  // refuse itself (post-commit snapshots may overlap the moved event).
+  // refuse itself (post-commit snapshots may overlap the moved event). The
+  // free probe scans room C for a genuinely empty slot: occupancy is a
+  // refusal like any other, so a fixed hour can legitimately be taken.
   const allowed = await page.evaluate((day) => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    const free = calendar.checkInteraction({
-      action: "move",
-      event: calendar.getEventById("live"),
-      start: `${day}T10:00:00[Europe/Brussels]`,
-      end: `${day}T10:30:00[Europe/Brussels]`,
-      resourceId: "room-c",
-    });
+    const slot = (/** @type {number} */ minutes) =>
+      `${day}T${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:00[Europe/Brussels]`;
+    let free = null;
+    for (let minutes = 8 * 60; minutes <= 17 * 60; minutes += 30) {
+      const decision = calendar.checkInteraction({
+        action: "move",
+        event: calendar.getEventById("live"),
+        start: slot(minutes),
+        end: slot(minutes + 30),
+        resourceId: "room-c",
+      });
+      if (decision.ok) {
+        free = decision;
+        break;
+      }
+    }
     const context = calendar.getRangeContext({
       start: `${day}T10:00:00[Europe/Brussels]`,
       end: `${day}T10:30:00[Europe/Brussels]`,
@@ -351,7 +364,7 @@ test("event-level blockers refuse the slot they cover, with their own reason", a
       (/** @type {any} */ range) => range.extendedProps?.kind === "availability",
     );
     return {
-      free: free.ok,
+      free: free?.ok ?? false,
       self: self.ok,
       location: availability?.extendedProps?.location ?? null,
     };
@@ -1461,7 +1474,7 @@ async function blockerBox(page, scroll = false) {
   return box;
 }
 
-test("a refused destination is red under the pointer, and never commits", async ({ page }) => {
+test("a refused destination is red under the pointer, never commits, and says why", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   // One day, three rooms: every column fits the viewport, so the target is
@@ -1521,12 +1534,96 @@ test("a refused destination is red under the pointer, and never commits", async 
   await flushRender(page);
 
   // Prevention, not correction: the drop never happened, so the booking kept
-  // its place and the commit-time guard had no refusal to explain.
+  // its place. A refused drop dispatches nothing the guard could explain, so
+  // the shell reads the reason off the ghost as the pointer releases and
+  // says it out loud in the toast instead of snapping back silently.
   const after = await page.evaluate(() =>
     String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById("probe-drag").start),
   );
   expect(Temporal.ZonedDateTime.compare(after, anchor.subtract({ minutes: 90 }))).toBe(0);
-  await expect(page.locator("#toast")).not.toHaveClass(/is-open/);
+  await expect(page.locator("#toast")).toHaveClass(/is-open/);
+  await expect(page.locator("#toast")).toHaveText(new RegExp(label));
+});
+
+test("an occupied destination refuses a plain drag like a workbench placement", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  // Occupancy is the same verdict for a straight drag as for a queued
+  // placement: a slot another same-room booking holds is refused before
+  // the drop, with the occupant's name as the reason.
+  await setView(page, "resourceDay");
+  const day = weekdayFrom((await anchorDate(page)).add({ days: 21 }), 3);
+  await gotoDate(page, day);
+  // The day still carries the shell's own blocked ranges, so both probes
+  // land on slots the policy itself reports as free instead of fixed
+  // hours that might already be taken.
+  const dragStart = await page.evaluate(
+    async ({ iso }) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      await calendar.refetchEvents();
+      const slot = (/** @type {number} */ minutes) =>
+        `${iso}T${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:00[Europe/Brussels]`;
+      const free = (/** @type {number} */ from, /** @type {number} */ length) => {
+        for (let minutes = from; minutes + length <= 18 * 60; minutes += 15) {
+          const decision = calendar.checkInteraction({
+            action: "select",
+            event: null,
+            start: slot(minutes),
+            end: slot(minutes + length),
+            resourceId: "room-a",
+          });
+          if (decision.ok) return minutes;
+        }
+        return null;
+      };
+      const occupiedAt = free(8 * 60, 60);
+      const sourceAt = occupiedAt === null ? null : free(occupiedAt + 60, 30);
+      if (occupiedAt === null || sourceAt === null) return null;
+      calendar.addEvent({
+        id: "probe-occupied",
+        title: "Occupied slot",
+        start: slot(occupiedAt),
+        end: slot(occupiedAt + 60),
+        resourceId: "room-a",
+      });
+      calendar.addEvent({
+        id: "probe-drag",
+        title: "Drag me",
+        start: slot(sourceAt),
+        end: slot(sourceAt + 30),
+        resourceId: "room-a",
+      });
+      return { source: slot(sourceAt), occupied: slot(occupiedAt) };
+    },
+    { iso: day.toString() },
+  );
+  if (dragStart === null) throw new Error("expected two free slots on the probe day");
+  await flushRender(page);
+  await page.evaluate(
+    (time) => /** @type {any} */ (document.querySelector("calendar-view")).scrollToTime(time),
+    dragStart.occupied.slice(11, 19),
+  );
+  const occupied = await page.locator('.cv-event[data-event-id="probe-occupied"]').boundingBox();
+  const source = await page.locator('.cv-event[data-event-id="probe-drag"]').boundingBox();
+  if (!occupied || !source) throw new Error("expected both probe bookings to be laid out");
+
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(occupied.x + occupied.width / 2, occupied.y + occupied.height / 2, {
+    steps: 10,
+  });
+  const mirror = page.locator(".cv-drag-mirror");
+  await expect(mirror).toHaveClass(/cv-invalid/);
+  await expect(mirror).toHaveAttribute("data-reason", /Occupied slot/);
+  await page.mouse.up();
+  await flushRender(page);
+
+  const after = await page.evaluate(() =>
+    String(/** @type {any} */ (document.querySelector("calendar-view")).getEventById("probe-drag").start),
+  );
+  expect(Temporal.ZonedDateTime.compare(after, dragStart.source)).toBe(0);
+  await expect(page.locator("#toast")).toHaveClass(/is-open/);
+  await expect(page.locator("#toast")).toHaveText(/Occupied slot/);
 });
 
 test("a refused selection drag paints its own ghost", async ({ page }) => {

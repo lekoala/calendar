@@ -480,6 +480,14 @@
     outline-color: Mark;
   }
 
+  .cv-drag-mirror[data-reason]::after,
+  .cv-event.cv-invalid[data-reason]::after,
+  .cv-select-ghost[data-reason]::after,
+  .cv-external-ghost[data-reason]::after {
+    background: Mark;
+    color: Canvas;
+  }
+
   .cv-select-ghost.cv-invalid {
     border-color: LinkText;
   }
@@ -546,6 +554,37 @@
 .cv-event.cv-invalid {
   outline: 2px dashed #dc2626;
   outline-offset: -2px;
+}
+
+/* A refusal explains itself: `data-reason` rides the painted ghost and
+   renders as a chip inside it, so a refused destination says why instead of
+   only turning red. The chip stays inside the (clipped) card, anchored to
+   its bottom edge. All-day bars and lane ghosts are static boxes, so the
+   mirror/lane variants opt into positioning to anchor the chip. */
+.cv-allday-event.cv-drag-mirror,
+.cv-external-ghost-lane {
+  position: relative;
+}
+
+.cv-drag-mirror[data-reason]::after,
+.cv-event.cv-invalid[data-reason]::after,
+.cv-select-ghost[data-reason]::after,
+.cv-external-ghost[data-reason]::after {
+  content: attr(data-reason);
+  position: absolute;
+  inset-block-end: 0.15rem;
+  inset-inline: 0.2rem;
+  z-index: 1;
+  overflow: hidden;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* A refused selection drag: the ghost keeps its geometry so the user still

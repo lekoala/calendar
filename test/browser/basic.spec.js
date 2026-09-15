@@ -409,6 +409,28 @@ test("dragging inside a resource-less grid keeps the event's resource", async ({
   expect(kept).toBe("room-a");
 });
 
+test("dragging an event a day forward and an hour backward commits", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await trackMoves(page);
+  const from = await eventBox(page, "a");
+  const bodies = page.locator(".cv-day-body");
+  await bodies.first().waitFor({ state: "visible" });
+  const target = await bodies.nth(1).boundingBox();
+  assert(target, "expected the second day column");
+  // The delta is a mixed-sign bag (days +1, minutes -60 once the grab
+  // offset lands): composing it into one Temporal.Duration is invalid, so
+  // the commit must not go through a combined `add`. The pointer is at
+  // 08:30 and the grab sits 30 minutes into the card, so it lands at 08:00.
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, target.y + 54, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => readMoves(page)).toHaveLength(1);
+  const [move] = await readMoves(page);
+  expect(move.start).toContain("2026-09-04T08:00:00+02:00");
+  expect(move.end).toContain("2026-09-04T09:00:00+02:00");
+});
+
 test("a rejected move reverts to its previous position", async ({ page }) => {
   await page.goto("/demo/basic.html");
   await page.evaluate(() => {

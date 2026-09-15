@@ -1531,7 +1531,10 @@ export function renderTimeGrid({
           suppressClick = true;
           // The mirror shows the dragged slice, but the commit shifts the
           // whole event so multi-day spans keep their total duration (same
-          // contract as the keyboard move path).
+          // contract as the keyboard move path). The day and minute deltas
+          // apply as two separate adds: combined in one bag they can
+          // disagree in sign (a day backward, hours forward), which is not
+          // a valid Temporal.Duration.
           const dayDelta = range.column.date.since(column.date).days;
           const minuteDelta = range.start - item.start;
           const startZoned = toZonedDateTime(event.start, timeZone);
@@ -1540,8 +1543,8 @@ export function renderTimeGrid({
             event,
             previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
             current: {
-              start: startZoned.add({ days: dayDelta, minutes: minuteDelta }),
-              end: endZoned.add({ days: dayDelta, minutes: minuteDelta }),
+              start: startZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
+              end: endZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
               // A column with no resource carries no new assignment: the
               // event keeps its current resource instead of being silently
               // unassigned by a move inside a resource-less grid.

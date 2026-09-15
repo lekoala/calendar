@@ -5647,8 +5647,8 @@
               event,
               previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
               current: {
-                start: startZoned.add({ days: dayDelta, minutes: minuteDelta }),
-                end: endZoned.add({ days: dayDelta, minutes: minuteDelta }),
+                start: startZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
+                end: endZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
                 resourceId: range.column.resource?.id ?? event.resourceId ?? null
               },
               nativeEvent: upEvent
