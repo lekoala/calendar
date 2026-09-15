@@ -5409,6 +5409,12 @@
   // --- Boot ---------------------------------------------------------------
   // A phone opens on a single day: the grid is what the user came for.
   if (window.innerWidth < 640) calendar.setView("day");
+  // The element resolved its default `date` in UTC at connect time, before
+  // `configure({ timeZone: ZONE })` could run: around Brussels midnight the
+  // two "today"s disagree by a day, which would shift the seed window and
+  // freeze the anchor day's bookings. Pin the anchor to the shell's own
+  // today now that the zone is set.
+  if (String(calendar.date) !== todayIso()) calendar.gotoDate(todayIso());
   store = seedStore();
   calendar.resources = ROOMS;
   applyRoomGroups();

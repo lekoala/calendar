@@ -6,6 +6,7 @@ import {
   closePanel,
   emptyDayFrom,
   flushRender,
+  freeHourFor,
   gotoDate,
   openDayFrom,
   openPanel,
@@ -425,15 +426,16 @@ test("an accepted move can still be reverted after the round-trip", async ({ pag
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   // The asynchronous half of the same contract: `detail.revert()` is
-  // idempotent and may be called long after the dispatch returned.
-  const outcome = await page.evaluate(async () => {
+  // idempotent and may be called long after the dispatch returned. The
+  // destination must be one the synchronous gates accept - the seeded
+  // layout shifts with the anchor, so a free hour is found, not named.
+  const slot = await freeHourFor(page, "seed-overlap");
+  if (!slot) throw new Error("the seeded layout has no free hour for seed-overlap");
+  const outcome = await page.evaluate(async (target) => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const item = calendar.getEventById("seed-overlap");
     const before = String(item.start);
-    const returned = calendar.moveEvent("seed-overlap", {
-      start: before.replace(/T\d\d:\d\d/, "T14:00"),
-      end: String(item.end).replace(/T\d\d:\d\d/, "T15:00"),
-    });
+    const returned = calendar.moveEvent("seed-overlap", { start: target.start, end: target.end });
     const optimistic = String(calendar.getEventById("seed-overlap").start);
     await new Promise((resolve) => setTimeout(resolve, 1200));
     return {
@@ -442,9 +444,11 @@ test("an accepted move can still be reverted after the round-trip", async ({ pag
       after: String(calendar.getEventById("seed-overlap").start),
       before,
     };
-  });
+  }, slot);
   expect(outcome.accepted).toBe(true);
-  expect(outcome.optimistic).toContain("T14:00");
+  // The canonical form gains the zone offset the input string did not
+  // carry, so the comparison stops at the wall clock.
+  expect(outcome.optimistic.slice(0, 19)).toBe(slot?.start.slice(0, 19));
   expect(outcome.after).toBe(outcome.before);
   await expect(page.locator("#toast")).toContainText("did not confirm");
 });
@@ -914,14 +918,14 @@ test("a refused async placement sends the booking back to the workbench", async 
   await node.click({ button: "right" });
   await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
   await expect(page.locator("#workbench-list li")).toHaveCount(1);
-  await page.evaluate(() => {
+  // Same caveat as the revert test above: the desk refusal is asynchronous,
+  // so the synchronous gates must accept the destination first.
+  const slot = await freeHourFor(page, "seed-overlap");
+  if (!slot) throw new Error("the seeded layout has no free hour for seed-overlap");
+  await page.evaluate((target) => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    const item = calendar.getEventById("seed-overlap");
-    calendar.moveEvent("seed-overlap", {
-      start: String(item.start).replace(/T\d\d:\d\d/, "T14:00"),
-      end: String(item.end).replace(/T\d\d:\d\d/, "T15:00"),
-    });
-  });
+    calendar.moveEvent("seed-overlap", { start: target.start, end: target.end });
+  }, slot);
   // Placed means out of the queue, even while the desk's answer is pending.
   await expect(page.locator("#workbench-list li")).toHaveCount(0);
   await expect(node).not.toHaveAttribute("data-parked", "true");
@@ -1288,6 +1292,14 @@ test("an armed placement preview reads refused over an occupied slot", async ({ 
     for (let y = rect.top + 30; y < rect.bottom - 10; y += 4) {
       const el = document.elementFromPoint(x, y);
       if (!el || !body.contains(el) || el.closest(".cv-event")) continue;
+      // A boundary pixel can report the body here and still land the real
+      // click on a sticky header sharing that edge, so the point is only
+      // clean when a few pixels around it hit the body too.
+      const clean = [y - 4, y + 4].every((offset) => {
+        const near = document.elementFromPoint(x, offset);
+        return near && body.contains(near) && !near.closest(".cv-event");
+      });
+      if (!clean) continue;
       const minutes = 480 + (y - eightY) / pxPerMinute;
       if (minutes >= 515 && minutes <= 595) return { x, y, minutes: Math.round(minutes) };
     }
@@ -1736,12 +1748,18 @@ test("the cockpit counts what the core marks as running", async ({ page }) => {
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    // "Running" is about now, so today has to be on screen: the shell hides
-    // Sunday by policy and the anchor is not always rendered. Day bounds are
-    // widened for the same reason - the suite runs at any hour.
+    // "Running" is about now, so the days around now have to be on screen:
+    // the shell hides Sunday by policy and the anchor is not always
+    // rendered. Day bounds are widened for the same reason - the suite runs
+    // at any hour.
     calendar.setAttribute("slot-min", "00:00");
     calendar.setAttribute("slot-max", "23:59");
     calendar.configure({ hiddenDays: [] });
+    // A probe ending minutes before midnight projects onto the previous day
+    // in the calendar's zone, where the anchor's own range would not render
+    // it. Showing the day before keeps both sides of the boundary visible
+    // whatever hour the suite runs at.
+    calendar.gotoDate(calendar.date.subtract({ days: 1 }));
   });
   await flushRender(page);
   await page.evaluate(async () => {

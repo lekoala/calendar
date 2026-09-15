@@ -147,6 +147,45 @@ export async function emptyDayFrom(page, date) {
 }
 
 /**
+ * A one-hour window on `eventId`'s own day and room that the shell's
+ * synchronous verdict accepts. `checkInteraction` runs the same evaluation
+ * the commit guard does - policy and occupancy together - so it is the one
+ * question to ask. The seeds shift with the anchor date, so a test that
+ * needs an accepted destination has to find one rather than name a wall
+ * time that happens to be free today.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} eventId
+ * @returns {Promise<{ start: string, end: string } | null>}
+ */
+export async function freeHourFor(page, eventId) {
+  return page.evaluate((id) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const item = calendar.getEventById(id);
+    if (!item) return null;
+    const day = String(item.start).slice(0, 10);
+    const room = item.resourceId ?? null;
+    for (let h = 8; h <= 17; h += 1) {
+      const start = `${day}T${String(h).padStart(2, "0")}:00:00[Europe/Brussels]`;
+      const end = `${day}T${String(h + 1).padStart(2, "0")}:00:00[Europe/Brussels]`;
+      if (
+        calendar.checkInteraction({
+          action: "move",
+          event: item,
+          start,
+          end,
+          resourceId: room,
+          allDay: false,
+        }).ok
+      ) {
+        return { start, end };
+      }
+    }
+    return null;
+  }, eventId);
+}
+
+/**
  * The mini month is a `<date-calendar>` driven as a navigator: the component
  * owns the grid and this shell owns one marker node per day. A test therefore
  * asks the cell for a date and the marker for a verdict, and reaches
