@@ -278,13 +278,19 @@ test("reduced motion disables transitions", async ({ page, browserName }) => {
   expect(duration).toBe("0s");
 });
 
-test("forced colors keep events rendered", async ({ page, browserName }) => {
+test("forced colors keep events rendered and background zones outlined", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "media emulation is chromium-only here");
   await page.goto("/demo/basic.html");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.emulateMedia({ forcedColors: "active" });
   expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
+  // The availability tint cannot render in forced colors; a dashed contour
+  // is the only thing keeping the zone discoverable.
+  const borderStyle = await page.evaluate(
+    () => getComputedStyle(/** @type {any} */ (document.querySelector(".cv-background"))).borderTopStyle,
+  );
+  expect(borderStyle).toBe("dashed");
 });
 
 test("narrow viewports keep a scrollable grid", async ({ page }) => {

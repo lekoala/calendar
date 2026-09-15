@@ -219,4 +219,4 @@ View/date changes (`setView`, `gotoDate`, `prev/next/today`) announce the new an
 Interaction feedback must remain understandable with reduced motion and forced colors. Do not encode state through color alone.
 
 - `prefers-reduced-motion: reduce` disables transitions/animations inside the component. Autoscroll stays functional (it is viewport movement, not decoration).
-- `forced-colors: active` maps surfaces to system colors: event borders to `CanvasText`, interactive overlays and focus to `Highlight`, the now-indicator to `Highlight`, invalid drop targets keep a dashed outline. Background tints that cannot render become transparent with a visible border.
+- `forced-colors: active` leaves the system-color remapping to the UA and only restates information that would disappear outright: background ranges keep a dashed `CanvasText` contour once their tint is gone, painted overlays (hover/select ghosts, previews, external drop ghost) keep a `Highlight` outline, the now-indicator keeps `Highlight`, and refused targets keep a distinct `Mark` marking. Text, borders, headers and focus rings are not re-themed.

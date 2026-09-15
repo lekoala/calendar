@@ -1,12 +1,12 @@
 .calendar-view {
   --calendar-accent: #2563eb;
-  --calendar-bg: #f6f7f9;
+  --calendar-bg: #f8fafc;
   --calendar-surface: #ffffff;
   --calendar-line: #e2e8f0;
-  --calendar-text: #1e293b;
-  --calendar-muted: #64748b;
-  --calendar-event-bg: #dbeafe;
-  --calendar-event-border: #2563eb;
+  --calendar-text: #1f2328;
+  --calendar-muted: color-mix(in srgb, var(--calendar-text) 58%, var(--calendar-surface));
+  --calendar-event-bg: color-mix(in srgb, var(--calendar-accent) 12%, var(--calendar-surface));
+  --calendar-event-border: color-mix(in srgb, var(--calendar-accent) 35%, var(--calendar-surface));
   --calendar-background-bg: color-mix(in srgb, var(--calendar-accent) 10%, transparent);
   --calendar-column-min: 10rem;
   /* Width of the time axis strip the column tracks repeat after, shared
@@ -21,9 +21,9 @@
   min-width: 0;
   color: var(--calendar-text);
   background: var(--calendar-bg);
-  font:
-    14px / 1.35 system-ui,
-    sans-serif;
+  /* Typography belongs to the host application; the dense small print
+     below keeps explicit sizes of its own. */
+  font: inherit;
 }
 
 .calendar-view *,
@@ -84,7 +84,7 @@
   padding: 0.75rem;
   border-bottom: 1px solid var(--calendar-line);
   background: var(--calendar-surface);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .cv-resource-row {
@@ -114,7 +114,7 @@
   overflow: hidden;
   border-inline-start: 1px solid var(--calendar-line);
   background: var(--calendar-surface);
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -149,7 +149,7 @@
   overflow: hidden;
   border-inline-start: 1px solid var(--calendar-line);
   background: var(--calendar-surface);
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
   color: var(--calendar-muted);
 }
@@ -172,7 +172,7 @@
   padding-inline: 0.5rem;
   color: var(--calendar-muted);
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -183,7 +183,7 @@
   padding: 0.15rem 0.4rem;
   overflow: hidden;
   border: 1px solid var(--calendar-event-border);
-  border-radius: 0.4rem;
+  border-radius: 0.375rem;
   background: var(--calendar-event-bg);
   color: var(--calendar-text);
   font: inherit;
@@ -203,8 +203,8 @@
 .cv-allday-background {
   z-index: 1;
   margin: 1px 2px;
-  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 55%, transparent);
-  border-radius: 0.4rem;
+  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 40%, transparent);
+  border-radius: 0.375rem;
   background: var(--calendar-background-bg);
   pointer-events: none;
 }
@@ -257,7 +257,7 @@
   padding: 0.5rem 0.75rem;
   color: var(--calendar-muted);
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .cv-month-day {
@@ -279,7 +279,7 @@
 .cv-month-day-number {
   display: block;
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .cv-month-event {
@@ -289,7 +289,7 @@
   padding: 0.15rem 0.35rem;
   overflow: hidden;
   border: 1px solid var(--calendar-event-border);
-  border-radius: 0.35rem;
+  border-radius: 0.375rem;
   background: var(--calendar-event-bg);
   color: var(--calendar-text);
   font: inherit;
@@ -333,7 +333,7 @@
   z-index: 4;
   padding: 0.6rem 0.75rem;
   background: var(--calendar-surface);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .cv-list-event {
@@ -355,6 +355,10 @@
   color: var(--calendar-muted);
 }
 
+/* The focus ring stays outside the card rather than inset: consumers may
+   fill an event with the accent colour itself, where an inner ring in the
+   same hue would disappear. One pixel of bleed onto a neighbour is the
+   smaller cost. */
 .cv-event:focus-visible,
 .cv-month-event:focus-visible,
 .cv-list-event:focus-visible,
@@ -411,61 +415,25 @@
   }
 }
 
+/* Forced colors: the UA already keeps text, borders and focus rings
+   legible, so only the information that would disappear outright is
+   restated in system colors — tinted fills, painted overlays, the now
+   indicator and refusal markings. No parallel theme. */
 @media (forced-colors: active) {
-  .cv-event {
-    border-color: ButtonText;
-  }
-
-  .cv-event:focus-visible,
-  .cv-month-event:focus-visible,
-  .cv-month-more:focus-visible,
-  .cv-list-event:focus-visible,
-  .cv-allday-event:focus-visible {
-    outline-color: Highlight;
-  }
-
-  .cv-event.cv-reveal,
-  .cv-month-event.cv-reveal,
-  .cv-list-event.cv-reveal,
-  .cv-allday-event.cv-reveal {
-    outline-color: Highlight;
-  }
-
-  .cv-month-event {
-    border-color: ButtonText;
-  }
-
-  .cv-month-day,
-  .cv-list-day,
-  .cv-list-event {
-    border-color: CanvasText;
-  }
-
-  .cv-month-day[data-outside="true"],
-  .cv-month-more,
-  .cv-list-empty,
-  .cv-month-weekday {
-    color: GrayText;
-  }
-
-  .cv-resource-header,
-  .cv-group-header,
-  .cv-day-header,
-  .cv-day {
-    border-color: CanvasText;
-  }
-
-  .cv-background {
+  /* Background tints vanish; a dashed contour keeps the zone legible
+     without faking the fill. */
+  .cv-background,
+  .cv-allday-background {
     border: 1px dashed CanvasText;
     background: transparent;
   }
 
-  .cv-now {
-    border-top-color: Highlight;
-  }
-
+  /* Painted overlays lose both fill and tint: their outlines keep the
+     target readable as Highlight. */
   .cv-hover,
-  .cv-select-ghost {
+  .cv-select-ghost,
+  .cv-preview,
+  .cv-external-ghost {
     border-color: Highlight;
     background: transparent;
   }
@@ -475,25 +443,30 @@
     color: Highlight;
   }
 
+  .cv-now {
+    border-top-color: Highlight;
+  }
+
+  /* A refusal must not collapse into a plain overlay: Mark stays distinct
+     from Highlight where the deterministic red cannot render. */
   .cv-drag-mirror.cv-invalid,
   .cv-event.cv-invalid {
     outline-color: Mark;
   }
 
+  .cv-select-ghost.cv-invalid,
+  .cv-external-ghost.cv-invalid,
+  .cv-preview.cv-invalid {
+    border-color: Mark;
+  }
+
   .cv-drag-mirror[data-reason]::after,
   .cv-event.cv-invalid[data-reason]::after,
   .cv-select-ghost[data-reason]::after,
-  .cv-external-ghost[data-reason]::after {
+  .cv-external-ghost[data-reason]::after,
+  .cv-preview[data-reason]::after {
     background: Mark;
     color: Canvas;
-  }
-
-  .cv-select-ghost.cv-invalid {
-    border-color: LinkText;
-  }
-
-  .cv-axis-label {
-    color: CanvasText;
   }
 }
 
@@ -511,8 +484,9 @@
 .cv-background {
   position: absolute;
   inset-inline: 0;
+  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 40%, transparent);
+  border-radius: 0.375rem;
   background: var(--calendar-background-bg);
-  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 55%, transparent);
   pointer-events: none;
 }
 
@@ -522,9 +496,14 @@
   overflow: hidden;
   padding: 0.35rem 0.45rem;
   border: 1px solid var(--calendar-event-border);
-  border-radius: 0.45rem;
+  border-radius: 0.375rem;
   background: var(--calendar-event-bg);
   color: var(--calendar-text);
+  /* A <button> never inherits the host font on its own, and the UA default
+     is denser than body text: keep the card at small-print size. */
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.3;
   text-align: start;
   cursor: grab;
   /* Pan keeps touch scrolling working when the gesture starts on an event.
@@ -578,7 +557,7 @@
   z-index: 1;
   overflow: hidden;
   padding: 0.1rem 0.35rem;
-  border-radius: 0.3rem;
+  border-radius: 0.25rem;
   background: #dc2626;
   color: #fff;
   font-size: 0.7rem;
@@ -603,7 +582,7 @@
   inset-inline: 2px;
   z-index: 5;
   border: 2px dashed color-mix(in srgb, var(--calendar-accent) 75%, transparent);
-  border-radius: 0.4rem;
+  border-radius: 0.375rem;
   background: color-mix(in srgb, var(--calendar-accent) 16%, transparent);
   pointer-events: none;
 }
@@ -646,24 +625,9 @@
   inset-inline: 2px;
   z-index: 4;
   border: 2px solid color-mix(in srgb, var(--calendar-accent) 75%, transparent);
-  border-radius: 0.4rem;
+  border-radius: 0.375rem;
   background: color-mix(in srgb, var(--calendar-accent) 16%, transparent);
   pointer-events: none;
-}
-
-@media (forced-colors: active) {
-  .cv-preview {
-    border-color: Highlight;
-    background: transparent;
-  }
-
-  .cv-external-ghost {
-    border-color: Highlight;
-  }
-
-  .cv-external-ghost.cv-invalid {
-    border-color: LinkText;
-  }
 }
 
 .cv-resize-handle {
