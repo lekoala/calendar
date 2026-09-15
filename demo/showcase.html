@@ -13,8 +13,8 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/actual-css@0.9.0/dist/actual.full.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.9.0/site/assets/actual-themes.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/dist/combobox.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.1.1/dist/date-picker.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.5.0/dist/combobox.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.3.0/dist/date-picker.min.css">
   <link rel="stylesheet" href="../dist/calendar.css">
   <!-- Application dependencies, pinned the way Actual CSS already is. The
        bare specifiers matter: `@lekoala/combobox` imports `@lekoala/floating`
@@ -27,11 +27,11 @@
     {
       "imports": {
         "@lekoala/floating": "https://cdn.jsdelivr.net/npm/@lekoala/floating@0.2.0/src/floating.js",
-        "@lekoala/combobox": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/src/index.js",
-        "@lekoala/combobox/define": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.2.0/src/define.js",
-        "@lekoala/date-picker/calendar": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.1.1/src/date-calendar.js",
-        "@lekoala/date-picker/locales/fr": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.1.1/src/locales/fr.js",
-        "@lekoala/date-picker/locales/nl": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.1.1/src/locales/nl.js"
+        "@lekoala/combobox": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.5.0/src/index.js",
+        "@lekoala/combobox/define": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.5.0/src/define.js",
+        "@lekoala/date-picker/calendar": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.3.0/src/date-calendar.js",
+        "@lekoala/date-picker/locales/fr": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.3.0/src/locales/fr.js",
+        "@lekoala/date-picker/locales/nl": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.3.0/src/locales/nl.js"
       }
     }
   </script>
@@ -323,6 +323,8 @@
          without pushing a scrollbar into it. */
       --dp-day-size: 1.75rem;
       --dp-gap: var(--space-10);
+      /* Compact month: no vertical rhythm between week rows. */
+      --dp-row-gap: 0;
       font-size: var(--font-size-xs);
       /* The panel must not outgrow its day grid: the grid is 7×day cell
          plus the ISO-week gutter. */
@@ -936,7 +938,7 @@
     }
 
     .actual-calendar .cv-background.sc-blocked {
-      border-inline-start: 2px solid color-mix(in oklab, var(--danger), transparent 60%);
+      border-inline-start: 0;
       background:
         repeating-linear-gradient(
           135deg,
@@ -945,13 +947,12 @@
         );
     }
 
-    /* Bookable hours are the default state, so the green wash is a
-       whisper - just enough to keep the open window told apart from the
-       closed grey at the day's edges. Extended desk hours get a slightly
-       stronger amber, because that one is the exception worth seeing. */
+    /* `solid` paints the windows the classic way - a full semantic wash.
+       `soft` reinterprets them as a one-sided frame below, so the two
+       skins show both treatments of the same ranges. */
     .actual-calendar .cv-background.sc-open {
       border-inline-start: 0;
-      background: color-mix(in oklab, var(--success), transparent 94%);
+      background: color-mix(in oklab, var(--success), transparent 84%);
     }
 
     .actual-calendar .cv-background.sc-extra {
@@ -1178,21 +1179,26 @@
     /* --- `solid` ---------------------------------------------------- */
     /* Full-tone fill writing in the tone's own foreground: this skin is
        the loud one, where a card carries its kind's colour at strength.
-       The rail is the same hue darkened - it stays visible where the fill
-       meets the column, which is where the eye counts lanes. */
+       Like `soft`, the fill is clipped to the padding box inside a
+       transparent border, so stacked bookings keep a white gutter instead
+       of meeting edge to edge - the difference is only how loud the card
+       itself is. */
     [data-skin="solid"] .actual-calendar .cv-event {
-      border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 30%);
-      border-radius: var(--radius-sm);
+      border: 3px solid transparent;
       background: var(--sc-tone, var(--primary));
+      background-clip: padding-box;
+      border-radius: 8px;
       color: var(--sc-tone-fg, var(--primary-fg));
-      box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
+      box-shadow: none;
     }
 
     /* All-day lane bars wear the same tone cards as timed events: the core
        styles them neutrally, so the kind token does the reskinning here. */
     [data-skin="solid"] .actual-calendar .cv-allday-event {
-      border-inline-start: 3px solid color-mix(in oklab, var(--sc-tone, var(--primary)), #000 30%);
+      border: 3px solid transparent;
       background: var(--sc-tone, var(--primary));
+      background-clip: padding-box;
+      border-radius: 8px;
       color: var(--sc-tone-fg, var(--primary-fg));
     }
 
@@ -1257,14 +1263,11 @@
     }
 
     /* The application's background policies are declared in the BRIDGE
-       section above, at `solid` intensities. `soft` only turns them down:
-       once the cards themselves are washes, three stacked background
-       treatments at full strength compete with the thing they are meant to
-       sit behind. The hatch loses its red, because the rail already says
-       "not bookable" and the weave does not have to shout it too; the
-       bookable and extended-hours bands come down just far enough to stop
-       competing, and no further - they carry information, so erasing them
-       would be a different mistake from the one being fixed. */
+       section above, at `solid` intensities. `soft` takes the loudness
+       out of the column itself: the hatch loses its red because the weave
+       alone already says "not bookable" without shouting it, and the
+       bookable and extended-hours windows trade their wash for a single
+       coloured edge - the boundary is the information, not the fill. */
     [data-skin="soft"] .actual-calendar {
       --calendar-line: color-mix(in oklab, var(--border), transparent 25%);
     }
@@ -1274,7 +1277,6 @@
     }
 
     [data-skin="soft"] .actual-calendar .cv-background.sc-blocked {
-      border-inline-start-color: color-mix(in oklab, var(--danger), transparent 70%);
       background:
         repeating-linear-gradient(
           135deg,
@@ -1283,12 +1285,17 @@
         );
     }
 
+    /* `soft` frames the windows instead of filling them: a single
+       inline-start edge in the window's colour marks where the range
+       begins without covering the column in a tint. */
     [data-skin="soft"] .actual-calendar .cv-background.sc-open {
-      background: color-mix(in oklab, var(--success), transparent 96%);
+      border-inline-start: 3px solid color-mix(in oklab, var(--success), transparent 55%);
+      background: transparent;
     }
 
     [data-skin="soft"] .actual-calendar .cv-background.sc-extra {
-      background: color-mix(in oklab, var(--warning), transparent 86%);
+      border-inline-start: 3px solid color-mix(in oklab, var(--warning), transparent 40%);
+      background: transparent;
     }
 
     .actual-calendar .cv-event:focus-visible {
@@ -1334,11 +1341,8 @@
     }
 
     [data-skin="solid"] .actual-calendar .cv-event[data-temporal-state="current"] {
-      border-inline-start-width: 5px;
-      border-inline-start-color: var(--success, #16a34a);
-      box-shadow:
-        0 1px 2px rgb(0 0 0 / 0.16),
-        0 0 0 2px color-mix(in oklab, var(--success, #16a34a), transparent 55%);
+      border-color: var(--success, #16a34a);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--success, #16a34a), transparent 55%);
     }
 
     /* `soft` retires the past by moving the wash halfway back to the
@@ -1346,8 +1350,12 @@
        along with the fill and cost the card its legibility for no gain.
        The halfway point derives from `--soft-bg-mix`, so a theme that
        tunes its wash tunes its past state along with it. */
+    /* `background-color`, not the shorthand: the shorthand would reset
+       `background-clip` to `border-box` and let the fill creep under the
+       transparent border, which is what hides the window edge behind a
+       past card. */
     [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="past"] {
-      background: var(--surface-subtle);
+      background-color: var(--surface-subtle);
       color: var(--text-muted);
     }
 
@@ -5131,7 +5139,7 @@
 
   /**
    * `first-day` counts 0-6 with Sunday = 0 and takes ISO 7 as a Sunday alias
-   * (date-picker 0.1.1), so the core's Temporal 1-7 goes straight through
+   * (date-picker 0.3.0), so the core's Temporal 1-7 goes straight through
    * and no pin at all reads as Monday on both sides.
    */
   function applyMiniFirstDay() {

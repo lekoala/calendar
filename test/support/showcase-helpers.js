@@ -1,10 +1,10 @@
 import { Temporal } from "temporal-polyfill";
 
 /**
- * Helpers shared by the two showcase suites - the core-contract one in
- * `test/browser` and the application-chrome one in `test/shell`. They live here
- * rather than in either file so the two cannot drift apart on what "the
- * anchor" or "an opening day" means.
+ * Helpers shared by the two showcase specs in `test/showcase` - the
+ * core-contract one and the application-chrome one. They live here rather
+ * than in either file so the two cannot drift apart on what "the anchor"
+ * or "an opening day" means.
  */
 
 /**

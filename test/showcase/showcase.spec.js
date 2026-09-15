@@ -18,7 +18,8 @@ import {
  * Showcase shell, core contracts only: what the element promises an
  * application that drives it. The chrome this shell builds around the grid -
  * mini-month, palette, tools shelf, responsive panel - is exercised by
- * `test/shell/showcase-chrome.spec.js`, which runs on demand.
+ * `showcase-chrome.spec.js` next to it. This directory is its own suite
+ * (`test:showcase`), outside the core `test:browser` run.
  */
 
 test("showcase renders seeded team events with kind cards", async ({ page }) => {

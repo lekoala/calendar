@@ -207,7 +207,6 @@
   z-index: 1;
   margin: 1px 2px;
   border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 40%, transparent);
-  border-radius: 0.375rem;
   background: var(--calendar-background-bg);
   pointer-events: none;
 }
@@ -488,7 +487,6 @@
   position: absolute;
   inset-inline: 0;
   border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 40%, transparent);
-  border-radius: 0.375rem;
   background: var(--calendar-background-bg);
   pointer-events: none;
 }
