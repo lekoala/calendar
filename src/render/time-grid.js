@@ -72,7 +72,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * @property {() => void} clearExternalDrag
  * @property {() => number} getInteractionRevision changes when canonical state or configuration changes
  * @property {(target: ExternalDropTarget) => void} setExternalDropTarget register pointer placement callbacks for this rendered grid
- * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null} getPreview application-proposed range overlay, or null
+ * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null, reason: string | null } | null} getPreview application-proposed range overlay, or null
  */
 
 /**
@@ -1462,11 +1462,20 @@ export function renderTimeGrid({
           const key = `${hit.column}:${start}`;
           if (key !== dragKey) {
             dragKey = key;
+            // The policy judges what the commit writes: the whole event
+            // shifted by the column day delta plus the slice's minute
+            // delta — not the slice's own target, which would disagree
+            // for a clipped slice (event starting off-range, multi-day
+            // span). Two separate adds keep the duration sign-consistent.
+            const dayDelta = target.column.date.since(column.date).days;
+            const minuteDelta = start - item.start;
             const decision = host.checkInteraction({
               action: "move",
               event,
-              start: zonedDateTimeAt(target.column.date, start, timeZone),
-              end: zonedDateTimeAt(target.column.date, start + duration, timeZone),
+              start: toZonedDateTime(event.start, timeZone)
+                .add({ days: dayDelta })
+                .add({ minutes: minuteDelta }),
+              end: toZonedDateTime(event.end, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
               resourceId: target.column.resource?.id ?? event.resourceId ?? null,
             });
             dragOk = decision.ok;
@@ -1824,6 +1833,12 @@ export function renderTimeGrid({
       });
       const node = document.createElement("div");
       node.className = "cv-preview";
+      // A refused proposal reads like a refused gesture: invalid styling
+      // plus the reason chip every ghost carries.
+      if (preview.reason !== null) {
+        node.classList.add("cv-invalid");
+        node.dataset.reason = preview.reason;
+      }
       node.setAttribute("aria-hidden", "true");
       node.style.top = `${geometry.top}px`;
       node.style.height = `${geometry.height}px`;

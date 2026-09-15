@@ -5587,11 +5587,13 @@
             const key = `${hit.column}:${start}`;
             if (key !== dragKey) {
               dragKey = key;
+              const dayDelta = target.column.date.since(column.date).days;
+              const minuteDelta = start - item.start;
               const decision = host.checkInteraction({
                 action: "move",
                 event,
-                start: zonedDateTimeAt(target.column.date, start, timeZone),
-                end: zonedDateTimeAt(target.column.date, start + duration, timeZone),
+                start: toZonedDateTime(event.start, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
+                end: toZonedDateTime(event.end, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
                 resourceId: target.column.resource?.id ?? event.resourceId ?? null
               });
               dragOk = decision.ok;
@@ -5969,6 +5971,10 @@
         });
         const node = document.createElement("div");
         node.className = "cv-preview";
+        if (preview.reason !== null) {
+          node.classList.add("cv-invalid");
+          node.dataset.reason = preview.reason;
+        }
         node.setAttribute("aria-hidden", "true");
         node.style.top = `${geometry.top}px`;
         node.style.height = `${geometry.height}px`;
@@ -6410,10 +6416,12 @@
         throw new TypeError("previewRange() requires a non-empty timed range");
       }
       const resourceId = range?.resourceId ?? null;
+      const reason = range?.reason ?? null;
       this.#preview = {
         start,
         end,
-        resourceId: resourceId === null ? null : String(resourceId)
+        resourceId: resourceId === null ? null : String(resourceId),
+        reason: reason === null ? null : String(reason)
       };
       this.#queueRender();
     }

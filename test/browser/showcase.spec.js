@@ -1230,6 +1230,82 @@ test("an armed placement previews its target until pasted or cleared", async ({ 
   await flushRender(page);
   await expect(page.locator(".cv-preview")).toHaveCount(0);
 });
+
+test("an armed placement preview reads refused over an occupied slot", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  const anchor = await anchorDate(page);
+  const empty = await emptyDayFrom(page, anchor.add({ days: 21 }));
+  await gotoDate(page, empty);
+  await scrollToMorning(page);
+  // Two fixtures on the empty day, in whatever room the first column is: a
+  // two-hour booking to arm, and a short occupant its previewed range covers
+  // from a slot that stays clickable above it.
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const day = calendar.date.toString();
+    const room =
+      /** @type {HTMLElement} */ (document.querySelector(".cv-day-body")?.closest(".cv-day"))?.dataset
+        .resourceId ?? null;
+    const where = room ? { resourceId: room } : {};
+    calendar.addEvent({
+      id: "ev-armed",
+      title: "Long booking",
+      ...where,
+      start: `${day}T13:00:00[Europe/Brussels]`,
+      end: `${day}T15:00:00[Europe/Brussels]`,
+    });
+    calendar.addEvent({
+      id: "ev-occupant",
+      title: "Occupant",
+      ...where,
+      start: `${day}T10:00:00[Europe/Brussels]`,
+      end: `${day}T10:30:00[Europe/Brussels]`,
+    });
+  });
+  await flushRender(page);
+  await page.locator('[data-event-id="ev-armed"]').click({ button: "right" });
+  await page.locator("#context-menu").getByRole("menuitem", { name: "Cut" }).click();
+  await expect(page.locator("#workbench-list li")).toHaveCount(1);
+
+  // Right-click a free slot in the 08:35-09:55 window: the armed two-hour
+  // booking covers the occupant at 10:00 from there. The point is scanned,
+  // not assumed - shell chrome and parked cards can sit over the column, so
+  // the scan keeps the first y that actually lands on the day body.
+  const point = await page.evaluate(() => {
+    const body = /** @type {HTMLElement} */ (document.querySelector(".cv-day-body"));
+    const rect = body.getBoundingClientRect();
+    const labels = [...document.querySelectorAll(".cv-axis-label")];
+    const at = (/** @type {string} */ prefix) =>
+      labels.find((label) => label.textContent?.trim().startsWith(prefix));
+    const eight = at("8:");
+    const nine = at("9:");
+    const x = rect.left + rect.width / 2;
+    const pxPerMinute =
+      eight && nine ? (nine.getBoundingClientRect().y - eight.getBoundingClientRect().y) / 60 : 1.4;
+    const eightY = eight?.getBoundingClientRect().y ?? rect.top;
+    for (let y = rect.top + 30; y < rect.bottom - 10; y += 4) {
+      const el = document.elementFromPoint(x, y);
+      if (!el || !body.contains(el) || el.closest(".cv-event")) continue;
+      const minutes = 480 + (y - eightY) / pxPerMinute;
+      if (minutes >= 515 && minutes <= 595) return { x, y, minutes: Math.round(minutes) };
+    }
+    return null;
+  });
+  if (!point) throw new Error("no clean day-body point found in the 08:35-09:55 window");
+  await page.mouse.click(point.x, point.y, { button: "right" });
+  await expect(page.locator("#context-menu")).toBeVisible();
+  const preview = page.locator(".cv-preview");
+  await expect(preview).toHaveCount(1);
+  await expect(preview).toHaveClass(/cv-invalid/);
+  await expect(preview).toHaveAttribute("data-reason", /already occupies/);
+  // The menu's own Paste verb is greyed for the same verdict.
+  await expect(
+    page.locator("#context-menu").getByRole("menuitem", { name: /Paste .Long booking. here/ }),
+  ).toBeDisabled();
+  await page.locator("#anchor-label").click();
+  await page.keyboard.press("Escape");
+});
 test("the placement preview tracks the active payload, not the last click", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();

@@ -323,6 +323,7 @@ calendar.previewRange({
   start: "2026-09-20T14:00:00+02:00[Europe/Brussels]",
   end: "2026-09-20T14:30:00+02:00[Europe/Brussels]",
   resourceId: "room-b", // optional
+  reason: "…", // optional refusal reason, see below
 });
 calendar.clearPreview();
 ```
@@ -331,7 +332,7 @@ calendar.clearPreview();
   per touched column, so a multi-day range draws one per day, clipped to
   `slotMin`/`slotMax` like an event. `pointer-events: none`, `aria-hidden`,
   never focusable, never a dispatch source (`calendar:select` is untouched)
-  and never a policy check — this is already-validated evidence, not an
+  and never a policy check — this is already-evaluated evidence, not an
   interaction.
 - Resource scoping follows the event rule (`eventBelongsToColumn`): solo
   columns accept any range (even one carrying a `resourceId`); resource
@@ -341,6 +342,11 @@ calendar.clearPreview();
   current view cannot represent it (month/list have no time geometry;
   out-of-range days and hidden resources draw nothing). Interaction ghosts
   paint above it.
+- `reason` marks the proposal as refused: the overlay takes the
+  `cv-invalid` styling and exposes the reason through `data-reason`,
+  exactly like a refused drag mirror, so an application that knows the
+  proposal would be rejected can show that verdict before the commit is
+  ever attempted.
 - `clearPreview()` is a no-op when nothing is set.
 
 ## Civil date helpers

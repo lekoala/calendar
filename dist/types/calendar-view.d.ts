@@ -243,15 +243,19 @@ export declare class CalendarViewElement extends HTMLElement {
      * Read-only render state: no dispatch, no policy check, no focus; it
      * repaints on every render until replaced or cleared, and paints nothing
      * where the current view cannot represent it (other views, hidden
-     * resources, out-of-range days).
+     * resources, out-of-range days). `reason` marks the proposal as refused:
+     * the overlay takes the invalid style and exposes the reason like an
+     * interaction ghost, so a proposed target the application would reject
+     * reads as such before it is ever committed.
      *
-     * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
+     * @param {{ start: unknown, end: unknown, resourceId?: string | null, reason?: string | null }} range
      * @returns {void}
      */
     previewRange(range: {
         start: unknown;
         end: unknown;
         resourceId?: string | null;
+        reason?: string | null;
     }): void;
     /**
      * Removes the range overlay set by `previewRange()`. No render when there

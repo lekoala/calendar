@@ -142,6 +142,33 @@ test("previewRange replaces, clearPreview removes, and both survive renders", as
   await page.evaluate(() => /** @type {any} */ (document.querySelector("calendar-view")).clearPreview());
 });
 
+test("previewRange with a reason paints the refused-proposal style", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await expect(page.locator('[data-event-id="a"]')).toBeVisible();
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).previewRange({
+      start: "2026-09-03T14:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T14:30:00+02:00[Europe/Brussels]",
+      reason: "Occupied by another booking.",
+    });
+  });
+  await flushRender(page);
+  const preview = page.locator(".cv-preview");
+  await expect(preview).toHaveCount(1);
+  await expect(preview).toHaveClass(/cv-invalid/);
+  await expect(preview).toHaveAttribute("data-reason", "Occupied by another booking.");
+  // Replacing the range without a reason drops the refusal again.
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).previewRange({
+      start: "2026-09-03T15:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T15:30:00+02:00[Europe/Brussels]",
+    });
+  });
+  await flushRender(page);
+  await expect(preview).not.toHaveClass(/cv-invalid/);
+  await expect(preview).not.toHaveAttribute("data-reason", /.*/);
+});
+
 test("previewRange paints one overlay per touched day", async ({ page }) => {
   await page.goto("/demo/basic.html");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();

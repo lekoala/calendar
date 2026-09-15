@@ -569,7 +569,8 @@
 .cv-drag-mirror[data-reason]::after,
 .cv-event.cv-invalid[data-reason]::after,
 .cv-select-ghost[data-reason]::after,
-.cv-external-ghost[data-reason]::after {
+.cv-external-ghost[data-reason]::after,
+.cv-preview[data-reason]::after {
   content: attr(data-reason);
   position: absolute;
   inset-block-end: 0.15rem;
@@ -620,6 +621,12 @@
 }
 
 .cv-external-ghost.cv-invalid {
+  border-color: #dc2626;
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+}
+
+/* A refused application proposal reads exactly like a refused drop ghost. */
+.cv-preview.cv-invalid {
   border-color: #dc2626;
   background: color-mix(in srgb, #dc2626 12%, transparent);
 }

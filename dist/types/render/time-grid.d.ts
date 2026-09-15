@@ -76,6 +76,7 @@ export type TimeGridHost = {
         start: Temporal.ZonedDateTime;
         end: Temporal.ZonedDateTime;
         resourceId: string | null;
+        reason: string | null;
     } | null;
 };
 export type TimeGridColumn = {
@@ -160,7 +161,7 @@ export type ActiveSelection = {
  * @property {() => void} clearExternalDrag
  * @property {() => number} getInteractionRevision changes when canonical state or configuration changes
  * @property {(target: ExternalDropTarget) => void} setExternalDropTarget register pointer placement callbacks for this rendered grid
- * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null} getPreview application-proposed range overlay, or null
+ * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null, reason: string | null } | null} getPreview application-proposed range overlay, or null
  */
 /**
  * @typedef {object} TimeGridColumn

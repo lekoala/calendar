@@ -29,9 +29,12 @@ query subsystem, resource tree or source cache was added.
 * `revealEvent(id, { focus, highlight })` for in-range reveals and an
   awaitable `reveal({ eventId, date | start })` that navigates once, then
   focuses/highlights — the search-result navigation primitive.
-* `previewRange({ start, end, resourceId })` / `clearPreview()`: a
+* `previewRange({ start, end, resourceId, reason })` / `clearPreview()`: a
   read-only, `pointer-events: none` render overlay for application-proposed
-  ranges, painted with the same slice/geometry primitives as events.
+  ranges, painted with the same slice/geometry primitives as events. An
+  optional `reason` marks the proposal as refused: the overlay takes the
+  `cv-invalid` styling and exposes the reason through `data-reason`,
+  exactly like a refused drag mirror.
 * One-level resource grouping (`resourceGroups`, `resource.groupId`,
   `resourceGroupContent`): a group-header row above the resource headers,
   group order winning over the `resources` array order, ungrouped resources
@@ -53,9 +56,14 @@ query subsystem, resource tree or source cache was added.
 
 * A pointer drag whose day and minute deltas disagree in sign (e.g. one day
   backward and a few hours forward) no longer dies on an invalid mixed-sign
-  `Temporal.Duration`: the commit resolves the dropped start as a wall-clock
-  target and shifts the end by the same amount, so the drop commits instead
-  of silently snapping back.
+  `Temporal.Duration`: the commit shifts the event by two single-unit
+  additions (days, then minutes), so the drop commits instead of silently
+  snapping back.
+* A timed drag's hover verdict now judges the range the drop would commit —
+  the whole event shifted by the column day delta plus the minute delta —
+  rather than the rendered day slice. For clipped slices and multi-day
+  events the two used to disagree, so a destination could look valid under
+  the pointer and still revert on release.
 * Interaction ghosts that carry `data-reason` (drag mirrors, resize and
   selection ghosts, external placement ghosts) now render the reason as a
   chip inside the ghost, so a refused destination says why, not just turns

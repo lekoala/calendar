@@ -197,7 +197,7 @@ export class CalendarViewElement extends HTMLElement {
    * render until replaced or cleared; paints only where the current view
    * can represent it.
    *
-   * @type {{ start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null}
+   * @type {{ start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null, reason: string | null } | null}
    */
   #preview = null;
   /** @type {CalendarConfig} */
@@ -450,9 +450,12 @@ export class CalendarViewElement extends HTMLElement {
    * Read-only render state: no dispatch, no policy check, no focus; it
    * repaints on every render until replaced or cleared, and paints nothing
    * where the current view cannot represent it (other views, hidden
-   * resources, out-of-range days).
+   * resources, out-of-range days). `reason` marks the proposal as refused:
+   * the overlay takes the invalid style and exposes the reason like an
+   * interaction ghost, so a proposed target the application would reject
+   * reads as such before it is ever committed.
    *
-   * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
+   * @param {{ start: unknown, end: unknown, resourceId?: string | null, reason?: string | null }} range
    * @returns {void}
    */
   previewRange(range) {
@@ -464,10 +467,12 @@ export class CalendarViewElement extends HTMLElement {
       throw new TypeError("previewRange() requires a non-empty timed range");
     }
     const resourceId = range?.resourceId ?? null;
+    const reason = range?.reason ?? null;
     this.#preview = {
       start,
       end,
       resourceId: resourceId === null ? null : String(resourceId),
+      reason: reason === null ? null : String(reason),
     };
     this.#queueRender();
   }

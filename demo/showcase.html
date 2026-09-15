@@ -4307,18 +4307,34 @@
         return;
       }
       const durationMin = Math.max(15, wallMinutesOf(String(live.end)) - wallMinutesOf(String(live.start)));
+      // The ghost speaks the placement's own verdict: the reason Paste
+      // would refuse with rides the preview, so a refused target reads as
+      // refused before the gesture exists — same visual contract as the
+      // drag mirror.
       calendar.previewRange({
         start: stamp(lastSlot.date, lastSlot.minutes),
         end: stamp(lastSlot.date, lastSlot.minutes + durationMin),
         resourceId: lastSlot.resourceId,
+        reason: workbenchTargetReason(String(armed.eventId), {
+          date: lastSlot.date,
+          minutes: lastSlot.minutes,
+          resourceId: lastSlot.resourceId,
+          allDay: false,
+        }),
       });
       return;
     }
     if (copyClipboard) {
+      const start = stamp(lastSlot.date, lastSlot.minutes);
+      const end = stamp(lastSlot.date, lastSlot.minutes + copyClipboard.durationMin);
+      const context = calendar.getRangeContext({ start, end, resourceId: lastSlot.resourceId });
       calendar.previewRange({
-        start: stamp(lastSlot.date, lastSlot.minutes),
-        end: stamp(lastSlot.date, lastSlot.minutes + copyClipboard.durationMin),
+        start,
+        end,
         resourceId: lastSlot.resourceId,
+        reason:
+          violation({ start, end, resourceId: lastSlot.resourceId }, context) ??
+          occupancyReason(context, { room: lastSlot.resourceId, excludeEventId: copyClipboard.id }),
       });
       return;
     }
@@ -4460,26 +4476,31 @@
       // All-day bounds are civil dates with no wall clock; `violation()`
       // applies the day-level rules (past day, viewing-only Saturday) to
       // them and skips the wall-clock ones, matching the commit guard.
+      const reason = violation(
+        {
+          start: String(target.start),
+          end: String(target.end),
+          resourceId: target.resourceId,
+          allDay,
+        },
+        context,
+        event?.id ?? null,
+      );
+      if (reason) return reason;
       // Occupancy is the same rule the workbench applies to a placement:
       // a slot another same-room booking occupies refuses a move, a
-      // resize, a selection and an external drop alike.
+      // resize and a selection alike. An external drop is exempt here: the
+      // generic policy sees `event: null` and cannot tell the dragged
+      // payload apart from an occupant, so occupancy stays the source's
+      // own `validate` contract — the workbench row's validate already
+      // runs the identical verdict with the event id it knows.
+      if (action === "external") return true;
       return (
-        violation(
-          {
-            start: String(target.start),
-            end: String(target.end),
-            resourceId: target.resourceId,
-            allDay,
-          },
-          context,
-          event?.id ?? null,
-        ) ??
         occupancyReason(context, {
           allDay,
           room: target.resourceId ?? event?.resourceId ?? null,
           excludeEventId: event?.id ?? null,
-        }) ??
-        true
+        }) ?? true
       );
     },
     eventContent({ event, element }) {
