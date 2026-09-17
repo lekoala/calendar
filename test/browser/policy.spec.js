@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * @param {import("@playwright/test").Page} page
@@ -64,7 +65,7 @@ function policyCalls(page) {
 }
 
 test("a refused resize renders no handles but leaves others alone", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await seedWithPolicy(
     page,
     `return input.action === "resize" && input.event?.id === "a" ? "Locked" : true;`,
@@ -74,7 +75,7 @@ test("a refused resize renders no handles but leaves others alone", async ({ pag
 });
 
 test("a refused drag never starts: no mirror, no commit", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await seedWithPolicy(page, `return input.action === "move" && input.event?.id === "a" ? "Locked" : true;`);
   const box = await page.locator('[data-event-id="a"]').boundingBox();
   if (!box) throw new Error("expected event a to have a bounding box");
@@ -92,7 +93,7 @@ test("a refused drag never starts: no mirror, no commit", async ({ page }) => {
 });
 
 test("a refused select never arms: no selection intent", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await seedWithPolicy(page, `return input.action === "select" ? "No creation here" : true;`);
   const body = page.locator(".cv-day-body").first();
   await body.waitFor({ state: "visible" });
@@ -104,7 +105,7 @@ test("a refused select never arms: no selection intent", async ({ page }) => {
 });
 
 test("a refused destination marks the mirror and blocks the commit", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await seedWithPolicy(
     page,
     `if (input.action !== "move") return true;
@@ -131,7 +132,7 @@ test("a refused destination marks the mirror and blocks the commit", async ({ pa
 });
 
 test("the policy runs once per snapped target, not per pointermove", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await seedWithPolicy(page, `return true;`);
   const box = await page.locator('[data-event-id="a"]').boundingBox();
   if (!box) throw new Error("expected event a to have a bounding box");
@@ -149,7 +150,7 @@ test("the policy runs once per snapped target, not per pointermove", async ({ pa
 });
 
 test("a refused keyboard move commits nothing and announces the reason", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await seedWithPolicy(page, `return input.action === "move" ? "Locked" : true;`);
   await page.locator('[data-event-id="a"]').focus();
   await page.keyboard.press("Shift+ArrowDown");
@@ -163,7 +164,7 @@ test("a refused keyboard move commits nothing and announces the reason", async (
 });
 
 test("programmatic moveEvent stays authoritative under a refusing policy", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await seedWithPolicy(page, `return false;`);
   const moved = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -178,7 +179,7 @@ test("programmatic moveEvent stays authoritative under a refusing policy", async
 });
 
 test("an external drop consults the policy with action external and a null event", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await seedWithPolicy(
     page,
     `if (input.action === "external") return "No external placements";

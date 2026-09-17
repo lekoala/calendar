@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * Locale and labels: `configure({ locale })` (or the `lang` attribute)
@@ -15,7 +16,7 @@ function flushRender(page) {
 }
 
 test("locale localizes month weekdays and day headers", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.configure({ locale: "fr" });
@@ -30,7 +31,7 @@ test("locale localizes month weekdays and day headers", async ({ page }) => {
 });
 
 test("lang attribute localizes without configure", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.setAttribute("lang", "fr");
@@ -41,7 +42,7 @@ test("lang attribute localizes without configure", async ({ page }) => {
 });
 
 test("explicit firstDay beats the locale suggestion", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.configure({ locale: "en-US" });
@@ -58,7 +59,7 @@ test("explicit firstDay beats the locale suggestion", async ({ page }) => {
 });
 
 test("labels override the English fixed strings", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = Array.from({ length: 6 }, (_, index) => ({

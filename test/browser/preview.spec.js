@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * Rendering is queued on requestAnimationFrame: wait two frames so a state
@@ -13,7 +14,7 @@ function flushRender(page) {
 }
 
 test("previewRange paints event geometry without dispatching a selection", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.evaluate(() => {
     /** @type {any} */ (window).__selects = 0;
@@ -52,7 +53,7 @@ test("previewRange paints event geometry without dispatching a selection", async
 });
 
 test("previewRange honors resource columns like events do", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   // room-b only: exactly one column paints.
   await page.evaluate(() => {
@@ -83,7 +84,7 @@ test("previewRange honors resource columns like events do", async ({ page }) => 
 });
 
 test("previewRange in a solo view accepts a resource id", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   // Solo columns accept every range, like they accept every event: a proposal
   // carrying its resource still paints (MyConsultation solo views).
@@ -99,7 +100,7 @@ test("previewRange in a solo view accepts a resource id", async ({ page }) => {
 });
 
 test("previewRange replaces, clearPreview removes, and both survive renders", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -143,7 +144,7 @@ test("previewRange replaces, clearPreview removes, and both survive renders", as
 });
 
 test("previewRange with a reason paints the refused-proposal style", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).previewRange({
@@ -170,7 +171,7 @@ test("previewRange with a reason paints the refused-proposal style", async ({ pa
 });
 
 test("previewRange paints one overlay per touched day", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).previewRange({
@@ -183,7 +184,7 @@ test("previewRange paints one overlay per touched day", async ({ page }) => {
 });
 
 test("previewRange rejects non-timed and empty ranges", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const names = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -214,7 +215,7 @@ test("previewRange rejects non-timed and empty ranges", async ({ page }) => {
 });
 
 test("previewRange paints nothing the view cannot represent", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   // Out of the visible range: state is kept, nothing is painted.
   await page.evaluate(() => {

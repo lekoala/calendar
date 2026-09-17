@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo, slotPoint } from "./fixture.js";
 
 /**
  * resourceTimeGrid acceptance: grouped headers, Temporal slicing,
@@ -14,7 +15,7 @@ function flushRender(page) {
 }
 
 test("resource view renders one grouped header per resource", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   const headers = page.locator(".cv-resource-header");
   await expect(headers).toHaveCount(2);
   await expect(headers.nth(0)).toHaveAttribute("data-resource-id", "room-a");
@@ -28,7 +29,7 @@ test("resource view renders one grouped header per resource", async ({ page }) =
 });
 
 test("resourceHeaderContent is called once per resource", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   const calls = await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__resourceHeaders = [];
@@ -49,7 +50,7 @@ test("resourceHeaderContent is called once per resource", async ({ page }) => {
 });
 
 test("overnight event is sliced across both days", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).events = [
       {
@@ -73,7 +74,7 @@ test("overnight event is sliced across both days", async ({ page }) => {
 });
 
 test("event without resource is hidden in resource view but visible in solo", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).events = [
       {
@@ -95,7 +96,7 @@ test("event without resource is hidden in resource view but visible in solo", as
 });
 
 test("global background spans every column, targeted background stays local", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = [];
@@ -125,7 +126,7 @@ test("global background spans every column, targeted background stays local", as
 });
 
 test("non-selectable resource blocks range selection", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__select = 0;
@@ -139,15 +140,14 @@ test("non-selectable resource blocks range selection", async ({ page }) => {
     ];
   });
   await flushRender(page);
-  const box = await page.locator(".cv-day-body").first().boundingBox();
-  if (!box) throw new Error("expected a day body");
-  await page.mouse.click(box.x + box.width / 2, box.y + 187 * 1.8);
+  const point = await slotPoint(page, { time: "11:07" });
+  await page.mouse.click(point.x, point.y);
   await page.waitForTimeout(200);
   expect(await page.evaluate(() => /** @type {any} */ (window).__select)).toBe(0);
 });
 
 test("resource view with no resources shows an explicit empty state", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).resources = [];
   });
@@ -157,7 +157,7 @@ test("resource view with no resources shows an explicit empty state", async ({ p
 });
 
 test("solo view with resources in state renders date columns only", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).setView("threeDays");
   });
@@ -167,7 +167,7 @@ test("solo view with resources in state renders date columns only", async ({ pag
 });
 
 test("density fixtures keep minimum width and scroll horizontally", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await expect(page.locator(".cv-day")).toHaveCount(6);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -192,7 +192,7 @@ test("density fixtures keep minimum width and scroll horizontally", async ({ pag
 });
 
 test("switching solo and resource preserves date and vertical scroll", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await expect(page.locator(".cv-scroller")).toBeAttached();
   const state = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -221,13 +221,13 @@ test("switching solo and resource preserves date and vertical scroll", async ({ 
 });
 
 test("stress page renders the 12x3 manual configuration", async ({ page }) => {
-  await page.goto("/demo/resources-stress.html");
+  await openDemo(page, "resources-stress");
   await expect(page.locator(".cv-day")).toHaveCount(36);
   await expect(page.locator(".cv-resource-header")).toHaveCount(12);
 });
 
 test("late source response never overwrites newer resource state", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__releaseSlow = null;
@@ -280,7 +280,7 @@ test("late source response never overwrites newer resource state", async ({ page
 });
 
 test("geometry seams resize the axis and sticky header rows together", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.createElement("calendar-view"));
     calendar.id = "seams";
@@ -325,7 +325,7 @@ test("geometry seams resize the axis and sticky header rows together", async ({ 
 });
 
 test("dragging toward the horizontal edge autoscrolls the wide resource grid", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.createElement("calendar-view"));
     calendar.id = "wide";

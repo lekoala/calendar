@@ -24,6 +24,13 @@
 </main>
 <script>
   const calendar = document.querySelector("calendar-view");
+  // Fixture readiness contract for the browser suites: the first configured
+  // render marks the document, so tests never interact with the pre-config
+  // tree (connectedCallback renders once in UTC defaults before this script
+  // runs). The signal persists.
+  calendar.addEventListener("calendar:render", () => {
+    document.documentElement.dataset.calendarReady = "";
+  }, { once: true });
   // Fixture data is Brussels-dated; pin the zone so the demo never depends
   // on the neutral UTC default.
   calendar.configure({ timeZone: "Europe/Brussels" });

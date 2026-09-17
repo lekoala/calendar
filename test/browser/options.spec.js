@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * Contract gaps: source observability, a render signal, class application
@@ -33,7 +34,7 @@ function recordLoading(page) {
 }
 
 test("an async source brackets itself with calendar:loading", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await recordLoading(page);
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).configure({
@@ -47,7 +48,7 @@ test("an async source brackets itself with calendar:loading", async ({ page }) =
 });
 
 test("a superseded request never reports itself as settled", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await recordLoading(page);
   await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -63,7 +64,7 @@ test("a superseded request never reports itself as settled", async ({ page }) =>
 });
 
 test("calendar:render fires once the subtree exists", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await flushRender(page);
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
@@ -88,7 +89,7 @@ test("calendar:render fires once the subtree exists", async ({ page }) => {
 });
 
 test("classNames reach the month and list renderers too", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).events = [
       {
@@ -113,7 +114,7 @@ test("classNames reach the month and list renderers too", async ({ page }) => {
 });
 
 test("+n more is activatable and reports its day instead of proposing a creation", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__log = [];
@@ -157,7 +158,7 @@ test("+n more is activatable and reports its day instead of proposing a creation
 });
 
 test("moreLinkContent owns the label", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = Array.from({ length: 6 }, (_, index) => ({
@@ -174,7 +175,7 @@ test("moreLinkContent owns the label", async ({ page }) => {
 });
 
 test("slotLabelInterval sets axis density and slotLabelContent its text", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await flushRender(page);
   // 08:00 to 18:00 inclusive, formatted for the document locale.
   await expect(page.locator(".cv-axis-label")).toHaveCount(11);
@@ -198,7 +199,7 @@ test("slotLabelInterval sets axis density and slotLabelContent its text", async 
 });
 
 test("week is anchored on the civil week and firstDay moves it", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => /** @type {any} */ (document.querySelector("calendar-view")).setView("week"));
   await flushRender(page);
   await expect(page.locator(".cv-day")).toHaveCount(7);
@@ -214,7 +215,7 @@ test("week is anchored on the civil week and firstDay moves it", async ({ page }
 });
 
 test("hiddenDays drops columns in week, month and rolling views", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.configure({ hiddenDays: [6, 7] });
@@ -241,7 +242,7 @@ test("hiddenDays drops columns in week, month and rolling views", async ({ page 
 });
 
 test("navigation with hidden days neither repeats nor skips a working day", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.configure({ hiddenDays: [6, 7] });
@@ -258,7 +259,7 @@ test("navigation with hidden days neither repeats nor skips a working day", asyn
 });
 
 test("a source asked for a month still receives whole weeks when days are hidden", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -277,7 +278,7 @@ test("a source asked for a month still receives whole weeks when days are hidden
 });
 
 test("configure({ editable: false }) locks events that omit the flag", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-resize-handle")).toHaveCount(6);
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).configure({ editable: false });
@@ -313,7 +314,7 @@ test("configure({ editable: false }) locks events that omit the flag", async ({ 
 });
 
 test("a background refetch keeps the events added while it was in flight", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const outcome = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.configure({
@@ -351,7 +352,7 @@ test("a background refetch keeps the events added while it was in flight", async
 });
 
 test("an event refetch keeps the backgrounds set while it was in flight", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const outcome = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.configure({
@@ -391,7 +392,7 @@ test("an event refetch keeps the backgrounds set while it was in flight", async 
 });
 
 test("an unconfigured calendar renders in UTC, not in a product zone", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const fresh = document.createElement("calendar-view");
     fresh.id = "neutral";

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { Temporal } from "temporal-polyfill";
+import { openDemo } from "./fixture.js";
 
 const ZONE = "Europe/Brussels";
 
@@ -45,7 +46,7 @@ async function seedRelativeEvents(page, input) {
 }
 
 test("event nodes carry data-temporal-state and hooks receive it", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const past = relativeRange(-180, -120);
   const current = relativeRange(-30, 30);
   const future = relativeRange(60, 120);
@@ -87,7 +88,7 @@ test("event nodes carry data-temporal-state and hooks receive it", async ({ page
 });
 
 test("temporal state ages live without refetch", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   // Ends ~1.5s in the future: currently current, past once the one-shot
   // timer fires the next render.
   const now = Temporal.Now.zonedDateTimeISO(ZONE);
@@ -119,7 +120,7 @@ test("temporal state ages live without refetch", async ({ page }) => {
 });
 
 test("month and list nodes carry data-temporal-state", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const past = relativeRange(-180, -120);
   const future = relativeRange(60, 120);
   await seedRelativeEvents(page, [
@@ -158,7 +159,7 @@ test("disconnect cancels the aging timer without errors", async ({ page }) => {
   /** @type {string[]} */
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error)));
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const now = Temporal.Now.zonedDateTimeISO(ZONE);
   await seedRelativeEvents(page, [
     {

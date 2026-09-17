@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo, slotPoint } from "./fixture.js";
 
 /**
  * External placement: an application source registers
@@ -58,19 +59,6 @@ async function injectSource(page, payload, meta = {}) {
   );
 }
 
-/** @param {import("@playwright/test").Page} page */
-async function gridPoint(page) {
-  return page.evaluate(() => {
-    const body = /** @type {HTMLElement} */ (document.querySelector(".cv-day-body"));
-    const rect = body.getBoundingClientRect();
-    const labels = [...document.querySelectorAll(".cv-axis-label")];
-    // The 10:00 line, plus a small offset safely inside the same snap slot.
-    const ten = labels.find((label) => label.textContent?.trim().startsWith("10"));
-    const y = (ten?.getBoundingClientRect().y ?? rect.top + 220) + 12;
-    return { x: rect.left + rect.width / 2, y };
-  });
-}
-
 /** @param {import("@playwright/test").Page} page @returns {Promise<number>} measured pixels per minute */
 async function pxPerMinute(page) {
   return page.evaluate(() => {
@@ -89,33 +77,11 @@ async function pxPerMinute(page) {
   });
 }
 
-/**
- * Re-arm the synthetic dragover until the ghost lands. Real drags send a
- * continuous dragover stream that repaints after every render; a single
- * synthetic event cannot recover if a render slips in between (the 0.x full
- * replacement drops the closure-held ghost), so poll with re-dispatch
- * instead of asserting one shot.
- *
- * @param {import("@playwright/test").Page} page
- * @param {{ x: number, y: number }} point
- */
-async function overUntilGhost(page, point) {
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
-        return page.locator(".cv-external-ghost").count();
-      },
-      { timeout: 8000 },
-    )
-    .toBe(1);
-}
-
 test("grid drop delivers the snapped timed anchor and stays cancelable", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await injectSource(page, { kind: "occurrence", ref: "ext-1" }, { duration: 60, title: "New block" });
-  const point = await gridPoint(page);
+  const point = await slotPoint(page, { time: "10:07" });
 
   const detail = await page.evaluate(async ({ x, y }) => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -147,11 +113,11 @@ test("grid drop delivers the snapped timed anchor and stays cancelable", async (
 });
 
 test("dragover paints a ghost shaped by the real duration", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await injectSource(page, { kind: "occurrence" }, { duration: 60, title: "New block" });
-  const point = await gridPoint(page);
-  await overUntilGhost(page, point);
+  const point = await slotPoint(page, { time: "10:07" });
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
 
   await expect(page.locator(".cv-external-ghost")).toHaveCount(1);
   // A 60-minute preview: the ghost height equals the measured axis pitch.
@@ -169,7 +135,7 @@ test("dragover paints a ghost shaped by the real duration", async ({ page }) => 
 
 for (const demo of ["basic", "resources"]) {
   test(`${demo}: repeated external hover reuses its ghost and validates only new slots`, async ({ page }) => {
-    await page.goto(`/demo/${demo}.html`);
+    await openDemo(page, demo);
     await expect(page.locator(".cv-day").first()).toBeVisible();
     const result = await page.evaluate(() => {
       const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -241,7 +207,7 @@ for (const demo of ["basic", "resources"]) {
 }
 
 test("external hover invalidates on data changes and drop rechecks application state", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   const result = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -322,11 +288,11 @@ test("external hover invalidates on data changes and drop rechecks application s
 
 for (const end of ["dragend", "remove", "disconnect"]) {
   test(`external ghost is cleared on ${end}`, async ({ page }) => {
-    await page.goto("/demo/basic.html");
+    await openDemo(page, "basic");
     await expect(page.locator(".cv-day")).toHaveCount(3);
     await injectSource(page, {}, { duration: 30 });
-    const point = await gridPoint(page);
-    await overUntilGhost(page, point);
+    const point = await slotPoint(page, { time: "10:07" });
+    await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
     const remaining = await page.evaluate((end) => {
       const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
       const source = /** @type {HTMLElement} */ (document.getElementById("ext-src"));
@@ -370,10 +336,10 @@ for (const demo of ["basic", "resources"]) {
   test(`${demo}: mouse placement follows pointer frames and suppresses the source click`, async ({
     page,
   }) => {
-    await page.goto(`/demo/${demo}.html`);
+    await openDemo(page, demo);
     await expect(page.locator(".cv-day").first()).toBeVisible();
     await pointerSource(page);
-    const point = await gridPoint(page);
+    const point = await slotPoint(page, { time: "10:07" });
     await page.mouse.move(point.x, point.y);
     await expect(page.locator(".cv-external-ghost")).toBeVisible();
     const before = await page.locator(".cv-external-ghost").getAttribute("style");
@@ -394,10 +360,10 @@ for (const demo of ["basic", "resources"]) {
 
 for (const end of ["escape", "pointercancel", "lostpointercapture", "remove", "disconnect"]) {
   test(`pointer external placement cancels on ${end} and releases keyboard handling`, async ({ page }) => {
-    await page.goto("/demo/basic.html");
+    await openDemo(page, "basic");
     await expect(page.locator(".cv-day")).toHaveCount(3);
     await pointerSource(page);
-    const point = await gridPoint(page);
+    const point = await slotPoint(page, { time: "10:07" });
     await page.mouse.move(point.x, point.y);
     await expect(page.locator(".cv-external-ghost")).toBeVisible();
     if (end === "escape") await page.keyboard.press("Escape");
@@ -427,10 +393,10 @@ for (const end of ["escape", "pointercancel", "lostpointercapture", "remove", "d
 test("pointer external preview survives a data render and follows stationary edge autoscroll", async ({
   page,
 }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await pointerSource(page);
-  const point = await gridPoint(page);
+  const point = await slotPoint(page, { time: "10:07" });
   await page.mouse.move(point.x, point.y);
   await expect(page.locator(".cv-external-ghost")).toBeVisible();
   await page.evaluate(() => {
@@ -467,7 +433,7 @@ test("pointer external preview survives a data render and follows stationary edg
 test("pointer external placement can enter the all-day lane and leave the grid without a drop", async ({
   page,
 }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -475,7 +441,7 @@ test("pointer external placement can enter the all-day lane and leave the grid w
   });
   await flushRender(page);
   await pointerSource(page);
-  const point = await gridPoint(page);
+  const point = await slotPoint(page, { time: "10:07" });
   await page.mouse.move(point.x, point.y);
   await expect(page.locator(".cv-external-ghost:not(.cv-external-ghost-lane)")).toBeVisible();
   const lane = await page.locator(".cv-allday").boundingBox();
@@ -489,7 +455,7 @@ test("pointer external placement can enter the all-day lane and leave the grid w
 });
 
 test("an application refusal marks the ghost invalid and suppresses the drop", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   // `validate` is a function, so it cannot cross `page.evaluate` — build the
   // source (with its policy) entirely inside the page.
@@ -520,8 +486,8 @@ test("an application refusal marks the ghost invalid and suppresses the drop", a
     /** @type {any} */ (globalThis).__extOver = driver("dragover");
     /** @type {any} */ (globalThis).__extDrop = driver("drop");
   });
-  const point = await gridPoint(page);
-  await overUntilGhost(page, point);
+  const point = await slotPoint(page, { time: "10:07" });
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
 
   await expect(page.locator(".cv-external-ghost")).toHaveClass(/cv-invalid/);
   await expect(page.locator(".cv-external-ghost")).toHaveAttribute("data-reason", "Doctor unavailable");
@@ -539,7 +505,7 @@ test("an application refusal marks the ghost invalid and suppresses the drop", a
 });
 
 test("dropping on the all-day lane places a civil anchor", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   // Force the lane into existence.
   await page.evaluate(() => {
@@ -589,7 +555,7 @@ test("dropping on the all-day lane places a civil anchor", async ({ page }) => {
 });
 
 test("a non-droppable resource refuses the drop", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await expect(page.locator(".cv-day").first()).toBeVisible();
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -601,12 +567,8 @@ test("a non-droppable resource refuses the drop", async ({ page }) => {
   await flushRender(page);
   await injectSource(page, { kind: "occurrence" }, { duration: 60 });
 
-  const roomB = await page.evaluate(() => {
-    const body = document.querySelector('.cv-day[data-resource-id="room-b"] .cv-day-body');
-    const rect = /** @type {HTMLElement} */ (body).getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + (600 - 480) * 1.8 };
-  });
-  await overUntilGhost(page, roomB);
+  const roomB = await slotPoint(page, { date: "2026-09-03", resourceId: "room-b", time: "10:00" });
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), roomB);
   await expect(page.locator(".cv-external-ghost")).toHaveClass(/cv-invalid/);
 
   await page.evaluate(() => {
@@ -622,10 +584,10 @@ test("a non-droppable resource refuses the drop", async ({ page }) => {
 });
 
 test("removeExternalDrop disarms the source; the grid stops previewing", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await injectSource(page, { kind: "occurrence" }, { duration: 60 });
-  const point = await gridPoint(page);
+  const point = await slotPoint(page, { time: "10:07" });
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.removeExternalDrop(/** @type {any} */ (globalThis).__extSource);

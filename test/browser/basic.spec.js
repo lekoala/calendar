@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import { expect, test } from "@playwright/test";
 import { Temporal } from "temporal-polyfill";
+import { dayBodyBox, openDemo, slotPoint, slotPoints } from "./fixture.js";
 
 test("solo demo renders calendar events", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator("calendar-view")).toBeVisible();
   await expect(page.locator(".cv-event")).toHaveCount(3);
 });
 
 test("overlapping events share the column width", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-event")).toHaveCount(3);
   const widths = await page.evaluate(() =>
     ["a", "c"].map(
@@ -20,12 +21,12 @@ test("overlapping events share the column width", async ({ page }) => {
 });
 
 test("resource demo creates resource/date columns", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await expect(page.locator(".cv-day")).toHaveCount(6);
 });
 
 test("incremental mutation API updates without navigation", async ({ page }) => {
-  await page.goto("/demo/realtime.html");
+  await openDemo(page, "realtime");
   await expect(page.locator("[data-event-id=live]")).toHaveCount(1);
   await page.click("#move");
   await expect(page.locator("[data-event-id=live]")).toContainText("Updated live event");
@@ -34,7 +35,7 @@ test("incremental mutation API updates without navigation", async ({ page }) => 
 });
 
 test("prev/next shift the anchor date by view length", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const dates = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const before = calendar.getAttribute("date");
@@ -50,7 +51,7 @@ test("prev/next shift the anchor date by view length", async ({ page }) => {
 });
 
 test("today returns to the current date and shows the time indicator", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const now = Temporal.Now.plainDateTimeISO("Europe/Brussels");
   // The indicator only exists inside the slot range, so widen it around the
   // wall clock rather than letting the run depend on the time of day.
@@ -71,7 +72,7 @@ test("today returns to the current date and shows the time indicator", async ({ 
 });
 
 test("scrollToTime moves the scroller to the requested hour", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-scroller")).toBeAttached();
   const top = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -83,7 +84,7 @@ test("scrollToTime moves the scroller to the requested hour", async ({ page }) =
 });
 
 test("scrollToTime before the first render is applied once the scroller exists", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const top = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.createElement("calendar-view"));
     calendar.setAttribute("slot-min", "08:00");
@@ -101,7 +102,7 @@ test("scrollToTime before the first render is applied once the scroller exists",
 });
 
 test("pointer click dispatches calendar:eventclick", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-event").first()).toBeVisible();
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
@@ -116,7 +117,7 @@ test("pointer click dispatches calendar:eventclick", async ({ page }) => {
 });
 
 test("keyboard Enter on a focused event dispatches calendar:eventclick", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="b"]')).toBeVisible();
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
@@ -180,29 +181,31 @@ function flushRender(page) {
 }
 
 test("hovering an empty slot shows a duration preview", async ({ page }) => {
-  await page.goto("/demo/basic.html");
-  const box = await firstBodyBox(page);
-  // 187 minutes sits inside the 11:00 snap step: cross-API sub-pixel slop
+  await openDemo(page, "basic");
+  const point = await slotPoint(page, { time: "11:07" });
+  // 11:07 sits inside the 11:00 snap step: cross-API sub-pixel slop
   // (~1px) must never flip the asserted step.
-  await page.mouse.move(box.x + box.width / 2, box.y + 187 * 1.8);
+  await page.mouse.move(point.x, point.y);
   await expect(page.locator(".cv-hover").first()).toBeVisible();
   await expect(page.locator(".cv-hover-chip").first()).toContainText("+ 11:00");
 });
 
 test("hovering an event shows no slot preview", async ({ page }) => {
-  await page.goto("/demo/basic.html");
-  const box = await firstBodyBox(page);
-  await page.mouse.move(box.x + box.width / 2, box.y + 187 * 1.8);
+  await openDemo(page, "basic");
+  const box = await dayBodyBox(page);
+  const point = await slotPoint(page, { time: "11:07" });
+  await page.mouse.move(point.x, point.y);
   await expect(page.locator(".cv-hover").first()).toBeVisible();
-  await page.mouse.move(box.x + box.width * 0.25, box.y + 75 * 1.8);
+  const offHour = await slotPoint(page, { time: "09:15" });
+  await page.mouse.move(box.x + box.width * 0.25, offHour.y);
   await expect(page.locator(".cv-hover").first()).toBeHidden();
 });
 
 test("clicking an empty slot selects a snapped default-duration range", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackSelections(page);
-  const box = await firstBodyBox(page);
-  await page.mouse.click(box.x + box.width / 2, box.y + 187 * 1.8);
+  const point = await slotPoint(page, { time: "11:07" });
+  await page.mouse.click(point.x, point.y);
   await expect.poll(() => selectionCount(page)).toBe(1);
   const [selection] = await readSelections(page);
   expect(selection.start).toContain("T11:00:00+02:00");
@@ -212,15 +215,16 @@ test("clicking an empty slot selects a snapped default-duration range", async ({
 });
 
 test("dragging selects a snapped range without a residual click selection", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackSelections(page);
-  const box = await firstBodyBox(page);
-  const x = box.x + box.width / 2;
-  // Interior snap steps (182/252): exact boundaries would let sub-pixel
+  // Both ends measured in one layout state: a scroll between press and move
+  // cancels the press on touch engines and restarts the gesture mid-drag.
+  const [from, to] = await slotPoints(page, [{ time: "11:02" }, { time: "12:12" }]);
+  // Interior snap steps (11:02/12:12): exact boundaries would let sub-pixel
   // cross-API slop flip the asserted range on some browsers.
-  await page.mouse.move(x, box.y + 182 * 1.8);
+  await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(x, box.y + 252 * 1.8, { steps: 5 });
+  await page.mouse.move(to.x, to.y, { steps: 5 });
   await expect(page.locator(".cv-select-chip").first()).toContainText("11:00 - 12:15");
   await page.mouse.up();
   await expect.poll(() => selectionCount(page)).toBe(1);
@@ -232,52 +236,15 @@ test("dragging selects a snapped range without a residual click selection", asyn
 });
 
 test("range selection in a resource column returns the resource id", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await trackSelections(page);
-  const box = await firstBodyBox(page);
-  await page.mouse.click(box.x + box.width / 2, box.y + 187 * 1.8);
+  const point = await slotPoint(page, { time: "11:07" });
+  await page.mouse.click(point.x, point.y);
   await expect.poll(() => selectionCount(page)).toBe(1);
   const [selection] = await readSelections(page);
   expect(selection.resourceId).toBe("room-a");
   expect(selection.start).toContain("T11:00:00+02:00");
 });
-
-/**
- * Pre-interaction coordinates. Scrolls the calendar into view and resets the
- * inner scroll to the top, so the point below always lands on the body
- * itself: demo chrome above the grid varies in height per browser/fonts, and
- * points near the viewport fold dispatch differently per engine
- * (`scrollIntoViewIfNeeded` also scrolls oversized elements differently per
- * browser and can leave a sticky day header covering the target point).
- *
- * The measure itself is one atomic evaluate, retried until it yields a box:
- * this renderer replaces its whole subtree per render, so a node that was
- * visible at `waitFor` time can detach before a later `boundingBox` call
- * observes it. Each attempt re-queries the live node instead. A plain retry
- * loop (not `expect.poll`) so the measured box flows out to the caller.
- *
- * @param {import("@playwright/test").Page} page
- * @returns {Promise<{ x: number, y: number, width: number, height: number }>}
- */
-async function firstBodyBox(page) {
-  const deadline = Date.now() + 8000;
-  /** @type {{ x: number, y: number, width: number, height: number } | null} */
-  let box = null;
-  while (box === null) {
-    if (Date.now() > deadline) break;
-    box = await page.evaluate(() => {
-      document.querySelector("calendar-view")?.scrollIntoView({ block: "start" });
-      const scroller = /** @type {any} */ (document.querySelector(".cv-scroller"));
-      if (scroller) scroller.scrollTop = 0;
-      const rect = document.querySelector(".cv-day-body")?.getBoundingClientRect();
-      return rect && rect.width > 0 && rect.height > 0
-        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-        : null;
-    });
-  }
-  assert(box, "expected the first day body to have a bounding box");
-  return box;
-}
 
 /**
  * Pre-interaction event coordinates. Waits for visibility, then measures;
@@ -368,7 +335,7 @@ async function readResizes(page) {
 }
 
 test("dragging an event in time dispatches a reversible eventmove", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   const box = await eventBox(page, "a");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -389,7 +356,7 @@ test("dragging an event across resources changes its resource", async ({ page, i
   // source and target columns are never on screen together: reaching across
   // is the autoscroll gesture (covered separately), not a direct drop.
   test.skip(Boolean(isMobile), "source and target columns never share a 390px viewport");
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await trackMoves(page);
   const from = await eventBox(page, "a");
   const bodies = page.locator(".cv-day-body");
@@ -407,7 +374,7 @@ test("dragging an event across resources changes its resource", async ({ page, i
 });
 
 test("dragging inside a resource-less grid keeps the event's resource", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -432,7 +399,7 @@ test("dragging inside a resource-less grid keeps the event's resource", async ({
 });
 
 test("dragging an event a day forward and an hour backward commits", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   const from = await eventBox(page, "a");
   const bodies = page.locator(".cv-day-body");
@@ -454,7 +421,7 @@ test("dragging an event a day forward and an hour backward commits", async ({ pa
 });
 
 test("a rejected move reverts to its previous position", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     /** @type {any} */ (window).__moves = [];
     /** @type {any} */ (document.querySelector("calendar-view")).addEventListener(
@@ -476,7 +443,7 @@ test("a rejected move reverts to its previous position", async ({ page }) => {
 });
 
 test("resizing an event dispatches eventresize", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   const box = await resizeHandleBox(page, "a", "s");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -491,7 +458,7 @@ test("resizing an event dispatches eventresize", async ({ page }) => {
 });
 
 test("resizing from the top moves the start", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   const box = await resizeHandleBox(page, "a", "n");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -505,7 +472,7 @@ test("resizing from the top moves the start", async ({ page }) => {
 });
 
 test("pointercancel aborts a drag without dispatching", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   const box = await eventBox(page, "a");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -523,7 +490,7 @@ test("pointercancel aborts a drag without dispatching", async ({ page }) => {
 });
 
 test("a non-movable event cannot be dragged or moved by command", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -545,7 +512,7 @@ test("a non-movable event cannot be dragged or moved by command", async ({ page 
 });
 
 test("dropping on a non-droppable resource reverts silently", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await trackMoves(page);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -571,7 +538,7 @@ test("dropping on a non-droppable resource reverts silently", async ({ page }) =
 });
 
 test("moveEvent and resizeEvent commands share the pointer contract", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   const moved = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -598,7 +565,7 @@ test("moveEvent and resizeEvent commands share the pointer contract", async ({ p
 });
 
 test("getEventOverlaps answers conflicts from canonical state", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const hits = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     return calendar
@@ -630,7 +597,7 @@ test("getEventOverlaps answers conflicts from canonical state", async ({ page })
 });
 
 test("a dragged event magnetizes to a neighboring boundary", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   // A predecessor ending off-grid (10:10, not a 15-minute step): dropping
   // the second event at a raw 10:08 must snap to 10:10, not floor to 10:00.
@@ -669,7 +636,7 @@ test("a dragged event magnetizes to a neighboring boundary", async ({ page }) =>
 });
 
 test("dragging a multi-day slice preserves the total duration", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -701,7 +668,7 @@ test("dragging a multi-day slice preserves the total duration", async ({ page })
 });
 
 test("resizing a clipped multi-day edge is a no-op", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -730,7 +697,7 @@ test("resizing a clipped multi-day edge is a no-op", async ({ page }) => {
 });
 
 test("dragging an event does not leak an eventclick", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMoves(page);
   await page.evaluate(() => {
     /** @type {any} */ (window).__clicks = [];
@@ -752,7 +719,7 @@ test("dragging an event does not leak an eventclick", async ({ page }) => {
 });
 
 test("no date attribute anchors on today", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const date = await page.evaluate(
     () =>
       new Promise((resolve) => {
@@ -771,7 +738,7 @@ test("no date attribute anchors on today", async ({ page }) => {
 });
 
 test("event nodes allow touch scroll while resize handles stay precise", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.locator('[data-event-id="a"] .cv-resize-s').first().waitFor({ state: "visible" });
   const touch = await page.evaluate(() => {
     const event = /** @type {any} */ (document.querySelector('[data-event-id="a"]'));
@@ -787,7 +754,7 @@ test("event nodes allow touch scroll while resize handles stay precise", async (
 });
 
 test("a handled contextmenu suppresses the native browser menu", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.locator('[data-event-id="a"]').first().waitFor({ state: "visible" });
   await page.evaluate(() => {
     /** @type {any} */ (window).__ctx = { intents: 0, prevented: null };
@@ -810,7 +777,7 @@ test("a handled contextmenu suppresses the native browser menu", async ({ page }
 });
 
 test("an unhandled contextmenu leaves the native browser menu alone", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.locator('[data-event-id="a"]').first().waitFor({ state: "visible" });
   await page.evaluate(() => {
     /** @type {any} */ (window).__ctx = { intents: 0, prevented: null };
@@ -844,7 +811,7 @@ async function framesKeepComing(page) {
 }
 
 test("a deferred revert never lands on another event", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const outcome = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const hooks = /** @type {any} */ (window);
@@ -875,7 +842,7 @@ test("a deferred revert never lands on another event", async ({ page }) => {
 });
 
 test("a deferred revert leaves a newer move alone", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const start = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     const hooks = /** @type {any} */ (window);
@@ -901,7 +868,7 @@ test("a deferred revert leaves a newer move alone", async ({ page }) => {
 });
 
 test("autoscroll stops when the calendar leaves the document mid-drag", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__frames = 0;
@@ -927,7 +894,7 @@ test("autoscroll stops when the calendar leaves the document mid-drag", async ({
 });
 
 test("losing the pointer capture cleans up a drag", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const card = page.locator('.cv-event[data-event-id="a"]');
   await expect(card).toBeVisible();
   const box = await card.boundingBox();

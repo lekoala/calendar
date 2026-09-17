@@ -19,6 +19,13 @@
 <calendar-view view="day" date="2026-09-03"></calendar-view>
 <script type="module">
   const calendar = document.querySelector("calendar-view");
+  // Fixture readiness contract for the browser suites: the first configured
+  // render marks the document, so tests never interact with the pre-config
+  // tree (connectedCallback renders once in UTC defaults before this module
+  // runs). The signal persists; later incremental mutations are test-driven.
+  calendar.addEventListener("calendar:render", () => {
+    document.documentElement.dataset.calendarReady = "";
+  }, { once: true });
   // Fixture data is Brussels-dated; pin the zone so the demo never depends
   // on the neutral UTC default.
   calendar.configure({ timeZone: "Europe/Brussels" });

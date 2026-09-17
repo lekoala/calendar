@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * @param {import("@playwright/test").Page} page
@@ -47,7 +48,7 @@ async function elevenOClock(page) {
 }
 
 test("select delivers the range context", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = [
@@ -101,7 +102,7 @@ test("select delivers the range context", async ({ page }) => {
 });
 
 test("eventmove context is post-commit: the moved event overlaps itself", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   const context = await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = [
@@ -139,7 +140,7 @@ test("eventmove context is post-commit: the moved event overlaps itself", async 
 });
 
 test("externaldrop context covers the previewed range", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = [
@@ -200,7 +201,7 @@ test("externaldrop context covers the previewed range", async ({ page }) => {
 });
 
 test("month select delivers the civil day context", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.setView("month");

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * Rendering is queued on requestAnimationFrame: wait two frames so a state
@@ -13,7 +14,7 @@ function flushRender(page) {
 }
 
 test("revealEvent scrolls to the event and highlights without stealing focus", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const revealed = await page.evaluate(() =>
     /** @type {any} */ (document.querySelector("calendar-view")).revealEvent("a"),
@@ -44,7 +45,7 @@ test("revealEvent scrolls to the event and highlights without stealing focus", a
 });
 
 test("revealEvent focuses the node only when asked", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).revealEvent("a", { focus: true });
@@ -57,7 +58,7 @@ test("revealEvent focuses the node only when asked", async ({ page }) => {
 });
 
 test("revealEvent reports misses without navigating", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const unknown = await page.evaluate(() =>
     /** @type {any} */ (document.querySelector("calendar-view")).revealEvent("no-such-event"),
@@ -79,7 +80,7 @@ test("revealEvent reports misses without navigating", async ({ page }) => {
 });
 
 test("revealEvent highlights all-day, month and list nodes", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.events = [
@@ -118,7 +119,7 @@ test("revealEvent highlights all-day, month and list nodes", async ({ page }) =>
 });
 
 test("a month event behind +n more schedules the reveal without highlighting", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   // Everything happens synchronously — mutation, view switch, reveal — so
   // the retry path runs while the render is still pending.
@@ -148,7 +149,7 @@ test("a month event behind +n more schedules the reveal without highlighting", a
 });
 
 test("gotoDate is awaitable and fires a single load", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const outcome = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -176,7 +177,7 @@ test("gotoDate is awaitable and fires a single load", async ({ page }) => {
 });
 
 test("reveal navigates, loads once, then highlights the event", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const outcome = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -211,7 +212,7 @@ test("reveal navigates, loads once, then highlights the event", async ({ page })
 });
 
 test("reveal resolves false when a concurrent navigation wins", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const outcome = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -248,7 +249,7 @@ test("reveal resolves false when a concurrent navigation wins", async ({ page })
 });
 
 test("reveal requires an event id and an anchor", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const outcome = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -269,7 +270,7 @@ test("reveal requires an event id and an anchor", async ({ page }) => {
 });
 
 test("the reveal highlight clears itself", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.evaluate(() => /** @type {any} */ (document.querySelector("calendar-view")).revealEvent("a"));
   await expect(page.locator('[data-event-id="a"].cv-reveal')).toHaveCount(1);
@@ -278,7 +279,7 @@ test("the reveal highlight clears itself", async ({ page }) => {
 });
 
 test("a disconnect settles a pending reveal instead of hanging it", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const outcome = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -302,7 +303,7 @@ test("a disconnect settles a pending reveal instead of hanging it", async ({ pag
 });
 
 test("a zoned anchor navigates to the day the calendar shows it on", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const outcome = await page.evaluate(async () => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));

@@ -32,6 +32,21 @@ Playwright should cover anything involving:
 - touch/long press;
 - browser-native Temporal/polyfill integration.
 
+#### Fixture readiness
+
+The element renders once on connect (neutral defaults) before the demo
+module applies its fixture, while rendering itself is
+`requestAnimationFrame`-queued — so `page.goto()` does not establish that
+the configured tree exists. Every demo marks its first configured render
+with `html[data-calendar-ready]` (persistent signal, async sources excluded);
+interaction tests open pages through `openDemo()` in
+`test/browser/fixture.js` and never measure or send pointer input before it.
+`flushRender()` stays the tool for renders the test itself causes. For the
+same full-replacement reason, coordinate reads must be single atomic
+evaluates (re-querying the live node), never a `waitFor` followed by a later
+`boundingBox`, and slot targets go through `slotPoint()` instead of
+open-coded `minutes * pxPerMinute` math.
+
 ### 3. Visual regression (after base renderer stabilizes)
 
 Add screenshot tests for a small set of representative states, not every option:

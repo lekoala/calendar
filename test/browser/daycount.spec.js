@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * `dayCount`: custom rolling windows without new view names. The option
@@ -14,7 +15,7 @@ function flushRender(page) {
 }
 
 test("day + dayCount renders a custom rolling window", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.setView("day");
@@ -27,7 +28,7 @@ test("day + dayCount renders a custom rolling window", async ({ page }) => {
 });
 
 test("dayCount overrides the threeDays preset", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.setView("threeDays");
@@ -39,7 +40,7 @@ test("dayCount overrides the threeDays preset", async ({ page }) => {
 });
 
 test("week ignores dayCount: a week stays a civil week", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.setView("week");
@@ -51,7 +52,7 @@ test("week ignores dayCount: a week stays a civil week", async ({ page }) => {
 });
 
 test("resourceDay + dayCount multiplies resources by visible days", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.setView("resourceDay");
@@ -64,7 +65,7 @@ test("resourceDay + dayCount multiplies resources by visible days", async ({ pag
 });
 
 test("next/prev page by the effective visible count", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.setView("day");
@@ -79,7 +80,7 @@ test("next/prev page by the effective visible count", async ({ page }) => {
 });
 
 test("hidden days stretch the civil window but never shorten the count", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.setView("day");
@@ -94,7 +95,7 @@ test("hidden days stretch the civil window but never shorten the count", async (
 });
 
 test("sources receive the enveloping civil range, not anchor + dayCount", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__seen = [];
@@ -126,7 +127,7 @@ function assertRange(range) {
 }
 
 test("demo duration buttons drive dayCount, view buttons reset it", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.click('#durations [data-days="4"]');
   await expect(page.locator(".cv-day")).toHaveCount(4);
   await page.click('#durations [data-days="5"][data-hiddendays="7"]');
@@ -138,7 +139,7 @@ test("demo duration buttons drive dayCount, view buttons reset it", async ({ pag
 });
 
 test("demo resource fixtures compose grouping with custom durations", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.click('[data-fixture="2x5"]');
   await expect(page.locator(".cv-resource-header")).toHaveCount(2);
   await expect(page.locator(".cv-day")).toHaveCount(10);

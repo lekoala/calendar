@@ -1,5 +1,5 @@
-import assert from "node:assert/strict";
 import { expect, test } from "@playwright/test";
+import { openDemo, slotPoint } from "./fixture.js";
 
 /**
  * Accessibility and mobile hardening: keyboard navigation and mutation,
@@ -24,7 +24,7 @@ function activeEventId(page) {
 }
 
 test("events expose a human-readable accessible name", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toHaveAttribute(
     "aria-label",
     "Design review, 2026-09-03, 09:00 to 10:00",
@@ -32,7 +32,7 @@ test("events expose a human-readable accessible name", async ({ page }) => {
 });
 
 test("arrow keys move focus within and across columns", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.locator('[data-event-id="a"]').focus();
   await page.keyboard.press("ArrowDown");
   await expect.poll(() => activeEventId(page)).toBe("c");
@@ -46,7 +46,7 @@ test("arrow keys move focus within and across columns", async ({ page }) => {
 });
 
 test("Home and End jump to the column edges", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.locator('[data-event-id="c"]').focus();
   await page.keyboard.press("Home");
   await expect.poll(() => activeEventId(page)).toBe("a");
@@ -75,7 +75,7 @@ function trackMutations(page) {
 }
 
 test("Shift+ArrowDown moves the focused event and announces it", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMutations(page);
   await page.locator('[data-event-id="a"]').focus();
   await page.keyboard.press("Shift+ArrowDown");
@@ -89,7 +89,7 @@ test("Shift+ArrowDown moves the focused event and announces it", async ({ page }
 });
 
 test("Shift+ArrowRight moves the event to the next day", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMutations(page);
   await page.locator('[data-event-id="a"]').focus();
   await page.keyboard.press("Shift+ArrowRight");
@@ -99,7 +99,7 @@ test("Shift+ArrowRight moves the event to the next day", async ({ page }) => {
 });
 
 test("a rejected keyboard move reverts", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).addEventListener(
       "calendar:eventmove",
@@ -116,7 +116,7 @@ test("a rejected keyboard move reverts", async ({ page }) => {
 });
 
 test("Alt+ArrowRight extends the end through the resize contract", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMutations(page);
   await page.locator('[data-event-id="a"]').focus();
   await page.keyboard.press("Alt+ArrowRight");
@@ -127,7 +127,7 @@ test("Alt+ArrowRight extends the end through the resize contract", async ({ page
 });
 
 test("keyboard resize is a no-op on non-resizable events", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackMutations(page);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -141,7 +141,7 @@ test("keyboard resize is a no-op on non-resizable events", async ({ page }) => {
 });
 
 test("view and date changes are announced", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector("calendar-view")).setView("day");
   });
@@ -176,7 +176,7 @@ function trackContextMenus(page) {
 }
 
 test("right-click on an event dispatches a context intent without preventing the menu", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackContextMenus(page);
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.evaluate(() => {
@@ -198,27 +198,10 @@ test("right-click on an event dispatches a context intent without preventing the
 });
 
 test("right-click on an empty slot reports date and snapped time", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackContextMenus(page);
-  // Atomic retried measure like firstBodyBox in basic.spec.js: this renderer
-  // replaces its whole subtree per render, so a node visible at waitFor time
-  // can detach before a later boundingBox call observes it (null under load).
-  // Each attempt re-queries the live node instead.
-  const deadline = Date.now() + 8000;
-  /** @type {{ x: number, y: number, width: number, height: number } | null} */
-  let box = null;
-  while (box === null) {
-    if (Date.now() > deadline) break;
-    box = await page.evaluate(() => {
-      document.querySelector("calendar-view")?.scrollIntoView({ block: "start" });
-      const rect = document.querySelector(".cv-day-body")?.getBoundingClientRect();
-      return rect && rect.width > 0 && rect.height > 0
-        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-        : null;
-    });
-  }
-  assert(box, "expected a day body");
-  await page.mouse.click(box.x + box.width / 2, box.y + 187 * 1.8, { button: "right" });
+  const point = await slotPoint(page, { time: "11:07" });
+  await page.mouse.click(point.x, point.y, { button: "right" });
   await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__context.length)).toBe(1);
   const [context] = await page.evaluate(() => /** @type {any} */ (window).__context);
   expect(context.eventId).toBeNull();
@@ -228,7 +211,7 @@ test("right-click on an empty slot reports date and snapped time", async ({ page
 });
 
 test("press-and-hold fires a context intent with no select or residual click", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await trackContextMenus(page);
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.evaluate(() => {
@@ -285,7 +268,7 @@ test("press-and-hold fires a context intent with no select or residual click", a
 
 test("reduced motion disables transitions", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "media emulation is chromium-only here");
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.emulateMedia({ reducedMotion: "reduce" });
   expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
@@ -297,7 +280,7 @@ test("reduced motion disables transitions", async ({ page, browserName }) => {
 
 test("forced colors keep events rendered and background zones outlined", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "media emulation is chromium-only here");
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   await page.emulateMedia({ forcedColors: "active" });
   expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
@@ -311,7 +294,7 @@ test("forced colors keep events rendered and background zones outlined", async (
 });
 
 test("narrow viewports keep a scrollable grid", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".cv-day")).toHaveCount(6);
   const overflow = await page.evaluate(() => {

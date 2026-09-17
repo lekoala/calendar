@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * All-day lane over the shared time-grid columns: civil events and
@@ -28,7 +29,7 @@ async function seedOneAllDay(page) {
 }
 
 test("all-day events render as bars spanning their civil days, above the timed grid", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   // No all-day data yet: the lane stays absent.
   await expect(page.locator(".cv-allday")).toHaveCount(0);
@@ -55,7 +56,7 @@ test("all-day events render as bars spanning their civil days, above the timed g
 });
 
 test("an all-day background paints a full-height lane tint", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -71,7 +72,7 @@ test("an all-day background paints a full-height lane tint", async ({ page }) =>
 });
 
 test("allDaySlot false hides the lane without hiding the event elsewhere", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -99,7 +100,7 @@ test("allDaySlot false hides the lane without hiding the event elsewhere", async
 });
 
 test("resource views keep each room's bars inside its own block", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await expect(page.locator(".cv-day").first()).toBeVisible();
   const cols = await page.locator(".cv-day").count();
   await page.evaluate(() => {
@@ -153,7 +154,7 @@ test("resource views keep each room's bars inside its own block", async ({ page 
 });
 
 test("an all-day bar clicks and moves by day, pointer and keyboard alike", async ({ page }) => {
-  await page.goto("/demo/basic.html");
+  await openDemo(page, "basic");
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await seedOneAllDay(page);
 

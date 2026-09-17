@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openDemo } from "./fixture.js";
 
 /**
  * Resource grouping acceptance: one level, declared group order wins,
@@ -32,7 +33,7 @@ async function setState(page, resources, resourceGroups) {
 }
 
 test("group row renders one header per non-empty group spanning its columns", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await setState(
     page,
     [
@@ -57,7 +58,7 @@ test("group row renders one header per non-empty group spanning its columns", as
 });
 
 test("resource and day columns follow the grouped order", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await setState(
     page,
     [{ id: "r1", groupId: "b" }, { id: "r2", groupId: "a" }, { id: "r3", groupId: "a" }, { id: "r4" }],
@@ -78,7 +79,7 @@ test("resource and day columns follow the grouped order", async ({ page }) => {
 });
 
 test("resourceGroupContent runs once per group with member list", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   const calls = await page.evaluate(() => {
     const hooks = /** @type {any} */ (window);
     hooks.__groups = [];
@@ -114,7 +115,7 @@ test("resourceGroupContent runs once per group with member list", async ({ page 
 });
 
 test("first duplicate group id wins and members render exactly once", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await setState(
     page,
     [
@@ -133,21 +134,21 @@ test("first duplicate group id wins and members render exactly once", async ({ p
 });
 
 test("configured groups with no matching resource render no group row", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await setState(page, [{ id: "r1", title: "Room A" }], [{ id: "ghost", title: "Ghost" }]);
   await expect(page.locator(".cv-group-row")).toHaveCount(0);
   await expect(page.locator(".cv-resource-header")).toHaveCount(1);
 });
 
 test("empty resources with groups configured show the explicit empty state", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await setState(page, [], [{ id: "a", title: "Alpha" }]);
   await expect(page.locator(".cv-group-row")).toHaveCount(0);
   await expect(page.locator(".cv-empty")).toHaveCount(1);
 });
 
 test("solo views never render a group or resource row", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   await setState(
     page,
     [
@@ -165,7 +166,7 @@ test("solo views never render a group or resource row", async ({ page }) => {
 });
 
 test("sticky offsets shift down exactly when a real group row exists", async ({ page }) => {
-  await page.goto("/demo/resources.html");
+  await openDemo(page, "resources");
   // No real group: resource row sticks at 0, day headers at 3rem.
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
