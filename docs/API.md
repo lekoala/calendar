@@ -173,6 +173,7 @@ calendar.configure({
   monthEventLimit: 3,
   firstDay: 1,
   hiddenDays: [],
+  dayCount: 4,
   slotLabelInterval: 60,
   allDaySlot: true,
   eventSource,
@@ -215,6 +216,8 @@ application concern.
 `snapDuration` controls pointer snapping. `defaultTimedEventDuration` controls the hover preview and single-click creation proposal. An explicit drag selection carries its own `start/end` and does not depend on it. `monthEventLimit` caps the event chips per month day cell before the `+n more` button.
 
 `firstDay` and `hiddenDays` use the ISO weekday numbering Temporal exposes, `1` = Monday through `7` = Sunday. `0` is accepted as an alias for Sunday, since that is what `Date.prototype.getDay` returns and the two conventions agree on every other day. `firstDay` sets where a civil week starts, for both week anchoring and month week derivation. `hiddenDays` lists weekdays that are never rendered; hiding all seven is ignored rather than rendering an empty calendar.
+
+`dayCount` overrides the visible-day count of rolling views (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`): `view: "day"` plus `dayCount: 4` is a four-day rolling window, no new view name needed, and `threeDays`/`resourceThreeDays` stay convenient presets for `3`. It counts visible days, so hidden days stretch the civil span without shortening the count; a non-positive or non-integer value falls back to the view preset. `week` and `month` ignore it: a week stays the civil week containing the anchor, then drops hidden days. `prev()`/`next()` page rolling views by the effective visible count and week-anchored views by whole weeks.
 
 `slotLabelInterval` is the number of minutes between time axis labels. It is a density policy, not a format: what a label reads is `slotLabelContent`'s business.
 

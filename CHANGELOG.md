@@ -2,7 +2,7 @@
 
 ## 0.2.0 — 2026
 
-The planned 0.2 operational-trace (`docs/ROADMAP.md`, milestones 10–16). Each
+The planned 0.2 operational-trace (`docs/ROADMAP.md`, milestones 10–17). Each
 entry consumes the previous one; no new interaction engine, clock service,
 query subsystem, resource tree or source cache was added.
 
@@ -51,6 +51,13 @@ query subsystem, resource tree or source cache was added.
   (group header height and its stacked offsets, defaulting to the resource
   row size). Overriding one variable moves the whole coupled set; the
   showcase no longer re-points those offsets itself.
+* `configure({ dayCount })` overrides the visible-day count of rolling
+  views (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`), so
+  a 2-, 4- or 5-day schedule needs no new view name and `threeDays` stays a
+  preset for `3`. It counts visible days through `hiddenDays`, pages
+  `prev()`/`next()` by the effective count, feeds sources the enveloping
+  civil range, and is ignored by `week` (a week stays a civil week) and
+  `month`.
 
 ### Fixed
 

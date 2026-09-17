@@ -49,6 +49,7 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {number} [monthEventLimit] event chips per month day cell before `+n more`
  * @property {number} [firstDay] first weekday of a civil week, ISO 1-7 (default 1, Monday)
  * @property {number[]} [hiddenDays] weekdays never rendered, ISO 1-7
+ * @property {number} [dayCount] visible days for rolling views (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`); ignored by `week` and `month`
  * @property {number} [slotLabelInterval] minutes between time axis labels (default 60)
  * @property {boolean} [editable]
  * @property {boolean} [allDaySlot] show the all-day lane in time grids when it has content (default true)
@@ -1273,12 +1274,13 @@ export class CalendarViewElement extends HTMLElement {
    * `firstDay`: the `lang` attribute and document language feed formatting
    * alone, so date math never shifts implicitly with the document.
    *
-   * @returns {{ firstDay: number | undefined, hiddenDays: number[] | undefined, locale: string | undefined }}
+   * @returns {{ firstDay: number | undefined, hiddenDays: number[] | undefined, dayCount: number | undefined, locale: string | undefined }}
    */
   #dateOptions() {
     return {
       firstDay: this.#config.firstDay,
       hiddenDays: this.#config.hiddenDays,
+      dayCount: this.#config.dayCount,
       locale: resolveLocale(this.#config.locale),
     };
   }

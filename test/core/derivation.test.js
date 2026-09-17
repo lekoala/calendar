@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getDayCount,
   getMonthRange,
   getMonthWeeks,
   getViewRange,
@@ -152,4 +153,75 @@ test("stepAnchor never lands on a hidden day", () => {
   const next = stepAnchor("2026-09-04", "day", 1, { hiddenDays: [6, 7] });
   assert.equal(next.toString(), "2026-09-07");
   assert.equal(next.dayOfWeek, 1);
+});
+
+test("getDayCount falls back to the view preset, null outside rolling views", () => {
+  assert.equal(getDayCount("day"), 1);
+  assert.equal(getDayCount("threeDays"), 3);
+  assert.equal(getDayCount("resourceDay"), 1);
+  assert.equal(getDayCount("resourceThreeDays"), 3);
+  assert.equal(getDayCount("list"), 7);
+  assert.equal(getDayCount("week"), null);
+  assert.equal(getDayCount("month"), null);
+  assert.equal(getDayCount("unknown"), null);
+  assert.equal(getDayCount("day", { dayCount: 4 }), 4);
+  assert.equal(getDayCount("week", { dayCount: 4 }), null);
+});
+
+test("dayCount overrides the rolling preset without a new view name", () => {
+  assert.deepEqual(iso(getVisibleDates("2026-09-03", "day", { dayCount: 4 })), [
+    "2026-09-03",
+    "2026-09-04",
+    "2026-09-05",
+    "2026-09-06",
+  ]);
+  assert.equal(getVisibleDates("2026-09-03", "threeDays", { dayCount: 5 }).length, 5);
+  assert.equal(getVisibleDates("2026-09-03", "resourceDay", { dayCount: 3 }).length, 3);
+  assert.equal(getVisibleDates("2026-09-03", "resourceThreeDays", { dayCount: 2 }).length, 2);
+  assert.equal(getVisibleDates("2026-09-03", "list", { dayCount: 30 }).length, 30);
+});
+
+test("invalid dayCount falls back to the preset instead of breaking derivation", () => {
+  for (const dayCount of [0, -2, 1.5, Number.NaN]) {
+    assert.equal(getVisibleDates("2026-09-03", "day", { dayCount }).length, 1);
+    assert.equal(getVisibleDates("2026-09-03", "threeDays", { dayCount }).length, 3);
+  }
+});
+
+test("week and month ignore dayCount: a week stays a civil week", () => {
+  assert.deepEqual(
+    iso(getVisibleDates("2026-09-03", "week", { dayCount: 4 })),
+    iso(getVisibleDates("2026-09-03", "week")),
+  );
+  assert.equal(getVisibleDates("2026-09-03", "week", { dayCount: 4 }).length, 7);
+  assert.deepEqual(
+    iso(getVisibleDates("2026-09-03", "month", { dayCount: 4 })),
+    iso(getVisibleDates("2026-09-03", "month")),
+  );
+  assert.equal(stepAnchor("2026-09-03", "week", 1, { dayCount: 4 }).toString(), "2026-09-10");
+});
+
+test("dayCount counts visible days: hidden days stretch the civil span", () => {
+  // Saturday anchor, Sunday hidden: five usable days over six civil days.
+  const dates = getVisibleDates("2026-09-05", "day", { dayCount: 5, hiddenDays: [7] });
+  assert.deepEqual(iso(dates), ["2026-09-05", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10"]);
+  // Sources receive the enveloping civil range, not anchor + dayCount.
+  const range = getViewRange("2026-09-05", "day", { dayCount: 5, hiddenDays: [7] });
+  assert.equal(range.start.toString(), "2026-09-05");
+  assert.equal(range.end.toString(), "2026-09-11");
+});
+
+test("stepAnchor pages by the effective visible count", () => {
+  assert.equal(stepAnchor("2026-09-03", "day", 1, { dayCount: 4 }).toString(), "2026-09-07");
+  assert.equal(stepAnchor("2026-09-03", "day", -1, { dayCount: 4 }).toString(), "2026-08-30");
+  const forward = iso(
+    getVisibleDates(stepAnchor("2026-09-03", "day", 1, { dayCount: 4 }), "day", { dayCount: 4 }),
+  );
+  assert.deepEqual(forward, ["2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10"]);
+
+  // Friday anchor, weekend hidden, two visible days: windows stay adjacent.
+  const options = { dayCount: 2, hiddenDays: [6, 7] };
+  assert.deepEqual(iso(getVisibleDates("2026-09-04", "day", options)), ["2026-09-04", "2026-09-07"]);
+  assert.equal(stepAnchor("2026-09-04", "day", 1, options).toString(), "2026-09-08");
+  assert.equal(stepAnchor("2026-09-04", "day", -1, options).toString(), "2026-09-02");
 });

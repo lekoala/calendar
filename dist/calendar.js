@@ -3723,13 +3723,13 @@
   var toTemporalInstant2 = NativeTemporal ? Date.prototype.toTemporalInstant : toTemporalInstant;
 
   // src/core/dates.js
-  var VIEW_DAYS = {
-    day: 1,
-    threeDays: 3,
-    week: 7,
-    resourceDay: 1,
-    resourceThreeDays: 3,
-    list: 7
+  var VIEW_DEFS = {
+    day: { range: "rolling", defaultDayCount: 1 },
+    threeDays: { range: "rolling", defaultDayCount: 3 },
+    week: { range: "week" },
+    resourceDay: { range: "rolling", defaultDayCount: 1 },
+    resourceThreeDays: { range: "rolling", defaultDayCount: 3 },
+    list: { range: "rolling", defaultDayCount: 7 }
   };
   var WEEK_ANCHORED_VIEWS = new Set(["week"]);
   function isoWeekday(value) {
@@ -3755,8 +3755,14 @@
   function toPlainDate(value) {
     return value instanceof Temporal2.PlainDate ? value : Temporal2.PlainDate.from(value);
   }
-  function getViewDays(view) {
-    return VIEW_DAYS[view] ?? 1;
+  function getDayCount(view, options = {}) {
+    const def = VIEW_DEFS[view];
+    if (def?.range !== "rolling")
+      return null;
+    const count = Number(options.dayCount);
+    if (Number.isInteger(count) && count >= 1)
+      return count;
+    return def.defaultDayCount ?? 1;
   }
   function isWeekAnchoredView(view) {
     return WEEK_ANCHORED_VIEWS.has(view);
@@ -3780,11 +3786,11 @@
     if (isMonthView(view))
       return getMonthWeeks(date, options).flat();
     const { firstDay, hiddenDays } = resolveDateOptions(options);
-    const count = getViewDays(view);
     if (isWeekAnchoredView(view)) {
       const start = startOfWeek(date, firstDay);
-      return Array.from({ length: count }, (_, index) => start.add({ days: index })).filter((day) => !hiddenDays.has(day.dayOfWeek));
+      return Array.from({ length: 7 }, (_, index) => start.add({ days: index })).filter((day) => !hiddenDays.has(day.dayOfWeek));
     }
+    const count = getDayCount(view, options) ?? 1;
     const dates = [];
     let cursor = toPlainDate(date);
     while (dates.length < count) {
@@ -3805,7 +3811,7 @@
       return getVisibleDates(after, view, options)[0] ?? after;
     }
     const { hiddenDays } = resolveDateOptions(options);
-    const count = getViewDays(view);
+    const count = getDayCount(view, options) ?? 1;
     const start = getVisibleDates(anchor, view, options)[0] ?? anchor;
     let cursor = start.subtract({ days: 1 });
     let earliest = cursor;
@@ -6928,6 +6934,7 @@
       return {
         firstDay: this.#config.firstDay,
         hiddenDays: this.#config.hiddenDays,
+        dayCount: this.#config.dayCount,
         locale: resolveLocale(this.#config.locale)
       };
     }

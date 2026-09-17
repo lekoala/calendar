@@ -1,13 +1,20 @@
 import { Temporal } from "temporal-polyfill";
 
-/** @type {Record<string, number>} */
-const VIEW_DAYS = {
-  day: 1,
-  threeDays: 3,
-  week: 7,
-  resourceDay: 1,
-  resourceThreeDays: 3,
-  list: 7,
+/**
+ * View definitions: `range` drives date derivation, `defaultDayCount` only
+ * applies to rolling views. `threeDays` is a preset for a three-visible-day
+ * rolling window, not a structural constant — `day` plus a `dayCount` option
+ * reaches any custom length without a new view name.
+ *
+ * @type {Record<string, { range: string, defaultDayCount?: number }>}
+ */
+const VIEW_DEFS = {
+  day: { range: "rolling", defaultDayCount: 1 },
+  threeDays: { range: "rolling", defaultDayCount: 3 },
+  week: { range: "week" },
+  resourceDay: { range: "rolling", defaultDayCount: 1 },
+  resourceThreeDays: { range: "rolling", defaultDayCount: 3 },
+  list: { range: "rolling", defaultDayCount: 7 },
 };
 
 /**
@@ -22,6 +29,7 @@ const WEEK_ANCHORED_VIEWS = new Set(["week"]);
  * @typedef {object} DateDerivationOptions
  * @property {number} [firstDay] first weekday of a civil week, ISO 1-7 (default 1, Monday)
  * @property {Iterable<number>} [hiddenDays] weekdays never rendered, ISO 1-7
+ * @property {number} [dayCount] visible days for rolling views; ignored by `week` and `month`
  * @property {string} [locale] BCP 47 tag suggesting `firstDay` when none is explicit; never parsed for math
  */
 
@@ -72,11 +80,21 @@ export function toPlainDate(value) {
 }
 
 /**
+ * Effective visible-day count for rolling views: the `dayCount` option when
+ * it names a positive integer, otherwise the view preset's default.
+ * Calendar-anchored views (`week`, `month`) and unknown views have no day
+ * count and yield null — a week stays a civil week whatever is configured.
+ *
  * @param {string} view
- * @returns {number}
+ * @param {DateDerivationOptions} [options]
+ * @returns {number | null}
  */
-export function getViewDays(view) {
-  return VIEW_DAYS[view] ?? 1;
+export function getDayCount(view, options = {}) {
+  const def = VIEW_DEFS[view];
+  if (def?.range !== "rolling") return null;
+  const count = Number(options.dayCount);
+  if (Number.isInteger(count) && count >= 1) return count;
+  return def.defaultDayCount ?? 1;
 }
 
 /**
@@ -125,9 +143,10 @@ export function getViewRange(date, view, options = {}) {
  *
  * Week-anchored views derive the civil week containing the anchor and then
  * drop hidden days, because a week is a fixed civil unit: hiding Sunday
- * leaves six columns. Rolling views instead fill their day count with
- * visible days, because `threeDays` means three usable days, not three
- * calendar days of which one may be blank.
+ * leaves six columns, and a configured `dayCount` is ignored there. Rolling
+ * views instead fill their effective day count (`dayCount` option, else the
+ * view preset) with visible days, because `threeDays` means three usable
+ * days, not three calendar days of which one may be blank.
  *
  * @param {Temporal.PlainDate | string} date
  * @param {string} view
@@ -137,14 +156,15 @@ export function getViewRange(date, view, options = {}) {
 export function getVisibleDates(date, view, options = {}) {
   if (isMonthView(view)) return getMonthWeeks(date, options).flat();
   const { firstDay, hiddenDays } = resolveDateOptions(options);
-  const count = getViewDays(view);
 
   if (isWeekAnchoredView(view)) {
     const start = startOfWeek(date, firstDay);
-    return Array.from({ length: count }, (_, index) => start.add({ days: index })).filter(
+    return Array.from({ length: 7 }, (_, index) => start.add({ days: index })).filter(
       (day) => !hiddenDays.has(day.dayOfWeek),
     );
   }
+
+  const count = getDayCount(view, options) ?? 1;
 
   /** @type {Temporal.PlainDate[]} */
   const dates = [];
@@ -160,9 +180,9 @@ export function getVisibleDates(date, view, options = {}) {
  * Anchor date for the previous (`-1`) or next (`1`) range.
  *
  * Month steps by calendar months and week-anchored views by whole weeks, so
- * both keep the anchor weekday. Rolling views step by their own count of
- * visible days rather than by a fixed number of calendar days, so hidden
- * days never make two consecutive ranges overlap or skip a day.
+ * both keep the anchor weekday. Rolling views step by their own effective
+ * count of visible days rather than by a fixed number of calendar days, so
+ * hidden days never make two consecutive ranges overlap or skip a day.
  *
  * @param {Temporal.PlainDate | string} date
  * @param {string} view
@@ -182,7 +202,7 @@ export function stepAnchor(date, view, direction, options = {}) {
   }
 
   const { hiddenDays } = resolveDateOptions(options);
-  const count = getViewDays(view);
+  const count = getDayCount(view, options) ?? 1;
   const start = getVisibleDates(anchor, view, options)[0] ?? anchor;
   let cursor = start.subtract({ days: 1 });
   let earliest = cursor;

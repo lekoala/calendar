@@ -2,7 +2,7 @@
 
 The milestones below are the construction trace of the project: each lists
 what landed, in the order it landed. 0.1 is feature-complete for its scope.
-Milestones 10–16 are the shipped 0.2 trace, driven by the use cases in
+Milestones 10–17 are the shipped 0.2 trace, driven by the use cases in
 `docs/USE_CASES.md` (§8, §14–§19); the deferred and candidate lists at the
 bottom are revisit-only-with-a-use-case entries.
 
@@ -132,6 +132,7 @@ previous one instead of inventing its own seam, in three blocks:
 | Lifecycle            | M10 + M11             | state, focus and now survive re-renders correctly    |
 | Interaction context  | M12 + M13 + M14 + M15 | where we act, in what context, if it is allowed, then reveal/preview |
 | Scheduling surface   | M16                   | multi-resource workday actually usable               |
+| View duration        | M17                   | arbitrary rolling windows without new view names     |
 
 ## Milestone 10 — render seams (shipped)
 
@@ -284,19 +285,28 @@ interaction, store or source code changed. If nesting, collapse or tree-grid
 requirements appear, that is the signal to stop and re-scope, not to extend
 the milestone.
 
-## 0.2.x / later — view duration (`dayCount`)
+## Milestone 17 — view duration (`dayCount`) (shipped)
 
-Not in the 0.2 core: lower value for the immediate scheduling goal, and a
-few semantics to settle first. When taken:
+- `configure({ dayCount })` overrides the visible-day count of rolling
+  views (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`);
+  `threeDays`/`resourceThreeDays` stay public presets for `3`, and
+  `view: "day"` plus `dayCount: 4` is the custom four-day window — no new
+  view names in 0.x;
+- the view table is metadata, not a day count: `VIEW_DEFS` pairs each view
+  with its `range` (`rolling` | `week` | `month`) and, for rolling views,
+  its `defaultDayCount`. `getDayCount(view, options)` yields the effective
+  count or `null` outside rolling views, so no future code reads a `7` off
+  `week` as if it were a length;
+- settled semantics, answering the former open questions: `week` +
+  `dayCount` is ignored (a week stays the civil week containing the anchor,
+  then drops hidden days); rolling `next()`/`prev()` page by the effective
+  visible count; with `hiddenDays`, `dayCount` means visible days, so the
+  civil span stretches; sources receive the enveloping civil range from
+  `getViewRange`, never `anchor + dayCount`. Use case §19 (duration half).
 
-- `dayCount`/`duration` is an **override** of the existing time-grid views;
-  `threeDays`/`resourceThreeDays`/`week` remain the public presets and are
-  not replaced in 0.x;
-- open questions to resolve before implementing: does `view="week"` +
-  `dayCount=4` stay a week? what does `next()` advance by? with
-  `hiddenDays`, does `dayCount=3` mean 3 civil or 3 visible days? and does
-  the option deserve a documented contract rather than a shortcut inside
-  `getVisibleDates()`?
+Lean guardrail: one option through `#dateOptions()`, one helper
+(`getDayCount`), same derivation for render, navigation and sources. No
+`dateIncrement` paging mode, no per-view durations map.
 
 ## 0.2 exit conditions
 

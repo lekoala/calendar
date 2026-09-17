@@ -9,6 +9,10 @@ export type DateDerivationOptions = {
      */
     hiddenDays?: Iterable<number>;
     /**
+     * visible days for rolling views; ignored by `week` and `month`
+     */
+    dayCount?: number;
+    /**
      * BCP 47 tag suggesting `firstDay` when none is explicit; never parsed for math
      */
     locale?: string;
@@ -19,10 +23,16 @@ export type DateDerivationOptions = {
  */
 export declare function toPlainDate(value: Temporal.PlainDate | string): Temporal.PlainDate;
 /**
+ * Effective visible-day count for rolling views: the `dayCount` option when
+ * it names a positive integer, otherwise the view preset's default.
+ * Calendar-anchored views (`week`, `month`) and unknown views have no day
+ * count and yield null — a week stays a civil week whatever is configured.
+ *
  * @param {string} view
- * @returns {number}
+ * @param {DateDerivationOptions} [options]
+ * @returns {number | null}
  */
-export declare function getViewDays(view: string): number;
+export declare function getDayCount(view: string, options?: DateDerivationOptions): number | null;
 /**
  * @param {string} view
  * @returns {boolean}
@@ -55,9 +65,10 @@ export declare function getViewRange(date: Temporal.PlainDate | string, view: st
  *
  * Week-anchored views derive the civil week containing the anchor and then
  * drop hidden days, because a week is a fixed civil unit: hiding Sunday
- * leaves six columns. Rolling views instead fill their day count with
- * visible days, because `threeDays` means three usable days, not three
- * calendar days of which one may be blank.
+ * leaves six columns, and a configured `dayCount` is ignored there. Rolling
+ * views instead fill their effective day count (`dayCount` option, else the
+ * view preset) with visible days, because `threeDays` means three usable
+ * days, not three calendar days of which one may be blank.
  *
  * @param {Temporal.PlainDate | string} date
  * @param {string} view
@@ -69,9 +80,9 @@ export declare function getVisibleDates(date: Temporal.PlainDate | string, view:
  * Anchor date for the previous (`-1`) or next (`1`) range.
  *
  * Month steps by calendar months and week-anchored views by whole weeks, so
- * both keep the anchor weekday. Rolling views step by their own count of
- * visible days rather than by a fixed number of calendar days, so hidden
- * days never make two consecutive ranges overlap or skip a day.
+ * both keep the anchor weekday. Rolling views step by their own effective
+ * count of visible days rather than by a fixed number of calendar days, so
+ * hidden days never make two consecutive ranges overlap or skip a day.
  *
  * @param {Temporal.PlainDate | string} date
  * @param {string} view

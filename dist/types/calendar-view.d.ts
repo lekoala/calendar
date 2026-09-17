@@ -36,6 +36,10 @@ export type CalendarConfig = {
      */
     hiddenDays?: number[];
     /**
+     * visible days for rolling views (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`); ignored by `week` and `month`
+     */
+    dayCount?: number;
+    /**
      * minutes between time axis labels (default 60)
      */
     slotLabelInterval?: number;

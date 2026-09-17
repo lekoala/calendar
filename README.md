@@ -121,6 +121,8 @@ const weeks = dates.getMonthWeeks('2026-09-03', { firstDay: 1 });
 - `month` — summary day grid over the anchor month (Monday → Sunday weeks, `+n more` past `monthEventLimit`)
 - `list` — chronological list of 7 days from the anchor date
 
+`configure({ dayCount })` overrides the visible-day count of the rolling views (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`); `week` stays a civil week and ignores it.
+
 Month and list are alternate representations over the same state: solo, no resource matrices, shared `eventContent` hook. The core does not impose a hard `resources × days` limit. The docs do recommend choosing a denser representation before a grid becomes unreadable.
 
 ## Demos
@@ -234,7 +236,7 @@ allowed.
 
 ## What is intentionally outside the core
 
-The 0.1 core is feature-complete for its scope; applications own everything
+The core is feature-complete for its scope; applications own everything
 around it:
 
 - **Transport and persistence**: no REST language, auth, WebSocket/SSE
@@ -245,7 +247,7 @@ around it:
   (booking policy, notifications) and realtime transport are application
   concerns built on the documented seams.
 
-Known structural debt heading into 0.2, tracked in
+Known structural debt, tracked in
 [docs/ROADMAP.md](docs/ROADMAP.md):
 
 - grid rendering is full replacement per mutation (keyed DOM reconciliation
