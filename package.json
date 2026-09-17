@@ -1,6 +1,6 @@
 {
   "name": "@lekoala/calendar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Framework-agnostic Temporal calendar and resource scheduler Web Component",
   "type": "module",
   "license": "MIT",

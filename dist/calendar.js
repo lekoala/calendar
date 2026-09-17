@@ -1,4 +1,4 @@
-/*! @lekoala/calendar v0.1.0 - https://github.com/lekoala/calendar */
+/*! @lekoala/calendar v0.2.0 - https://github.com/lekoala/calendar */
 (() => {
   // node_modules/temporal-polyfill/chunks/root.js
   var NativeTemporal = globalThis.Temporal;
