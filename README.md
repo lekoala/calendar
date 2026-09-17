@@ -129,8 +129,8 @@ Month and list are alternate representations over the same state: solo, no resou
 
 `demo/index.html` is a hub linking to every demo:
 
-- `demo/basic.html` — solo time grid (day, 3 days, week, month, list)
-- `demo/resources.html` — resource grid with acceptance fixtures (1×7, 2×3, 6×1, 6×3, 12×1)
+- `demo/basic.html` — solo time grid (day, 3 days, week, month, list, custom `dayCount` durations)
+- `demo/resources.html` — resource grid with acceptance fixtures (1×7, 2×3, 2×5, 6×1, 6×3, 6×5, 12×1)
 - `demo/resources-stress.html` — manual stress configurations (12×3, 6×7)
 - `demo/realtime.html` — incremental event mutations
 - `demo/dist.html` — dist smoke: always loads the generated classic build (`../dist/calendar.js`), validates the distributed product over `http(s)` and `file://`

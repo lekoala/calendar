@@ -14,8 +14,10 @@
 <nav>
   <button type="button" data-fixture="1x7">1 × 7</button>
   <button type="button" data-fixture="2x3">2 × 3</button>
+  <button type="button" data-fixture="2x5">2 × 5</button>
   <button type="button" data-fixture="6x1">6 × 1</button>
   <button type="button" data-fixture="6x3">6 × 3</button>
+  <button type="button" data-fixture="6x5">6 × 5</button>
   <button type="button" data-fixture="12x1">12 × 1</button>
 </nav>
 <calendar-view view="resourceThreeDays" date="2026-09-03"></calendar-view>
@@ -43,6 +45,19 @@
       ];
       calendar.setView("resourceThreeDays");
     },
+    "2x5": () => {
+      calendar.resources = [
+        { id: "room-a", title: "Room A", groupId: "suite" },
+        { id: "room-b", title: "Room B", groupId: "hall" },
+      ];
+      calendar.resourceGroups = [
+        { id: "suite", title: "Suite" },
+        { id: "hall", title: "Hall" },
+      ];
+      calendar.setView("resourceDay");
+      // Custom duration, no new view name: 2 resources × 5 visible days.
+      calendar.configure({ dayCount: 5 });
+    },
     "6x1": () => {
       calendar.resources = rooms(6);
       calendar.setView("resourceDay");
@@ -51,6 +66,11 @@
       calendar.resources = rooms(6);
       calendar.setView("resourceThreeDays");
     },
+    "6x5": () => {
+      calendar.resources = rooms(6);
+      calendar.setView("resourceDay");
+      calendar.configure({ dayCount: 5 });
+    },
     "12x1": () => {
       calendar.resources = rooms(12);
       calendar.setView("resourceDay");
@@ -58,7 +78,11 @@
   };
   document.querySelector("nav").addEventListener("click", (event) => {
     const fixture = /** @type {HTMLElement} */ (event.target).dataset?.fixture;
-    if (fixture && fixtures[fixture]) fixtures[fixture]();
+    if (fixture && fixtures[fixture]) {
+      // Fixtures own their duration: a custom dayCount never leaks across.
+      calendar.configure({ dayCount: undefined, hiddenDays: undefined });
+      fixtures[fixture]();
+    }
   });
   fixtures["2x3"]();
   calendar.events = [

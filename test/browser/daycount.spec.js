@@ -124,3 +124,27 @@ function assertRange(range) {
     throw new Error(`expected the enveloping civil range, got ${range.start} → ${range.end}`);
   }
 }
+
+test("demo duration buttons drive dayCount, view buttons reset it", async ({ page }) => {
+  await page.goto("/demo/basic.html");
+  await page.click('#durations [data-days="4"]');
+  await expect(page.locator(".cv-day")).toHaveCount(4);
+  await page.click('#durations [data-days="5"][data-hiddendays="7"]');
+  await expect(page.locator(".cv-day")).toHaveCount(5);
+  await expect(page.locator(".cv-day").last()).toHaveAttribute("data-date", "2026-09-08");
+  // Leaving a custom duration restores the preset.
+  await page.click('#views [data-view="threeDays"]');
+  await expect(page.locator(".cv-day")).toHaveCount(3);
+});
+
+test("demo resource fixtures compose grouping with custom durations", async ({ page }) => {
+  await page.goto("/demo/resources.html");
+  await page.click('[data-fixture="2x5"]');
+  await expect(page.locator(".cv-resource-header")).toHaveCount(2);
+  await expect(page.locator(".cv-day")).toHaveCount(10);
+  await page.click('[data-fixture="6x5"]');
+  await expect(page.locator(".cv-day")).toHaveCount(30);
+  // Fixtures never leak a custom duration into each other.
+  await page.click('[data-fixture="6x1"]');
+  await expect(page.locator(".cv-day")).toHaveCount(6);
+});

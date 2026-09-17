@@ -219,6 +219,8 @@ application concern.
 
 `dayCount` overrides the visible-day count of rolling views (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`): `view: "day"` plus `dayCount: 4` is a four-day rolling window, no new view name needed, and `threeDays`/`resourceThreeDays` stay convenient presets for `3`. It counts visible days, so hidden days stretch the civil span without shortening the count; a non-positive or non-integer value falls back to the view preset. `week` and `month` ignore it: a week stays the civil week containing the anchor, then drops hidden days. `prev()`/`next()` page rolling views by the effective visible count and week-anchored views by whole weeks.
 
+`dayCount` follows FullCalendar v6 semantics: it guarantees the requested number of visible days, regardless of `hiddenDays`; hidden days therefore extend the underlying civil range.
+
 `slotLabelInterval` is the number of minutes between time axis labels. It is a density policy, not a format: what a label reads is `slotLabelContent`'s business.
 
 `allDaySlot` controls the all-day lane in time grids. It defaults to `true`, and the lane renders only when an all-day event or background is visible in the current range (an empty lane takes no space). `false` hides all-day events/backgrounds from time grids deliberately; month and list remain date-driven and keep showing them.

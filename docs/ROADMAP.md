@@ -308,6 +308,10 @@ Lean guardrail: one option through `#dateOptions()`, one helper
 (`getDayCount`), same derivation for render, navigation and sources. No
 `dateIncrement` paging mode, no per-view durations map.
 
+Civil-duration semantics (`duration`) were considered but intentionally left
+out of 0.x; `dayCount` covers the scheduling use case of a guaranteed
+number of visible days.
+
 ## 0.2 exit conditions
 
 Cross-cutting, tests only (zero net core surface): the concurrency matrix

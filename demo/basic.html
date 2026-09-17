@@ -16,7 +16,7 @@
 <main>
   <h1>Calendar views</h1>
   <p>Solo representations over shared state: time grids, month summary and list. Switching views preserves the anchor date.</p>
-  <nav>
+  <nav id="views">
     <button type="button" data-view="day">Day</button>
     <button type="button" data-view="threeDays">3 days</button>
     <button type="button" data-view="week">Week</button>
@@ -31,6 +31,14 @@
       </select>
     </label>
   </nav>
+  <nav id="durations" aria-label="Custom day counts">
+    <button type="button" data-days="2">2 days</button>
+    <button type="button" data-days="4">4 days</button>
+    <button type="button" data-days="5">5 days</button>
+    <button type="button" data-days="5" data-hiddendays="7">5 days · no Sunday</button>
+    <button type="button" data-days="4" data-view="week">Week + dayCount (ignored)</button>
+  </nav>
+  <p>Custom durations override the rolling presets through <code>configure({ dayCount })</code>; switching views above resets them. A week stays a civil week whatever is configured.</p>
   <calendar-view view="threeDays" date="2026-09-03"></calendar-view>
 </main>
 <script type="module">
@@ -46,9 +54,22 @@
   calendar.backgrounds = [
     { id: "bg", start: "2026-09-03T08:00:00+02:00[Europe/Brussels]", end: "2026-09-03T12:00:00+02:00[Europe/Brussels]" }
   ];
-  document.querySelector("nav").addEventListener("click", (event) => {
+  document.querySelector("#views").addEventListener("click", (event) => {
     const view = event.target.dataset.view;
-    if (view) calendar.setView(view);
+    if (view) {
+      // Presets own their day count: leaving a custom duration resets it.
+      calendar.configure({ dayCount: undefined, hiddenDays: undefined });
+      calendar.setView(view);
+    }
+  });
+  document.querySelector("#durations").addEventListener("click", (event) => {
+    const days = Number(event.target.dataset?.days);
+    if (!Number.isInteger(days)) return;
+    calendar.configure({
+      dayCount: days,
+      hiddenDays: event.target.dataset.hiddendays ? [Number(event.target.dataset.hiddendays)] : undefined,
+    });
+    calendar.setView(event.target.dataset.view ?? "day");
   });
   const strings = {
     fr: { more: "+{hidden} en plus", noEvents: "Aucun évènement", noResources: "Aucune ressource sélectionnée." },
