@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -199,13 +200,24 @@ test("right-click on an event dispatches a context intent without preventing the
 test("right-click on an empty slot reports date and snapped time", async ({ page }) => {
   await page.goto("/demo/basic.html");
   await trackContextMenus(page);
-  // Wait for layout like firstBodyBox does: a bare boundingBox can observe
-  // a pre-layout tree on slower engines and resolve null. Scroll the grid
-  // into view first so the target point stays clear of the viewport fold.
-  await page.locator(".cv-day-body").first().waitFor({ state: "visible" });
-  await page.evaluate(() => document.querySelector("calendar-view")?.scrollIntoView({ block: "start" }));
-  const box = await page.locator(".cv-day-body").first().boundingBox();
-  if (!box) throw new Error("expected a day body");
+  // Atomic retried measure like firstBodyBox in basic.spec.js: this renderer
+  // replaces its whole subtree per render, so a node visible at waitFor time
+  // can detach before a later boundingBox call observes it (null under load).
+  // Each attempt re-queries the live node instead.
+  const deadline = Date.now() + 8000;
+  /** @type {{ x: number, y: number, width: number, height: number } | null} */
+  let box = null;
+  while (box === null) {
+    if (Date.now() > deadline) break;
+    box = await page.evaluate(() => {
+      document.querySelector("calendar-view")?.scrollIntoView({ block: "start" });
+      const rect = document.querySelector(".cv-day-body")?.getBoundingClientRect();
+      return rect && rect.width > 0 && rect.height > 0
+        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+        : null;
+    });
+  }
+  assert(box, "expected a day body");
   await page.mouse.click(box.x + box.width / 2, box.y + 187 * 1.8, { button: "right" });
   await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__context.length)).toBe(1);
   const [context] = await page.evaluate(() => /** @type {any} */ (window).__context);

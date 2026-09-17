@@ -250,16 +250,31 @@ test("range selection in a resource column returns the resource id", async ({ pa
  * (`scrollIntoViewIfNeeded` also scrolls oversized elements differently per
  * browser and can leave a sticky day header covering the target point).
  *
+ * The measure itself is one atomic evaluate, retried until it yields a box:
+ * this renderer replaces its whole subtree per render, so a node that was
+ * visible at `waitFor` time can detach before a later `boundingBox` call
+ * observes it. Each attempt re-queries the live node instead. A plain retry
+ * loop (not `expect.poll`) so the measured box flows out to the caller.
+ *
  * @param {import("@playwright/test").Page} page
+ * @returns {Promise<{ x: number, y: number, width: number, height: number }>}
  */
 async function firstBodyBox(page) {
-  const body = page.locator(".cv-day-body").first();
-  await body.waitFor({ state: "visible" });
-  await page.evaluate(() => {
-    document.querySelector("calendar-view")?.scrollIntoView({ block: "start" });
-    /** @type {any} */ (document.querySelector(".cv-scroller")).scrollTop = 0;
-  });
-  const box = await body.boundingBox();
+  const deadline = Date.now() + 8000;
+  /** @type {{ x: number, y: number, width: number, height: number } | null} */
+  let box = null;
+  while (box === null) {
+    if (Date.now() > deadline) break;
+    box = await page.evaluate(() => {
+      document.querySelector("calendar-view")?.scrollIntoView({ block: "start" });
+      const scroller = /** @type {any} */ (document.querySelector(".cv-scroller"));
+      if (scroller) scroller.scrollTop = 0;
+      const rect = document.querySelector(".cv-day-body")?.getBoundingClientRect();
+      return rect && rect.width > 0 && rect.height > 0
+        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+        : null;
+    });
+  }
   assert(box, "expected the first day body to have a bounding box");
   return box;
 }
