@@ -89,6 +89,28 @@ async function pxPerMinute(page) {
   });
 }
 
+/**
+ * Re-arm the synthetic dragover until the ghost lands. Real drags send a
+ * continuous dragover stream that repaints after every render; a single
+ * synthetic event cannot recover if a render slips in between (the 0.x full
+ * replacement drops the closure-held ghost), so poll with re-dispatch
+ * instead of asserting one shot.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {{ x: number, y: number }} point
+ */
+async function overUntilGhost(page, point) {
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
+        return page.locator(".cv-external-ghost").count();
+      },
+      { timeout: 8000 },
+    )
+    .toBe(1);
+}
+
 test("grid drop delivers the snapped timed anchor and stays cancelable", async ({ page }) => {
   await page.goto("/demo/basic.html");
   await expect(page.locator(".cv-day")).toHaveCount(3);
@@ -129,7 +151,7 @@ test("dragover paints a ghost shaped by the real duration", async ({ page }) => 
   await expect(page.locator(".cv-day")).toHaveCount(3);
   await injectSource(page, { kind: "occurrence" }, { duration: 60, title: "New block" });
   const point = await gridPoint(page);
-  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
+  await overUntilGhost(page, point);
 
   await expect(page.locator(".cv-external-ghost")).toHaveCount(1);
   // A 60-minute preview: the ghost height equals the measured axis pitch.
@@ -304,8 +326,7 @@ for (const end of ["dragend", "remove", "disconnect"]) {
     await expect(page.locator(".cv-day")).toHaveCount(3);
     await injectSource(page, {}, { duration: 30 });
     const point = await gridPoint(page);
-    await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
-    await expect(page.locator(".cv-external-ghost")).toHaveCount(1);
+    await overUntilGhost(page, point);
     const remaining = await page.evaluate((end) => {
       const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
       const source = /** @type {HTMLElement} */ (document.getElementById("ext-src"));
@@ -500,7 +521,7 @@ test("an application refusal marks the ghost invalid and suppresses the drop", a
     /** @type {any} */ (globalThis).__extDrop = driver("drop");
   });
   const point = await gridPoint(page);
-  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
+  await overUntilGhost(page, point);
 
   await expect(page.locator(".cv-external-ghost")).toHaveClass(/cv-invalid/);
   await expect(page.locator(".cv-external-ghost")).toHaveAttribute("data-reason", "Doctor unavailable");
@@ -585,7 +606,7 @@ test("a non-droppable resource refuses the drop", async ({ page }) => {
     const rect = /** @type {HTMLElement} */ (body).getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + (600 - 480) * 1.8 };
   });
-  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), roomB);
+  await overUntilGhost(page, roomB);
   await expect(page.locator(".cv-external-ghost")).toHaveClass(/cv-invalid/);
 
   await page.evaluate(() => {
