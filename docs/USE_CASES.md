@@ -419,7 +419,9 @@ Core stress:
 ## 19. Arbitrary view length and concurrent mutations
 
 Two workflows. (a) A time grid of 2, 4 or 5 days: custom durations appear
-without new view names, only a day count. (b) Two operators edit while the
+without new view names, only a day count — shipped in 0.2 as
+`configure({ dayCount })` (M17); the civil-`duration` knob was intentionally
+left out. (b) Two operators edit while the
 page is open: an optimistic move is pending when a second mutation lands, or
 a realtime echo arrives mid-pending. The existing
 optimistic/`preventDefault()`/`revert()` contract plus
