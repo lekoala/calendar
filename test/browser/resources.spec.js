@@ -366,7 +366,21 @@ test("dragging toward the horizontal edge autoscrolls the wide resource grid", a
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(scroller.x + scroller.width - 8, box.y + box.height / 2, { steps: 10 });
-  await page.waitForTimeout(900);
+  // The frame loop advances scrollLeft on its own; poll instead of a fixed
+  // wait so loaded or throttled engines still converge before mouse.up.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const scroller = document.querySelector("#wide .cv-scroller");
+          const headers = [...document.querySelectorAll("#wide .cv-resource-header")];
+          const viewport = scroller?.getBoundingClientRect();
+          const header = headers[headers.length - 1]?.getBoundingClientRect();
+          return viewport && header ? header.right > viewport.left && header.left < viewport.right : false;
+        }),
+      { timeout: 8000 },
+    )
+    .toBe(true);
   await page.mouse.up();
 
   const after = await page.evaluate(() => {

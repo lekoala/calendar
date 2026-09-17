@@ -199,6 +199,11 @@ test("right-click on an event dispatches a context intent without preventing the
 test("right-click on an empty slot reports date and snapped time", async ({ page }) => {
   await page.goto("/demo/basic.html");
   await trackContextMenus(page);
+  // Wait for layout like firstBodyBox does: a bare boundingBox can observe
+  // a pre-layout tree on slower engines and resolve null. Scroll the grid
+  // into view first so the target point stays clear of the viewport fold.
+  await page.locator(".cv-day-body").first().waitFor({ state: "visible" });
+  await page.evaluate(() => document.querySelector("calendar-view")?.scrollIntoView({ block: "start" }));
   const box = await page.locator(".cv-day-body").first().boundingBox();
   if (!box) throw new Error("expected a day body");
   await page.mouse.click(box.x + box.width / 2, box.y + 187 * 1.8, { button: "right" });

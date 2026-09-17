@@ -243,10 +243,12 @@ test("range selection in a resource column returns the resource id", async ({ pa
 });
 
 /**
- * Pre-interaction coordinates. Resets the inner scroll to the top so the
- * point below always lands on the body itself: `scrollIntoViewIfNeeded`
- * scrolls oversized elements differently per browser and can leave a sticky
- * day header covering the target point.
+ * Pre-interaction coordinates. Scrolls the calendar into view and resets the
+ * inner scroll to the top, so the point below always lands on the body
+ * itself: demo chrome above the grid varies in height per browser/fonts, and
+ * points near the viewport fold dispatch differently per engine
+ * (`scrollIntoViewIfNeeded` also scrolls oversized elements differently per
+ * browser and can leave a sticky day header covering the target point).
  *
  * @param {import("@playwright/test").Page} page
  */
@@ -254,6 +256,7 @@ async function firstBodyBox(page) {
   const body = page.locator(".cv-day-body").first();
   await body.waitFor({ state: "visible" });
   await page.evaluate(() => {
+    document.querySelector("calendar-view")?.scrollIntoView({ block: "start" });
     /** @type {any} */ (document.querySelector(".cv-scroller")).scrollTop = 0;
   });
   const box = await body.boundingBox();
@@ -366,7 +369,11 @@ test("dragging an event in time dispatches a reversible eventmove", async ({ pag
   await expect.poll(() => eventTop(page, "a")).toBe("189px");
 });
 
-test("dragging an event across resources changes its resource", async ({ page }) => {
+test("dragging an event across resources changes its resource", async ({ page, isMobile }) => {
+  // Narrow viewports keep min-width columns behind a horizontal scroller, so
+  // source and target columns are never on screen together: reaching across
+  // is the autoscroll gesture (covered separately), not a direct drop.
+  test.skip(Boolean(isMobile), "source and target columns never share a 390px viewport");
   await page.goto("/demo/resources.html");
   await trackMoves(page);
   const from = await eventBox(page, "a");

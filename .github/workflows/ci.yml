@@ -5,33 +5,30 @@ on:
   pull_request:
 
 jobs:
-  quality:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.1
+          bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run verify
 
   browser:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chromium, firefox, webkit]
+    needs: verify
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    env:
+      HOME: /root
     steps:
       - uses: actions/checkout@v7
+      - name: Install unzip
+        run: apt-get update && apt-get install -y --no-install-recommends unzip
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.1
+          bun-version: 1.4.2
       - run: bun install --frozen-lockfile
-      - name: Install Playwright browser
-        run: bunx playwright install --with-deps ${{ matrix.browser }}
-      - run: bun run sync
-      - name: Browser behavior suite
-        run: bunx playwright test test/browser --project ${{ matrix.browser }}
-      - name: Dist smoke (Chromium only)
-        if: matrix.browser == 'chromium'
-        run: bun run test:dist
+      - run: bun run test:browser:all
+      - run: bun run test:dist

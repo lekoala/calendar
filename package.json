@@ -7,7 +7,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "bun@1.4.1",
+  "packageManager": "bun@1.4.2",
   "customElements": "custom-elements.json",
   "keywords": ["calendar", "scheduler", "resource", "time-grid", "temporal", "web-component"],
   "files": ["dist", "src", "custom-elements.json", "LICENSE", "README.md"],
@@ -70,7 +70,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
-    "@playwright/test": "^1.55.0",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.4.1",
     "temporal-polyfill": "^1.0.4",
     "typescript": "^7"
