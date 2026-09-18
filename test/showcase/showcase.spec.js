@@ -160,10 +160,13 @@ test("an all-day move is judged by the day-level rules, not the wall clock", asy
   await expect(page.locator(".cv-allday-event").first()).toBeVisible();
   const anchor = await anchorDate(page);
 
-  // One day later, same three-civil-day span: a lane closure rescheduled to
-  // an open day is a legitimate placement. The commit guard must not read
-  // wall-clock minutes out of civil dates ("00:00 < 08:00").
-  const shifted = anchor.add({ days: 1 });
+  // Past every deterministic all-day fixture, on an opening day by
+  // construction: anchor + 1 can be a closed Saturday, and the days right
+  // after it can still overlap the seeded team-absence all-day bar, so the
+  // target rides far enough out (past teamDay, which never reaches +8) to be
+  // disjoint from it. Same three-civil-day span either way: the commit guard
+  // must not read wall-clock minutes out of civil dates ("00:00 < 08:00").
+  const shifted = openDayFrom(anchor.add({ days: 8 }));
   const outcome = await page.evaluate(
     ([start, end]) => {
       const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -173,7 +176,7 @@ test("an all-day move is judged by the day-level rules, not the wall clock", asy
         refused: document.querySelector("#cockpit .sc-last")?.textContent ?? "",
       };
     },
-    [shifted.toString(), anchor.add({ days: 4 }).toString()],
+    [shifted.toString(), shifted.add({ days: 3 }).toString()],
   );
   expect(outcome.returned).toBe(shifted.toString());
   await expect(page.locator("#cockpit .sc-last")).toContainText("eventmove: seed-all-day");

@@ -384,13 +384,17 @@ test("room and kind filters change what the core is given", async ({ page }) => 
   await expect(page.locator("#room-summary")).toHaveText("2/3");
 
   const before = await page.locator(".cv-event").count();
-  await page.click('#kind-legend button[data-kind="maintenance"]');
+  // The toggled kind must be present in the opening range on every anchor
+  // date: seeded kinds are a deterministic draw that can miss a kind for a
+  // whole weekend, but the `seed-overlap` deadline always lands on the first
+  // opening day, which the range always covers.
+  await page.click('#kind-legend button[data-kind="deadline"]');
   await flushRender(page);
-  await expect(page.locator('#kind-legend button[data-kind="maintenance"]')).toHaveAttribute(
+  await expect(page.locator('#kind-legend button[data-kind="deadline"]')).toHaveAttribute(
     "aria-pressed",
     "false",
   );
-  await expect(page.locator('.cv-event[data-kind="maintenance"]')).toHaveCount(0);
+  await expect(page.locator('.cv-event[data-kind="deadline"]')).toHaveCount(0);
   expect(await page.locator(".cv-event").count()).toBeLessThan(before);
 });
 test("the room master toggle reads indeterminate, and no room is no verdict", async ({ page }) => {
