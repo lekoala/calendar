@@ -1,0 +1,2420 @@
+    /* ==================================================================
+       Actual CSS supplies every component used here: buttons, joins,
+       menus, fields, checkboxes, badges, avatars, dialogs, status bar,
+       tooltips, tokens. Tabler supplies the icons. This stylesheet only
+       adds what a design system cannot know:
+         1. FRAME     - a full-viewport application layout with a single
+                        scrolling region, which is what the calendar
+                        needs to fill;
+         2. BRIDGE    - Actual tokens mapped onto the public
+                        --calendar-* custom properties;
+         3. SKINS     - the two event-card skins this application offers,
+                        switched by `data-skin` on the root;
+         4. OVERLAYS  - popover menus, hover tooltip, sheets;
+         5. RESPONSIVE - below 64rem the chrome collapses so the grid
+                        keeps the whole remaining viewport, which is the
+                        thing the user actually came for.
+       ================================================================== */
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      block-size: 100%;
+    }
+
+    body {
+      margin: 0;
+      overscroll-behavior: none;
+      background: var(--surface-subtle);
+    }
+
+    /* Tabler is a webfont: one class for the family, one per glyph. Icons
+       sit as flex items inside Actual's controls, so `line-height: 1` is
+       what keeps them optically centred instead of riding the text
+       baseline - the reason glyph characters looked misaligned before. */
+    .ti {
+      font-size: 1.15em;
+      line-height: 1;
+    }
+
+    .ti-lg {
+      font-size: 1.35em;
+    }
+
+    /* The glyphs themselves carry their own vertical metrics, so a line
+       box is never the drawing: `line-height: 1` centres the box, not the
+       icon. The slot owns centering; the font glyph is a block so its
+       baseline does not add an extra inline alignment offset. */
+    .sc-shell .ti {
+      display: block;
+      flex: none;
+      inline-size: 1.15em;
+      block-size: 1.15em;
+      line-height: 1;
+    }
+
+    .sc-shell .ti::before {
+      display: block;
+    }
+
+    /* Manual Light / Dark toggle: the default Actual theme is a
+       light-dark() pair, so switching color-scheme is enough. */
+    [data-theme="light"] {
+      color-scheme: light;
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+    }
+
+    /* Two spellings of the same label, one per breakpoint. Choosing in CSS
+       keeps the toolbar responsive without a resize listener. */
+    .sc-narrow {
+      display: none;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* 1. FRAME                                                          */
+    /* ---------------------------------------------------------------- */
+    .sc-shell {
+      --sc-aside-size: 16.5rem;
+      display: grid;
+      grid-template:
+        "topbar topbar" auto
+        "aside  main" minmax(0, 1fr)
+        / var(--sc-aside-size) minmax(0, 1fr);
+      block-size: var(--viewport-block);
+      overflow: hidden;
+    }
+
+    .sc-topbar {
+      grid-area: topbar;
+      gap: var(--space-20);
+      padding-block: var(--space-10);
+      padding-inline: var(--space-20) var(--space-30);
+    }
+
+    .sc-brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-20);
+      min-inline-size: 0;
+      margin: 0;
+    }
+
+    .sc-brand-mark {
+      display: grid;
+      place-items: center;
+      inline-size: 1.85rem;
+      block-size: 1.85rem;
+      border-radius: var(--radius);
+      background: var(--primary);
+      color: var(--primary-fg);
+      line-height: 1;
+    }
+
+    .sc-brand-text {
+      display: grid;
+      min-inline-size: 0;
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-brand-text strong {
+      font-size: var(--font-size-sm);
+      white-space: nowrap;
+    }
+
+    .sc-brand-text small {
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .sc-modules {
+      border-block-end: 0;
+    }
+
+    .sc-modules .tab {
+      min-block-size: var(--control-size-sm);
+      font-size: var(--font-size-sm);
+    }
+
+    /* Actual underlines `[aria-selected]` tabs; these are real links, so
+       the current section is marked with aria-current instead. */
+    .sc-modules .tab[aria-current="page"] {
+      color: var(--state-selected);
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-modules .tab[aria-current="page"]::after {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      inset-block-end: 0;
+      border-block-end: 2px solid currentcolor;
+    }
+
+    .sc-topbar-end {
+      display: flex;
+      align-items: center;
+      gap: var(--space-20);
+      margin-inline-start: auto;
+    }
+
+    /* The intent counter sits beside its icon rather than on top of it: an
+       overlay badge on a 1.75rem control collides with both the glyph and
+       the avatar next to it. */
+    .sc-activity-btn {
+      --btn-pad-x: 0.5em;
+      gap: 0.35em;
+    }
+
+    .sc-activity-btn .badge {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Sidebar: application chrome the core deliberately does not own.   */
+    /* Below 64rem the same element becomes a `popover`, which is what   */
+    /* supplies light dismiss and Escape instead of a scrim and a        */
+    /* keydown handler.                                                  */
+    /* ---------------------------------------------------------------- */
+    .sc-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-30);
+      grid-area: aside;
+      min-block-size: 0;
+      overflow-y: auto;
+      padding: var(--space-30);
+      border-inline-end: var(--border-width) solid var(--border);
+      background: var(--surface);
+    }
+
+    .sc-group {
+      display: grid;
+      gap: var(--space-20);
+      min-inline-size: 0;
+    }
+
+    .sc-group-title {
+      display: flex;
+      align-items: center;
+      gap: 0.45em;
+      margin: 0;
+      color: var(--text-subtle);
+      font-size: 11px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .sc-group-title .sc-count-mini {
+      margin-inline-start: auto;
+      letter-spacing: 0;
+    }
+
+    /* Collapsible groups use a native details/summary: the summary wears
+       the same title styling, the UA marker is replaced by a chevron that
+       rotates open. */
+    details.sc-group > summary {
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+
+    details.sc-group > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.sc-group > summary .sc-disclosure {
+      margin-inline-start: auto;
+      font-size: 12px;
+      transition: rotate 120ms var(--ease-exit);
+    }
+
+    details.sc-group[open] > summary .sc-disclosure {
+      rotate: 90deg;
+    }
+
+    .sc-sidebar-foot {
+      display: grid;
+      gap: var(--space-20);
+      margin-block-start: auto;
+      padding-block-start: var(--space-20);
+      border-block-start: var(--border-width) solid var(--border);
+      color: var(--text-subtle);
+      font-size: 11px;
+    }
+
+    /* Mini month: `<date-calendar selection="none">` from
+       @lekoala/date-picker, driven as a navigator. Two things only are ours:
+       the BRIDGE from Actual's palette onto the component's public `--dp-*`
+       tokens, and the application decorations under it. `.dp-*` class names
+       are deliberately not a styling API of that component, so
+       every rule below hangs off the one marker node this shell returns
+       from `renderDay()`; `:has()` lifts it to the cell and to the row
+       without naming a single component class.
+
+       One deliberate carve-out: the component hardcodes its header control
+       sizes (2.25rem nav buttons, pressed `margin-inline-start`) with no
+       `--dp-*` token and no header render hook, so the compact panel would
+       stretch wider than its day grid. The three rules under `#mini` below
+       are the only ones that name component classes, and they stop at the
+       header. */
+    .sc-mini {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-10);
+      min-inline-size: 0;
+    }
+
+    #mini {
+      --dp-bg: var(--surface);
+      --dp-fg: var(--text);
+      --dp-muted: var(--text-subtle);
+      --dp-border: var(--border);
+      --dp-hover: var(--hover-overlay);
+      --dp-accent: var(--primary);
+      --dp-accent-fg: var(--primary-fg);
+      --dp-radius: var(--radius-sm);
+      /* Seven columns plus the ISO-week gutter have to fit the panel
+         without pushing a scrollbar into it. */
+      --dp-day-size: 1.75rem;
+      --dp-gap: var(--space-10);
+      /* Compact month: no vertical rhythm between week rows. */
+      --dp-row-gap: 0;
+      font-size: var(--font-size-xs);
+      /* The panel must not outgrow its day grid: the grid is 7×day cell
+         plus the ISO-week gutter. */
+      max-inline-size: 228px;
+    }
+
+    /* D3 carve-out: shrink the header to day-cell scale. `#mini` keeps
+       specificity above the component's (0,2,0); `:where()` scores 0. */
+    #mini .dp-calendar-header {
+      margin-block-end: 0;
+    }
+
+    #mini .dp-calendar-header .dp-prev {
+      margin-inline-start: 0;
+    }
+
+    #mini .dp-nav {
+      inline-size: 1.5rem;
+      min-block-size: 1.5rem;
+    }
+
+    #mini .dp-calendar-header :where(button, select, input) {
+      min-block-size: 1.5rem;
+    }
+
+    #mini .dp-day-extra {
+      bottom: -1px;
+    }
+
+    #mini .dp-year-input {
+      inline-size: 3.8rem;
+    }
+
+    #mini .dp-day {
+      border-radius: 0;
+    }
+
+    #mini .dp-grid {
+      width: 100%;
+    }
+
+    /* One node per day carries the whole verdict, so a cell keeps a single
+       source of truth for its state. Only the three marker states draw a
+       dot; `closed`, `neutral` and the anchor tint the cell instead, and
+       `:has()` still matches a node it never paints. */
+    .sc-mini-marker {
+      display: none;
+      inline-size: 4px;
+      block-size: 4px;
+      border-radius: var(--radius-full);
+      opacity: 0.9;
+    }
+
+    .sc-mini-marker[data-state="free"] {
+      display: block;
+      background: var(--success);
+    }
+
+    .sc-mini-marker[data-state="soon"] {
+      display: block;
+      background: var(--warning);
+    }
+
+    .sc-mini-marker[data-state="full"] {
+      display: block;
+      background: var(--danger);
+    }
+
+    /* The anchor's own row is the active week: its marker sits in that row,
+       so the band needs no second flag and no week math. */
+    #mini tr:has(.sc-mini-marker[data-anchor]) {
+      background: color-mix(in oklab, var(--primary), transparent 90%);
+    }
+
+    #mini td:has(.sc-mini-marker[data-state="closed"]) {
+      color: var(--text-subtle);
+      background: color-mix(in oklab, var(--surface-subtle), var(--text) 6%);
+    }
+
+    /* No room selected: the day is open but says nothing about
+       availability, instead of misreading "none" as "full". */
+    #mini td:has(.sc-mini-marker[data-state="neutral"]) {
+      color: var(--text-subtle);
+    }
+
+    /* Last, so a closed or neutral anchor still reads as the anchor. */
+    #mini td:has(.sc-mini-marker[data-anchor]) {
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-mini-legend {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 0.8em;
+      row-gap: 0.25em;
+      margin: 0;
+      color: var(--text-subtle);
+      font-size: 10.5px;
+    }
+
+    /* Keep each marker and its label together. Anonymous text nodes in the
+       parent flex can wrap independently, which leaves a dot visually
+       detached from its label and breaks the final "closed" note. */
+    .sc-mini-legend-item {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 0.35em;
+      white-space: nowrap;
+    }
+
+    .sc-mini-legend .sc-dot {
+      display: block;
+      background: var(--success);
+    }
+
+    .sc-mini-legend .sc-dot.is-danger {
+      background: var(--danger);
+    }
+
+    .sc-mini-legend .sc-dot.is-warning {
+      background: var(--warning);
+    }
+
+    .sc-searchbtn {
+      justify-content: start;
+      gap: 0.5em;
+    }
+
+    .sc-searchbtn kbd {
+      margin-inline-start: auto;
+    }
+
+    /* Resource checklist, kind legend and booking rules: three plain
+       application lists over application data. */
+    .sc-checks,
+    .sc-legend,
+    .sc-rules {
+      display: grid;
+      gap: 2px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .sc-check {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-20);
+      padding: var(--space-10) var(--space-20);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-xs);
+      cursor: pointer;
+    }
+
+    /* The master row toggles every room at once; the summary count says
+       how much of the fixture is active (`indeterminate` for the middle). */
+    .sc-check-all {
+      gap: var(--space-20);
+      margin-block-end: 2px;
+      font-weight: var(--font-weight-bold);
+    }
+
+    /* Group heading inside the room filter: the same check shape, quieter,
+       with its rooms indented under it. Filtering by group never reaches
+       the core - it only changes which `resourceIds` it is handed. */
+    .sc-check-group {
+      margin-block-start: var(--space-10);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .sc-checks[data-grouped="true"] .sc-check:not(.sc-check-group) {
+      padding-inline-start: var(--space-40, 1rem);
+    }
+
+    /* Move workbench rows: the persistent queue of bookings to place.
+       Rows are the same "check" shape as rooms, with the armed item
+       highlighted instead of checked. */
+    .sc-workbench {
+      display: grid;
+      gap: 2px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .sc-workbench button {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-20);
+      inline-size: 100%;
+      padding: var(--space-10) var(--space-20);
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: var(--font-size-xs);
+      text-align: start;
+      cursor: pointer;
+    }
+
+    .sc-workbench button:hover {
+      background: var(--hover-overlay);
+    }
+
+    .sc-workbench button[aria-current="true"] {
+      background: color-mix(in oklab, var(--primary), transparent 88%);
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+
+    .sc-workbench strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-workbench small {
+      color: var(--text-subtle);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sc-workbench-actions {
+      margin-block-start: var(--space-10);
+    }
+
+    .sc-workbench-hint {
+      margin: 0;
+      margin-inline-start: auto;
+      color: var(--text-subtle);
+      font-size: 10px;
+    }
+
+    .actual-calendar .cv-allday-event[data-parked="true"] {
+      opacity: 0.55;
+    }
+
+    /* Parking affordance: while an event drag is held outside the columns
+       (grid edge, axis strip), the workbench panel glows as the drop zone.
+       The core only toggles `data-dropout` on the dragged node; the shell
+       reaches its sibling sidebar through the shared `:has()` ancestor. */
+    .sc-shell:has(.cv-event[data-dropout="true"]) #workbench-panel {
+      outline: 2px dashed var(--primary);
+      outline-offset: 2px;
+      box-shadow: var(--shadow-popout);
+    }
+
+    .sc-shell:has(.cv-event[data-dropout="true"]) .sc-workbench-hint::before {
+      content: "release to park · ";
+    }
+
+    .sc-check:hover,
+    .sc-legend button:hover {
+      background: var(--hover-overlay);
+    }
+
+    .sc-legend button {
+      display: grid;
+      grid-template-columns: 0.65rem minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-20);
+      inline-size: 100%;
+      padding: var(--space-10) var(--space-20);
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: var(--font-size-xs);
+      text-align: start;
+      cursor: pointer;
+    }
+
+    .sc-legend button[aria-pressed="false"] {
+      opacity: 0.4;
+    }
+
+    .sc-swatch {
+      inline-size: 0.65rem;
+      block-size: 0.65rem;
+      border-radius: 3px;
+      background: var(--sc-tone, var(--primary));
+    }
+
+    .sc-count-mini {
+      color: var(--text-subtle);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Booking rules: the same constants the move/resize guard enforces,
+       written where a user can read them before being refused. */
+    .sc-rules li {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
+      gap: var(--space-20);
+      padding: var(--space-10) var(--space-20);
+      color: var(--text-muted);
+      font-size: var(--font-size-xs);
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-rules i {
+      margin-block-start: 0.1em;
+      color: var(--sc-tone, var(--text-subtle));
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Main column: one toolbar row, one live strip, the calendar, and   */
+    /* an activity panel that stays out of the way until asked for.     */
+    /* Only the calendar scrolls.                                       */
+    /* ---------------------------------------------------------------- */
+    .sc-main {
+      display: grid;
+      grid-area: main;
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr);
+      min-inline-size: 0;
+      min-block-size: 0;
+      background: var(--surface);
+    }
+
+    .sc-toolbar {
+      display: flex;
+      align-items: center;
+      grid-row: 1;
+      gap: var(--space-20);
+      padding: var(--space-10) var(--space-30);
+      border-block-end: var(--border-width) solid var(--border);
+      background: var(--surface);
+    }
+
+    /* Pinned tools escaped the menu: a compact cluster left of the view
+       switch, claiming no strip of its own. Desktop only (a phone has no
+       room beside the grid), hidden while empty, and each icon keeps its
+       tooltip so the pin stays self-naming. */
+    .sc-tools-pinned-bar {
+      display: none;
+    }
+
+    @media (min-width: 64rem) {
+      .sc-tools-pinned-bar:not([hidden]) {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-10);
+      }
+
+      .sc-tools-pinned-bar .sc-pinned-tool {
+        --btn-pad-x: 0.5em;
+      }
+    }
+
+    .sc-range {
+      display: grid;
+      min-inline-size: 0;
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-range strong {
+      overflow: hidden;
+      font-size: var(--font-size-md);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-range small {
+      overflow: hidden;
+      color: var(--text-muted);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-toolbar-end {
+      display: flex;
+      align-items: center;
+      gap: var(--space-10);
+      margin-inline-start: auto;
+    }
+
+    /* `.icon-only` fixes a square box, which is shorter than a labelled
+       sibling in the same join and left a pale sliver under the chevrons.
+       Inside a join the height belongs to the group. */
+    .join > .btn.icon-only {
+      block-size: auto;
+    }
+
+    /* The view switcher used to be seven buttons wide. One trigger that
+       names the current view costs a fifth of the room, reads the same on
+       a phone, and is where the keyboard shortcuts are documented. */
+    .sc-viewbtn {
+      --btn-pad-x: 0.6em;
+      max-inline-size: 11rem;
+    }
+
+    .sc-viewbtn span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Live strip: the application's own status line over core state. It is
+       a single scrollable row, so it costs the same height at every width
+       instead of wrapping into the grid's space. */
+    .sc-cockpit {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: center;
+      grid-row: 2;
+      gap: var(--space-40);
+      overflow-x: auto;
+      margin: 0;
+      padding: 3px var(--space-30);
+      border-block-end: var(--border-width) solid var(--border);
+      background: color-mix(in oklab, var(--surface), var(--primary) 7%);
+      color: var(--text-muted);
+      font-size: 11px;
+      scrollbar-width: none;
+    }
+
+    .sc-cockpit::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Stats read as bordered pills; the newest-intent message stays bare
+       text so the strip keeps a quiet end. */
+    .sc-cockpit > span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4em;
+      white-space: nowrap;
+    }
+
+    .sc-cockpit > span:not(.sc-last) {
+      padding: 1px 0.65em;
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-full);
+      background: var(--surface);
+    }
+
+    .sc-cockpit strong {
+      color: var(--text);
+    }
+
+    /* The newest intent rides the strip, so the log stays closed without
+       the shell looking inert. */
+    .sc-cockpit .sc-last {
+      min-inline-size: 0;
+      color: var(--text-subtle);
+    }
+
+    .sc-cockpit .sc-last span {
+      overflow: hidden;
+      max-inline-size: 22rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Busy state: the strip reports what `calendar:loading` says, and the
+       grid dims rather than disappearing, so scroll position stays legible. */
+    .sc-shell[data-busy="true"] .sc-dot {
+      background: var(--warning);
+    }
+
+    .sc-shell[data-busy="true"] .actual-calendar .cv-scroller {
+      opacity: 0.55;
+      transition: opacity var(--duration) var(--ease-exit);
+    }
+
+    .sc-dot {
+      flex: none;
+      inline-size: 0.5rem;
+      block-size: 0.5rem;
+      border-radius: var(--radius-full);
+      background: var(--sc-tone, var(--success));
+    }
+
+    /* Activity panel: the intent log. Hidden by default - the shell's
+       diagnostics must not compete with the grid for room. */
+    .sc-activity {
+      display: grid;
+      gap: var(--space-20);
+      grid-row: 5;
+      padding: var(--space-20) var(--space-30);
+      border-block-start: var(--border-width) solid var(--border);
+      background: var(--surface);
+      font-size: var(--font-size-xs);
+    }
+
+    .sc-activity-head {
+      display: flex;
+      align-items: center;
+      gap: var(--space-20);
+    }
+
+    .sc-activity-head h2 {
+      margin: 0;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .sc-activity-head .sc-activity-close {
+      margin-inline-start: auto;
+    }
+
+    .sc-log {
+      display: grid;
+      gap: 1px;
+      max-block-size: 7rem;
+      overflow: auto;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .sc-log li {
+      padding: 2px var(--space-20);
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      color: var(--text-muted);
+      overflow-wrap: anywhere;
+    }
+
+    .sc-log li:first-child {
+      background: color-mix(in oklab, var(--primary), transparent 86%);
+      color: var(--text);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* 2. BRIDGE - Actual tokens onto the public --calendar-* contract.  */
+    /* ---------------------------------------------------------------- */
+    .actual-calendar {
+      display: flex;
+      flex-direction: column;
+      min-inline-size: 0;
+      min-block-size: 0;
+      grid-row: 4;
+      overflow: hidden;
+      --calendar-bg: var(--surface-subtle);
+      --calendar-surface: var(--surface);
+      --calendar-line: var(--border);
+      --calendar-text: var(--text);
+      --calendar-muted: var(--text-muted);
+      --calendar-accent: var(--primary);
+      --calendar-event-bg: var(--primary);
+      --calendar-event-border: var(--primary);
+      --calendar-column-min: 9rem;
+      /* The shell compresses the sticky header rows; the core's own seams
+         carry both the row heights and the sticky offsets, so one variable
+         per row is the whole contract. */
+      --calendar-resource-row-size: 2rem;
+      --calendar-group-row-size: 1.5rem;
+      --calendar-background-bg:
+        repeating-linear-gradient(
+          135deg,
+          color-mix(in oklab, var(--neutral), transparent 86%) 0 5px,
+          transparent 5px 11px
+        );
+      font-family: var(--font-sans);
+      font-size: var(--font-size-xs);
+    }
+
+    /* Resource views multiply columns; keep them readable without
+       forcing a very wide horizontal scroll. */
+    .actual-calendar[data-view^="resource"] {
+      --calendar-column-min: 7.5rem;
+    }
+
+    /* The frame owns the height, so the core scroller stops guessing. */
+    .actual-calendar .cv-scroller {
+      flex: 1;
+      min-block-size: 0;
+      max-block-size: none;
+      scrollbar-width: thin;
+    }
+
+    .actual-calendar .cv-axis {
+      background: var(--surface-subtle);
+    }
+
+    .actual-calendar .cv-axis-label {
+      font-size: 10px;
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .actual-calendar .cv-hour-line {
+      border-color: color-mix(in oklab, var(--border), transparent 30%);
+    }
+
+    .actual-calendar .cv-now {
+      color: var(--danger);
+    }
+
+    /* Application background ranges. The core hard-codes no meaning, so
+       the two policies this shell has - closed hours and non-bookable
+       ranges - are told apart by the classes it puts on them. */
+    .actual-calendar .cv-background.sc-closed {
+      border-inline-start: 0;
+      background: color-mix(in oklab, var(--surface), var(--text) 3%);
+    }
+
+    .actual-calendar .cv-background.sc-blocked {
+      border-inline-start: 0;
+      background:
+        repeating-linear-gradient(
+          135deg,
+          color-mix(in oklab, var(--danger), transparent 84%) 0 2px,
+          transparent 2px 11px
+        );
+    }
+
+    /* `solid` paints the windows the classic way - a full semantic wash.
+       `soft` reinterprets them as a one-sided frame below, so the two
+       skins show both treatments of the same ranges. */
+    .actual-calendar .cv-background.sc-open {
+      border-inline-start: 0;
+      background: color-mix(in oklab, var(--success), transparent 84%);
+    }
+
+    .actual-calendar .cv-background.sc-extra {
+      border-inline-start: 0;
+      background: color-mix(in oklab, var(--warning), transparent 72%);
+    }
+
+    /* Scoped availability context (Team day): location metadata for creation
+       defaults, carried by the range without adding paint. The bookable-hours
+       wash above already says "available" in green; this layer only tells
+       *where* (Site Nord, Visio) through `getRangeContext().backgrounds`. */
+    .actual-calendar .cv-background.sc-avail {
+      border-inline-start: 0;
+      background: transparent;
+    }
+
+    /* A hatch in the middle of a working day says nothing about why it is
+       there, and sends the reader to the sidebar legend to find out. Naming
+       it costs nothing. Only the non-bookable ranges are named, though:
+       closed hours sit at the day's edges against an axis already reading
+       07:00, so a label there repeats the geometry once per column, and the
+       bookable and extended-hours washes span whole days, where a label
+       would be noise rather than information.
+
+       The label is a `::after` keyed off the class, which is as far as CSS
+       can go: the core builds backgrounds as bare `<div>`s carrying only
+       `classNames` (there is no `backgroundContent` to match the five
+       content hooks the rest of the render has), so the text is per policy
+       and not per range. A closure the desk creates for a named reason
+       ("Deep clean") still cannot say so on the grid - that one needs the
+       hook.
+
+       `container-type` is set here rather than inherited: the bands are
+       absolutely positioned with an inline height, so each one can size its
+       own query and drop the label when it is too short to hold it. */
+    .actual-calendar .cv-background.sc-blocked {
+      container-type: size;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .actual-calendar .cv-background.sc-blocked::after {
+      content: "Not bookable";
+      color: color-mix(in oklab, var(--text-subtle), transparent 20%);
+      font-size: 10px;
+      font-weight: var(--font-weight-semibold);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    @container (max-height: 34px) {
+      .actual-calendar .cv-background.sc-blocked::after {
+        content: "";
+      }
+    }
+
+    /* The core owns the now line and its leading-edge dot; this shell only
+       retints both through `color` (above) and thins the line to a
+       hairline. What is not reachable from here is the time itself in the
+       axis, the way calendar apps print it: the node is inside the column
+       body, it takes no content, and the axis is a separate sticky column.
+       That one is the core's to give. */
+    .actual-calendar .cv-now {
+      border-top-width: 1px;
+    }
+
+    /* Day and resource headers take application content; the core keeps
+       geometry and stickiness. */
+    .actual-calendar .cv-day-header {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      min-height: 1.9rem;
+      padding: 2px var(--space-20);
+      font-weight: var(--font-weight-normal);
+    }
+
+    .actual-calendar .cv-day-header[data-weekend="true"] {
+      background: var(--surface-subtle);
+    }
+
+    .actual-calendar .cv-resource-header {
+      gap: 0.45rem;
+      padding-block: 2px;
+      font-size: var(--font-size-sm);
+    }
+
+    /* One-level room groups. The core draws the row, owns the column spans
+       and the sticky offsets; this only skins it. The selectors key off a
+       real `.cv-group-row`, so nothing shifts when no group matches and the
+       row is not rendered at all. */
+    .actual-calendar .cv-group-header {
+      gap: 0.4rem;
+      padding-block: 2px;
+      color: var(--text-muted);
+      font-size: var(--font-size-xs);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .sc-dow {
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .sc-dom {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-bold);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cv-day-header[data-today="true"] .sc-dom {
+      display: grid;
+      place-items: center;
+      min-inline-size: 1.35rem;
+      aspect-ratio: 1;
+      border-radius: var(--radius-full);
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-size: var(--font-size-xs);
+    }
+
+    .sc-count {
+      margin-inline-start: auto;
+      padding: 0 0.45em;
+      border-radius: var(--radius-full);
+      background: var(--hover-overlay);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Progressive enhancement: tint the whole column from the marker the
+       application put on its header. */
+    .actual-calendar .cv-day:has(> .cv-day-header[data-weekend="true"]) .cv-day-body {
+      background: color-mix(in oklab, var(--surface), var(--text) 3%);
+    }
+
+    .actual-calendar .cv-day:has(> .cv-day-header[data-today="true"]) .cv-day-body {
+      background: color-mix(in oklab, var(--surface), var(--primary) 4%);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* 3. EVENT SKINS - two of them, one hue per application kind.       */
+    /*                                                                   */
+    /* `solid` fills the card with a saturated pastel of the kind's tone   */
+    /* and edges it with the same hue darkened; `soft` floats a paler     */
+    /* wash of the tone inside a transparent margin, with no rail at all. */
+    /* Both write in the page's own ink, and neither hard-codes a colour: */
+    /* they read `--sc-tone`, which comes from Actual's semantic tokens.  */
+    /* Skin and theme are therefore orthogonal - two skins across every   */
+    /* theme and both colour schemes, with no per-combination exception   */
+    /* to write.                                                          */
+    /*                                                                   */
+    /* The two are mutually exclusive selectors, so their specificity     */
+    /* relative to each other never matters; what matters is that every  */
+    /* rule which overrides a property the skin base sets (the temporal  */
+    /* states own the border treatment and the shadow) lives inside a    */
+    /* skin block too, or the base would outrank it.                     */
+    /* ---------------------------------------------------------------- */
+    [data-kind="review"] {
+      --sc-tone: var(--primary);
+      --sc-tone-fg: var(--primary-fg);
+      --intent-soft-fg: var(--primary-soft-fg);
+    }
+
+    [data-kind="planning"] {
+      --sc-tone: var(--success);
+      --sc-tone-fg: var(--success-fg);
+      --intent-soft-fg: var(--success-soft-fg);
+    }
+
+    [data-kind="deadline"] {
+      --sc-tone: var(--danger);
+      --sc-tone-fg: var(--danger-fg);
+      --intent-soft-fg: var(--danger-soft-fg);
+    }
+
+    [data-kind="workshop"] {
+      --sc-tone: var(--secondary);
+      --sc-tone-fg: var(--secondary-fg);
+      --intent-soft-fg: var(--secondary-soft-fg);
+    }
+
+    /* Grey reads as "routine", amber as "do not book"; the seeded set
+       never uses amber, so blocked markers stand out when created. */
+    [data-kind="maintenance"] {
+      --sc-tone: var(--neutral);
+      --sc-tone-fg: var(--neutral-fg);
+      --intent-soft-fg: var(--neutral-soft-fg);
+    }
+
+    [data-kind="absence"] {
+      --sc-tone: var(--neutral);
+      --sc-tone-fg: var(--neutral-fg);
+      --intent-soft-fg: var(--neutral-soft-fg);
+    }
+
+    [data-kind="blocked"] {
+      --sc-tone: var(--warning);
+      --sc-tone-fg: var(--warning-fg);
+      --intent-soft-fg: var(--warning-soft-fg);
+    }
+
+    /* Geometry and the container query are the same in both skins: only
+       colour, radius and edge treatment change, so the card's own layout
+       contract is stated once. */
+    .actual-calendar .cv-event {
+      container-type: size;
+      padding: 3px 6px;
+      border: 0;
+    }
+
+    .actual-calendar .cv-allday-event {
+      margin: 1px 2px;
+      border: 0;
+    }
+
+    /* --- `solid` ---------------------------------------------------- */
+    /* Full-tone fill writing in the tone's own foreground: this skin is
+       the loud one, where a card carries its kind's colour at strength.
+       Like `soft`, the fill is clipped to the padding box inside a
+       transparent border, so stacked bookings keep a white gutter instead
+       of meeting edge to edge - the difference is only how loud the card
+       itself is. */
+    [data-skin="solid"] .actual-calendar .cv-event {
+      border: 3px solid transparent;
+      background: var(--sc-tone, var(--primary));
+      background-clip: padding-box;
+      border-radius: 8px;
+      color: var(--sc-tone-fg, var(--primary-fg));
+      box-shadow: none;
+    }
+
+    /* All-day lane bars wear the same tone cards as timed events: the core
+       styles them neutrally, so the kind token does the reskinning here. */
+    [data-skin="solid"] .actual-calendar .cv-allday-event {
+      border: 3px solid transparent;
+      background: var(--sc-tone, var(--primary));
+      background-clip: padding-box;
+      border-radius: 8px;
+      color: var(--sc-tone-fg, var(--primary-fg));
+    }
+
+    /* --- `soft` ----------------------------------------------------- */
+    /* Borderless pastel. The fill and ink resolve through the canonical
+       Actual soft tokens - `--soft-bg-mix` and `--intent-soft-fg` (with
+       the `--soft-fg-mix` derivation as fallback), the same ones Actual's
+       own `.soft` and `.badge` read, so every theme tunes these cards
+       without an exception here.
+
+       What changed is the shape: no rail, no rim. A transparent border
+       insets the fill from the grid and `background-clip: padding-box`
+       stops the wash at the padding edge, so the border area shows
+       through to the column and a dense grid reads as spaced cards
+       instead of one tinted wall. The kind is carried by the wash plus
+       the row-1 badge; the title writes in the page's ink. */
+    [data-skin="soft"] .actual-calendar .cv-event,
+    [data-skin="soft"] .actual-calendar .cv-allday-event {
+      border: 3px solid transparent;
+      background: var(--surface-subtle);
+      background-clip: padding-box;
+      border-radius: 10px;
+      color: var(--text);
+      box-shadow: none;
+    }
+
+    @supports (color: color-mix(in oklab, red, white)) {
+      [data-skin="soft"] .actual-calendar .cv-event,
+      [data-skin="soft"] .actual-calendar .cv-allday-event {
+        --sc-soft-fill: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--sc-tone, var(--primary)));
+        --sc-soft-ink: var(--intent-soft-fg, color-mix(in oklab, var(--text), var(--sc-tone, var(--primary)) var(--soft-fg-mix)));
+        background-color: var(--sc-soft-fill);
+        color: var(--sc-soft-ink);
+      }
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-event {
+      padding-inline: 7px;
+      transition: box-shadow 120ms var(--ease-exit);
+    }
+
+    /* A wash carries less hue separation than a fill: on a monochrome
+       theme two neighbouring kinds converge once desaturated. Lifting the
+       card on hover is what keeps the one under the pointer legible when
+       it overlaps another; the kind icon below is what keeps them told
+       apart at rest. */
+    [data-skin="soft"] .actual-calendar .cv-event:hover {
+      box-shadow: 0 2px 8px -2px color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 60%);
+    }
+
+    /* Hover moves the fill toward the tone by `--soft-hover-alpha`, the
+       same state change Actual's own soft treatments use - so the resting
+       and hovered fills stay a theme decision, not a per-card one. The
+       border stays transparent: `background-color` (not the shorthand) so
+       the padding-box clip - and with it the air around the card - is
+       preserved. */
+    @supports (color: color-mix(in oklab, red, white)) {
+      [data-skin="soft"] .actual-calendar .cv-event:hover {
+        --sc-soft-fill: color-mix(in oklab, var(--surface) calc(var(--soft-bg-mix) - var(--soft-hover-alpha)), var(--sc-tone, var(--primary)));
+        background-color: var(--sc-soft-fill);
+      }
+    }
+
+    /* The application's background policies are declared in the BRIDGE
+       section above, at `solid` intensities. `soft` takes the loudness
+       out of the column itself: the hatch loses its red because the weave
+       alone already says "not bookable" without shouting it, and the
+       bookable and extended-hours windows trade their wash for a single
+       coloured edge - the boundary is the information, not the fill. */
+    [data-skin="soft"] .actual-calendar {
+      --calendar-line: color-mix(in oklab, var(--border), transparent 25%);
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-hour-line {
+      border-color: color-mix(in oklab, var(--border), transparent 55%);
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-background.sc-blocked {
+      background:
+        repeating-linear-gradient(
+          135deg,
+          color-mix(in oklab, var(--text), transparent 94%) 0 2px,
+          transparent 2px 11px
+        );
+    }
+
+    /* `soft` frames the windows instead of filling them: a single
+       inline-start edge in the window's colour marks where the range
+       begins without covering the column in a tint. */
+    [data-skin="soft"] .actual-calendar .cv-background.sc-open {
+      border-inline-start: 3px solid color-mix(in oklab, var(--success), transparent 55%);
+      background: transparent;
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-background.sc-extra {
+      border-inline-start: 3px solid color-mix(in oklab, var(--warning), transparent 40%);
+      background: transparent;
+    }
+
+    .actual-calendar .cv-event:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 1px;
+    }
+
+    .actual-calendar .cv-event.cv-drag-mirror {
+      box-shadow: var(--shadow-popout);
+    }
+
+    /* Application read-only rule: `editable: false` already stops the core
+       from starting a drag, so the card only has to look the part. */
+    .actual-calendar .cv-event[data-locked="true"] {
+      cursor: default;
+    }
+
+    /* Archived rule: past events never arm a drag/resize either, so the card
+       just drops the grab affordance and reads slightly faded. This is the
+       application's editability rule and it is day-granular on purpose (the
+       whole of today stays draggable), which is why it is a separate
+       attribute from the core's temporal fact below. */
+    .actual-calendar .cv-event[data-archived="true"] {
+      cursor: default;
+      filter: saturate(0.85);
+    }
+
+     /* The core's temporal fact: every event node carries
+       `data-temporal-state="past|current|future"`, derived from its own
+       range against the render's `now`. The core ships no styling for it
+       and never turns it into a permission - this is the application
+       deciding what past and running should look like.
+
+       It ages without a refetch and without a clock here: the render arms a
+       single timer to the next visible boundary, so a booking crosses from
+       `current` to `past` on screen while nobody touches the page.
+
+       Both states own the border treatment and the shadow, which the skin bases
+       also set, so each skin states them itself: a single shared rule at
+       lower specificity would be outranked by whichever base is active. */
+    [data-skin="solid"] .actual-calendar .cv-event[data-temporal-state="past"] {
+      opacity: 0.72;
+    }
+
+    [data-skin="solid"] .actual-calendar .cv-event[data-temporal-state="current"] {
+      border-color: var(--success, #16a34a);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--success, #16a34a), transparent 55%);
+    }
+
+    /* `soft` retires the past by moving the wash halfway back to the
+       surface rather than by a blanket opacity, which would fade the ink
+       along with the fill and cost the card its legibility for no gain.
+       The halfway point derives from `--soft-bg-mix`, so a theme that
+       tunes its wash tunes its past state along with it. */
+    /* `background-color`, not the shorthand: the shorthand would reset
+       `background-clip` to `border-box` and let the fill creep under the
+       transparent border, which is what hides the window edge behind a
+       past card. */
+    [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="past"] {
+      background-color: var(--surface-subtle);
+      color: var(--text-muted);
+    }
+
+    @supports (color: color-mix(in oklab, red, white)) {
+      [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="past"] {
+        --sc-soft-fill: color-mix(in oklab, var(--surface) calc(var(--soft-bg-mix) + (100% - var(--soft-bg-mix)) / 2), var(--sc-tone, var(--primary)));
+        background-color: var(--sc-soft-fill);
+      }
+    }
+
+    /* With no rail to recolour, "running" gets a tinted rim plus the ring:
+       the whole border band turns success-green instead of one edge. */
+    [data-skin="soft"] .actual-calendar .cv-event[data-temporal-state="current"] {
+      border-color: color-mix(in oklab, var(--success, #16a34a), transparent 55%);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--success, #16a34a), transparent 60%);
+    }
+
+    /* Running bookings in the list view get the same edge, where there is no
+       geometry to read the now-indicator against. */
+    .actual-calendar .cv-list-event[data-temporal-state="current"] {
+      border-inline-start: 3px solid var(--success, #16a34a);
+    }
+
+    .actual-calendar .cv-list-event[data-temporal-state="past"] {
+      opacity: 0.72;
+    }
+
+    /* The cockpit counter for the same fact, so the aging is legible even
+       when the running booking is scrolled out of view. */
+    .sc-cockpit .sc-now-chip .sc-dot {
+      background: var(--success, #16a34a);
+    }
+
+    /* Parked state: queued events keep their place in the grid until a
+       successful placement removes them from the workbench. The card reads
+       as waiting — muted tone plus a dashed outline. */
+    .actual-calendar .cv-event[data-parked="true"] {
+      opacity: 0.55;
+      outline: 2px dashed var(--primary);
+      outline-offset: -2px;
+      filter: saturate(0.6);
+    }
+
+    .sc-clipboard {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      grid-row: 3;
+      gap: 0.5rem;
+      padding: 0.35rem 0.75rem;
+      border-block-end: 1px solid var(--edge, var(--calendar-line));
+      background: color-mix(in oklab, var(--primary), transparent 88%);
+      font-size: var(--font-size-xs);
+    }
+
+    .sc-clipboard[hidden] {
+      display: none;
+    }
+
+    .sc-clipboard .sc-clipboard-actions {
+      display: flex;
+      gap: 0.35rem;
+      margin-inline-start: auto;
+    }
+
+    /* Aura on a fresh booking. Actual registers `--aura-angle` and the
+       `aura-rotate` keyframes for its own `.aura`, so the same animation
+       drives a sweep inside the card, plus one ring that pings outwards.
+       Box shadows are not clipped by the card's `overflow: hidden`. */
+    @keyframes sc-ping {
+      from {
+        box-shadow: 0 0 0 0 color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 25%);
+      }
+
+      to {
+        box-shadow: 0 0 0 14px color-mix(in oklab, var(--sc-tone, var(--primary)), transparent 100%);
+      }
+    }
+
+    .actual-calendar .cv-event[data-fresh="true"] {
+      animation: sc-ping 1.4s var(--ease-exit) 3;
+    }
+
+    .actual-calendar .cv-event[data-fresh="true"]::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 0;
+      background:
+        conic-gradient(
+          from var(--aura-angle),
+          transparent 0 62%,
+          color-mix(in oklab, var(--sc-tone-fg, #fff), transparent 62%) 82%,
+          transparent
+        );
+      animation: aura-rotate 2.4s linear infinite;
+      pointer-events: none;
+    }
+
+    .sc-card {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 1px;
+      overflow: hidden;
+      line-height: 1.25;
+    }
+
+    .sc-card strong {
+      display: flex;
+      align-items: center;
+      gap: 0.3em;
+      overflow: hidden;
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-card strong span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-card .sc-meta,
+    .sc-card .sc-when {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-card .sc-when {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* `solid` writes on the tone in its own foreground, so the three lines
+       separate by opacity against a single ink colour. */
+    [data-skin="solid"] .sc-card strong {
+      font-size: var(--font-size-xs);
+    }
+
+    [data-skin="solid"] .sc-card .sc-meta {
+      font-size: 10.5px;
+      opacity: 0.85;
+    }
+
+    [data-skin="solid"] .sc-card .sc-when {
+      font-size: 10.5px;
+      font-weight: var(--font-weight-semibold);
+      opacity: 0.9;
+    }
+
+    /* `soft` has the page's own text colours available, so it separates by
+       colour instead and can afford one real size jump: the title steps up
+       to 12px and takes the kind's hue, the two supporting lines drop to
+       `--text-muted`. Four near-identical sizes become two.
+
+       The clock moves above the title: in a column whose whole geometry is
+       time, "when" is what the eye is already looking for, and the title
+       answers it.
+
+       That clock line then has spare width at its end, which is where the
+       kind badge goes - so naming the kind costs no line of its own. The
+       three rows are placed explicitly rather than by `order`, because the
+       badge has to share row 1 with the clock instead of taking a row
+       after it. The hook's markup is untouched either way. */
+    [data-skin="soft"] .sc-card {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: 0 0.4em;
+    }
+
+    [data-skin="soft"] .sc-card .sc-when {
+      grid-area: 1 / 1;
+      color: var(--text-muted);
+      font-size: 10.5px;
+      font-weight: var(--font-weight-semibold);
+    }
+
+    [data-skin="soft"] .sc-card strong {
+      grid-area: 2 / 1 / auto / -1;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    [data-skin="soft"] .sc-card .sc-meta {
+      grid-area: 3 / 1 / auto / -1;
+      color: var(--text-muted);
+      font-size: 10.5px;
+    }
+
+    /* Trailing flag cluster (remote, priority): pinned top-end inside the
+       card, out of the title's way, never interactive. */
+    .actual-calendar .cv-event .sc-icons {
+      position: absolute;
+      top: 3px;
+      inset-inline-end: 5px;
+      display: flex;
+      gap: 3px;
+      font-size: 10px;
+      opacity: 0.92;
+      pointer-events: none;
+    }
+
+    .actual-calendar .cv-event:has(.sc-icons) .sc-card strong {
+      padding-inline-end: 2.6em;
+    }
+
+    /* `solid` writes the flags in the tone's own foreground, which they
+       inherit; `soft` writes in the page's ink, where a flag at full
+       strength would read as loud as the title.
+
+       They also move to the foot of the card, because the kind badge now
+       owns the top end of row 1 and the two would overlap there. The
+       cluster is a sibling of `.sc-card`, not a cell in its grid, so it
+       stays absolutely positioned and the clearance moves with it: off the
+       title, onto the meta line it now sits beside. */
+    [data-skin="soft"] .actual-calendar .cv-event .sc-icons {
+      top: auto;
+      bottom: 3px;
+      color: var(--text-muted);
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-event:has(.sc-icons) .sc-card strong {
+      padding-inline-end: 0;
+    }
+
+    [data-skin="soft"] .actual-calendar .cv-event:has(.sc-icons) .sc-card .sc-meta {
+      padding-inline-end: 2.6em;
+    }
+
+    .sc-card .sc-tag {
+      justify-self: start;
+      margin-block-start: 2px;
+      padding: 0 0.45em;
+      border-radius: var(--radius-full);
+      background: color-mix(in oklab, var(--surface), transparent 55%);
+      font-size: 9.5px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    /* On the full-tone fill the chip reads as a near-white pill with the
+       page's ink - the same pairing Actual's `.badge` uses on a strong
+       surface. */
+    [data-skin="solid"] .sc-card .sc-tag {
+      background: color-mix(in oklab, var(--surface), transparent 10%);
+      color: var(--text);
+    }
+
+    /* `soft` restyles the chip into a badge instead of dropping it. The
+       chip's problem was never that it named the kind - it was that it took
+       a third line to do it, under a card whose meta line already said the
+       same thing in words. Sharing row 1 with the clock costs nothing, and
+       the kind stops being read as decoration: it reads as a label, which
+       is what it is. `capitalize` is what turns the raw id into "Review"
+       with no change to the hook. */
+    [data-skin="soft"] .sc-card .sc-tag {
+      grid-area: 1 / 2;
+      margin-block-start: 0;
+      padding: 0 0.4em;
+      background: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--sc-tone, var(--primary)));
+      color: var(--intent-soft-fg, color-mix(in oklab, var(--text), var(--sc-tone, var(--primary)) var(--soft-fg-mix)));
+      font-size: 9.5px;
+      letter-spacing: 0;
+      text-transform: capitalize;
+    }
+
+    /* The kind glyph is the fallback for the one case the badge cannot
+       cover: a card too short to show row 1 at all (the container query
+       below drops the clock and takes the badge with it). There the tone is
+       the only remaining cue, and a wash separates hues less well than a
+       fill does. Hidden everywhere else - showing it alongside the badge
+       spent title width, which the 7.5rem resource columns do not have, to
+       state the kind twice.
+
+       Both nodes are always in the markup; only CSS decides which shows,
+       so switching skins never re-renders a card. */
+    .sc-card .sc-kind,
+    .sc-card .sc-avatar {
+      display: none;
+    }
+
+    /* The resource initial is `soft`'s avatar: a tone-tinted chip that
+       identifies the room where no column header does. `solid` hides it -
+       its saturated card is already the loudest thing in the column, and
+       one more badge would crowd the meta line it sits on.
+
+       `soft` turns the meta line into a flex row so the chip centres on
+       the text; the truncation moves to `.sc-meta-text` because a flex
+       container's own `text-overflow` can no longer reach the ellipsis. */
+    [data-skin="soft"] .sc-card .sc-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.35em;
+    }
+
+    .sc-card .sc-meta-text {
+      min-inline-size: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    [data-skin="soft"] .sc-card .sc-avatar {
+      display: inline-grid;
+      flex: none;
+      place-items: center;
+      inline-size: 1.35em;
+      block-size: 1.35em;
+      border-radius: var(--radius-full);
+      background: color-mix(in oklab, var(--sc-tone, var(--primary)) 32%, var(--surface));
+      color: color-mix(in oklab, var(--sc-tone, var(--primary)), #000 42%);
+      font-size: 8px;
+      font-weight: var(--font-weight-bold);
+    }
+
+    /* Short bookings drop detail instead of clipping it. The hover tooltip
+       is what gives the dropped detail back. */
+    @container (max-height: 44px) {
+      .sc-card .sc-tag {
+        display: none;
+      }
+
+      .actual-calendar .cv-event .sc-icons {
+        display: none;
+      }
+
+      /* The chip has just gone and the meta line no longer repeats the
+         kind, so on a short card the tone would be the only thing left
+         naming it. The glyph takes over for both skins - `solid` separates
+         its hues better than `soft` does, but neither separates six of them
+         on a card this size. */
+      .sc-card .sc-kind {
+        display: block;
+        opacity: 0.8;
+      }
+    }
+
+    @container (max-height: 26px) {
+      .sc-card .sc-meta {
+        display: none;
+      }
+
+      .sc-card .sc-when {
+        display: none;
+      }
+    }
+
+    /* Row 1 is the one row with two claims on it, so it needs a width
+       budget as well as a height one. Both steps hand back to something
+       already on the card rather than dropping information: the range's end
+       is restated by the card's height, and the badge is restated by the
+       glyph. Narrow columns are not an edge case here - the resource views
+       run at 7.5rem, which is where the shell opens. */
+    @container (max-width: 11rem) {
+      [data-skin="soft"] .sc-card .sc-to {
+        display: none;
+      }
+    }
+
+    @container (max-width: 8.5rem) {
+      [data-skin="soft"] .sc-card .sc-tag {
+        display: none;
+      }
+
+      [data-skin="soft"] .sc-card .sc-kind {
+        display: block;
+        opacity: 0.8;
+      }
+    }
+
+    /* Past a certain narrowness the glyph stops being a cue and becomes the
+       thing crowding out the title: on a sliver in a busy week, a locked
+       maintenance card was spending two glyphs to leave one letter of its
+       name. The tone still carries the kind, and the hover tooltip carries
+       everything. */
+    @container (max-width: 5.5rem) {
+      .sc-card .sc-kind {
+        display: none;
+      }
+    }
+
+    /* Month and list reuse the same tones in their own shapes. */
+    .actual-calendar[data-view="month"] .cv-scroller {
+      display: flex;
+    }
+
+    /* Rows share the leftover height when the month is short, but never
+       below what a cell actually holds: `1fr` alone made busy weeks overlap
+       the row underneath. */
+    .actual-calendar .cv-month {
+      flex: 1;
+      display: grid;
+      grid-template-rows: auto;
+      grid-auto-rows: minmax(max-content, 1fr);
+    }
+
+    .actual-calendar .cv-month-day {
+      min-block-size: 5.5rem;
+    }
+
+    .actual-calendar .cv-month-event {
+      display: flex;
+      align-items: center;
+      gap: 0.35em;
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--sc-tone, var(--primary)));
+      color: var(--text);
+      font-size: 11px;
+    }
+
+    .actual-calendar .cv-month-event::before {
+      content: "";
+      flex: none;
+      inline-size: 0.45rem;
+      block-size: 0.45rem;
+      border-radius: var(--radius-full);
+      background: var(--sc-tone, var(--primary));
+    }
+
+    .actual-calendar .cv-month-weekday {
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .actual-calendar .cv-list-day-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      padding: var(--space-20) var(--space-40);
+      background: var(--surface-subtle);
+      font-size: var(--font-size-sm);
+    }
+
+    .actual-calendar .cv-list-event {
+      padding: var(--space-20) var(--space-40);
+      border-inline-start: 3px solid var(--sc-tone, var(--primary));
+    }
+
+    .actual-calendar .cv-list-event:hover {
+      background: var(--hover-overlay);
+    }
+
+    .sc-row {
+      display: grid;
+      grid-template-columns: auto 6.5rem minmax(0, 22rem) minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-30);
+    }
+
+    .sc-row > .ti {
+      color: var(--sc-tone, var(--text-muted));
+    }
+
+    .sc-row .sc-time {
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sc-row .sc-tag {
+      padding: 0 0.5em;
+      border-radius: var(--radius-full);
+      background: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--sc-tone, var(--primary)));
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      text-transform: uppercase;
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* 4. APP-OWNED OVERLAYS                                             */
+    /* Everything floating here is a native `popover` placed with        */
+    /* @lekoala/floating: the platform owns the top layer, light dismiss  */
+    /* and Escape, and the library owns the coordinates. Neither is      */
+    /* hand-rolled, and neither is a dependency of the core.             */
+    /* ---------------------------------------------------------------- */
+    .sc-pop {
+      position: fixed;
+      inset: auto;
+      z-index: var(--z-menu);
+      max-block-size: min(34rem, var(--available-height, 34rem));
+      /* The UA `[popover]` rule turns on `overflow: auto` on both axes. A
+         menu only ever grows downwards - a long label ellipsises - so the
+         inline axis is closed to stop a stray horizontal scrollbar. */
+      overflow: hidden auto;
+      margin: 0;
+      padding: var(--space-10);
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-raised);
+      color: var(--text);
+      box-shadow: var(--shadow-popout);
+      overscroll-behavior: contain;
+    }
+
+    .sc-pop:not(:popover-open) {
+      display: none;
+    }
+
+    /* Actual draws the checkbox/radio marker as a text glyph. This shell
+       uses real icons everywhere, so the marker slot is dropped and the
+       state is a trailing tick instead. */
+    .sc-pop .menu-item[role="menuitemcheckbox"]::before,
+    .sc-pop .menu-item[role="menuitemradio"]::before {
+      display: none;
+    }
+
+    /* Actual resets heading margins under `.prose` and `.flyout > section`
+       only. These menus are popovers rather than flyouts, so a `<h3>` group
+       heading kept the browser's 13px block margins on top of
+       `.menu-label`'s padding and the list gap - 58px per heading. */
+    .sc-pop .menu-label {
+      margin: 0;
+      padding-block: var(--space-10);
+    }
+
+    .sc-pop .sc-tick {
+      visibility: hidden;
+      color: var(--primary);
+    }
+
+    /* Icon cell per menu row: a fixed 1.5rem square, with the glyph kept to
+       a 1em square inside it, so every row centres its icon on the same
+       mark instead of whatever the font advance happened to be. */
+    .sc-pop .menu-item .menu-item-icon {
+      display: grid;
+      flex: 0 0 1.5rem;
+      inline-size: 1.5rem;
+      block-size: 1.5rem;
+      place-items: center;
+      line-height: 0;
+    }
+
+    .sc-pop .menu-item .menu-item-icon > .ti {
+      flex: none;
+      inline-size: 1em;
+      block-size: 1em;
+    }
+
+    .sc-pop [aria-checked="true"] .sc-tick {
+      visibility: visible;
+    }
+
+    .sc-pop .menu-item[aria-checked="true"] .menu-item-text {
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-pop kbd.key {
+      font-size: 10px;
+    }
+
+    .sc-menu {
+      min-inline-size: 13rem;
+    }
+
+    /* Tools: a small mega menu. Four application concerns side by side,
+       so the debug and test controls have a home instead of sitting in
+       the toolbar. */
+    .sc-mega {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(13rem, 1fr));
+      gap: var(--space-10) var(--space-30);
+      min-inline-size: 28rem;
+      padding: var(--space-20);
+    }
+
+    .sc-mega section {
+      min-inline-size: 0;
+    }
+
+    .sc-mega .menu-label {
+      display: flex;
+      align-items: center;
+      gap: 0.45em;
+      padding-block-end: 0;
+    }
+
+    /* The tools shelf starts with a filter that spans both columns, and a
+       pinned lane that reuses the menu-row styles, so a favourite tool is
+       indistinguishable from its original. */
+    .sc-tools-search {
+      display: flex;
+      align-items: center;
+      gap: var(--space-15);
+      grid-column: 1 / -1;
+      padding: 0 var(--space-15);
+      margin-block-end: var(--space-10);
+    }
+
+    .sc-tools-search input {
+      min-inline-size: 0;
+      flex: 1;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: var(--font-size-sm);
+    }
+
+    .sc-tools-search input:focus {
+      outline: none;
+    }
+
+    .sc-tools-search input::placeholder {
+      color: var(--text-subtle);
+    }
+
+    .sc-mega .sc-tools-pinned {
+      grid-column: 1 / -1;
+    }
+
+    /* Pin toggle at the row end: hover/focus reveals it so the row's own
+       tick or shortcut stays untouched. The row reserves the space so the
+       reveal never shifts the layout. */
+    .sc-mega li {
+      position: relative;
+    }
+
+    .sc-mega .menu-item {
+      padding-inline-end: 2.2rem;
+    }
+
+    .sc-mega .sc-pin {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: 0.3rem;
+      display: grid;
+      place-items: center;
+      inline-size: 2rem;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--text-subtle);
+      opacity: 0.4;
+      cursor: pointer;
+    }
+
+    .sc-mega .sc-pin:hover,
+    .sc-mega .sc-pin:focus-visible,
+    .sc-mega .sc-pin[aria-pressed="true"] {
+      opacity: 1;
+    }
+
+    .sc-mega .sc-pin[aria-pressed="true"] {
+      color: var(--warning);
+    }
+
+    .sc-account {
+      min-inline-size: 15rem;
+    }
+
+    .sc-account-head {
+      display: flex;
+      align-items: center;
+      gap: var(--space-20);
+      padding: var(--space-20);
+    }
+
+    .sc-account-head div {
+      display: grid;
+      min-inline-size: 0;
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-account-head small {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .sc-themes {
+      display: flex;
+      gap: var(--space-20);
+      padding: var(--space-10) var(--space-20) var(--space-20);
+    }
+
+    /* Each swatch carries the theme it selects as `data-theme`, so the
+       theme stylesheet paints the button with that theme's own tokens.
+       There is no colour list to keep in sync here - and this is the one
+       place where re-theming a control is the point rather than a bug. */
+    .sc-theme {
+      flex: none;
+      inline-size: 1.4rem;
+      block-size: 1.4rem;
+      padding: 0;
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-full);
+      background: linear-gradient(135deg, var(--primary) 55%, var(--surface) 55%);
+      cursor: pointer;
+    }
+
+    .sc-theme[aria-pressed="true"] {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    /* Five locales as one row of chips rather than five menu rows: the
+       account menu has to stay short enough not to scroll. The two card
+       skins borrow the same row shape, for the same reason - and because
+       a skin belongs beside the theme rather than in Tools, which holds
+       grid and data options, not presentation ones. */
+    .sc-locales,
+    .sc-skins {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-10);
+      padding: var(--space-10) var(--space-20) var(--space-20);
+    }
+
+    .sc-locale,
+    .sc-skin {
+      padding: 2px 0.5em;
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-full);
+      background: var(--surface);
+      color: var(--text-muted);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .sc-locale[aria-pressed="true"],
+    .sc-skin[aria-pressed="true"] {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-weight: var(--font-weight-bold);
+    }
+
+    .sc-skin {
+      display: flex;
+      align-items: center;
+      gap: 0.3em;
+    }
+
+    /* Hover intent. Events carry `data-event-id`, so an application
+       tooltip needs no core hook at all: it is `popover="manual"` for the
+       top layer without light dismiss, and `autoUpdate()` follows the
+       calendar scroller, which moves independently of the page. */
+    .sc-tip {
+      inset: auto;
+      /* Actual draws the tooltip arrow as a pseudo-element hanging off the
+         side the tooltip points from, which the UA `[popover]` default of
+         `overflow: auto` turned into a scrollbar. A tooltip wraps, it
+         never scrolls. */
+      overflow: visible;
+      margin: 0;
+      max-inline-size: 17rem;
+      padding: var(--space-20);
+      border: 0;
+      text-align: start;
+      white-space: normal;
+      user-select: none;
+    }
+
+    .sc-tip:not(:popover-open) {
+      display: none;
+    }
+
+    .sc-tip dl {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 1px var(--space-20);
+      margin: var(--space-10) 0 0;
+      font-size: 11px;
+    }
+
+    .sc-tip dt {
+      color: color-mix(in oklab, currentcolor, transparent 35%);
+    }
+
+    .sc-tip dd {
+      margin: 0;
+    }
+
+    .sc-tip strong {
+      display: block;
+      font-size: var(--font-size-xs);
+    }
+
+    .sc-tip .sc-tip-note {
+      display: flex;
+      align-items: center;
+      gap: 0.4em;
+      margin-block-start: var(--space-20);
+      padding-block-start: var(--space-10);
+      border-block-start: 1px solid color-mix(in oklab, currentcolor, transparent 75%);
+    }
+
+    .sc-dialog {
+      padding: 0;
+      border: var(--border-width) solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--surface-raised);
+      color: var(--text);
+      box-shadow: var(--shadow-popout);
+    }
+
+    .sc-dialog::backdrop {
+      background: var(--backdrop-fill);
+    }
+
+    .sc-dialog-body {
+      min-inline-size: min(26rem, 92vw);
+      padding: var(--space-50);
+    }
+
+    /* `.dialog-close` is absolutely positioned against the dialog and
+       brings its own masked icon, so the title has to make room for it -
+       the same allowance Actual makes for `dialog.drawer > header`. */
+    .sc-dialog-body > h2 {
+      padding-inline-end: calc(var(--control-size) + var(--space-20));
+    }
+
+    /* Search palette. A command-palette dialog sits near the top rather than
+       dead centre, so the picker below the field has room. */
+    .sc-palette {
+      margin-block: 12vh auto;
+    }
+
+    .sc-palette-body {
+      display: grid;
+      gap: var(--space-20);
+      /* A fixed width, not a minimum: `dialog` is `width: fit-content`, so a
+         paragraph of prose inside would stretch the palette to its
+         max-content width. */
+      inline-size: min(34rem, 92vw);
+      padding: var(--space-30);
+    }
+
+    /* The palette's close button sits beside the field rather than over it,
+       so it keeps Actual's affordance without narrowing the picker (which
+       takes its width from the input). */
+    .sc-palette-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-20);
+    }
+
+    .sc-palette-head .dialog-close {
+      position: static;
+    }
+
+    .sc-palette-hint {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: var(--space-20);
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 11px;
+      line-height: var(--line-height-tight);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* --cb-* bridge. Same idea as the --calendar-* bridge above, and the
+       same mapping the combobox project uses in its own Actual CSS demo
+       (MIT, github.com/lekoala/combobox). No adapter, no JS glue: two
+       token contracts meeting in author CSS.                            */
+    /* ---------------------------------------------------------------- */
+    .actual-combobox {
+      --cb-bg: var(--surface);
+      --cb-color: var(--text);
+      --cb-border-color: var(--border);
+      --cb-border-radius: var(--radius);
+      --cb-focus-color: var(--focus);
+      --cb-muted-color: var(--text-muted);
+      --cb-error-color: var(--danger);
+      --cb-control-height: var(--control-size);
+      --cb-option-min-height: var(--control-size);
+    }
+
+    .actual-combobox :is(.cb-text-control, .cb-control):focus-within {
+      --cb-border-color: var(--focus);
+      outline: 2px solid transparent;
+      box-shadow: var(--focus-ring-shadow);
+    }
+
+    /* The picker is in the top layer, outside the control's subtree, so its
+       tokens are declared on the popover itself. */
+    .cb-popover {
+      --cb-picker-bg: var(--surface-raised);
+      /* The ink matters as much as the ground: the library defaults
+         --cb-color to a near-black, so a picker that only remaps the
+         background prints dark titles on a dark surface. Rows inherit it. */
+      --cb-color: var(--text);
+      --cb-muted-color: var(--text-muted);
+      --cb-error-color: var(--danger);
+      border-color: var(--border);
+      border-radius: var(--radius);
+      background: var(--cb-picker-bg);
+      box-shadow: var(--shadow-popout);
+    }
+
+    .cb-option {
+      border-radius: var(--radius-sm);
+    }
+
+    /* The library pairs its active row with a solid accent fill and a
+       hardcoded white label. A subtle overlay needs the ink restated, or the
+       title disappears - the same mapping the combobox demo uses. */
+    .cb-option:is(:hover, [data-active]) {
+      background: var(--hover-overlay);
+      color: var(--text);
+    }
+
+    .cb-option[aria-selected="true"] {
+      background: color-mix(in oklab, var(--surface) var(--soft-bg-mix), var(--primary));
+      color: var(--primary-soft-fg, color-mix(in oklab, var(--text), var(--primary) var(--soft-fg-mix)));
+    }
+
+    .cb-option[aria-selected="true"]::after {
+      color: var(--primary);
+    }
+
+    /* One suggestion row: the kind tone, the title, and the detail a
+       one-line result cannot carry. */
+    .sc-hit {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: var(--space-20);
+      min-inline-size: 0;
+    }
+
+    .sc-hit > span {
+      display: grid;
+      min-inline-size: 0;
+      line-height: var(--line-height-tight);
+    }
+
+    .sc-hit strong {
+      overflow: hidden;
+      font-size: var(--font-size-xs);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sc-hit small {
+      color: var(--text-muted);
+      font-size: 10.5px;
+    }
+
+    /* A secondary note inside a button cannot use `.muted`: that token is
+       relative to the surface, not to the control, so it renders as grey ink
+       on a filled accent. Deriving it from the button's own `currentColor`
+       works on every variant. */
+    .btn .sc-note {
+      font-weight: var(--font-weight-normal);
+      opacity: 0.75;
+    }
+
+    .sc-shortcuts {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: var(--space-10) var(--space-30);
+      margin: 0;
+      font-size: var(--font-size-sm);
+    }
+
+    .sc-shortcuts dt {
+      display: flex;
+      gap: 2px;
+      justify-content: end;
+    }
+
+    .sc-shortcuts dd {
+      margin: 0;
+      color: var(--text-muted);
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* 5. RESPONSIVE                                                     */
+    /* ---------------------------------------------------------------- */
+    @media (min-width: 64rem) {
+      .sc-burger {
+        display: none;
+      }
+
+      .sc-shell[data-focus="true"] {
+        --sc-aside-size: 0px;
+      }
+
+      .sc-shell[data-focus="true"] .sc-sidebar {
+        display: none;
+      }
+    }
+
+    @media (max-width: 63.999rem) {
+      .sc-shell {
+        grid-template:
+          "topbar" auto
+          "main" minmax(0, 1fr)
+          / minmax(0, 1fr);
+      }
+
+      /* Off-canvas as a popover: `[popover]` supplies the top layer, the
+         backdrop, light dismiss and Escape. Only the geometry is ours. */
+      .sc-sidebar[popover] {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: var(--z-menu);
+        /* The UA `[popover]` rule sizes to `fit-content` and centres with
+           `margin: auto`; a full-height drawer has to say so explicitly. */
+        margin: 0;
+        inline-size: min(19rem, 88vw);
+        block-size: 100%;
+        max-block-size: none;
+        border: 0;
+        border-inline-end: var(--border-width) solid var(--border);
+        border-radius: 0;
+        box-shadow: var(--shadow-popout);
+        color: var(--text);
+      }
+
+      .sc-sidebar[popover]:not(:popover-open) {
+        display: none;
+      }
+
+      .sc-sidebar[popover]::backdrop {
+        background: var(--backdrop-fill);
+      }
+
+      .sc-modules,
+      .sc-desktop-only,
+      .sc-brand-text small {
+        display: none;
+      }
+
+      .sc-mega {
+        grid-template-columns: minmax(0, 1fr);
+        min-inline-size: min(20rem, calc(100vw - 2rem));
+      }
+    }
+
+    @media (max-width: 40rem) {
+      .sc-narrow {
+        display: initial;
+      }
+
+      .sc-wide {
+        display: none;
+      }
+
+      .sc-topbar {
+        padding-inline: var(--space-10) var(--space-20);
+      }
+
+      .sc-toolbar {
+        padding-inline: var(--space-20);
+      }
+
+      .sc-range strong {
+        font-size: var(--font-size-sm);
+      }
+
+      .sc-cockpit {
+        padding-inline: var(--space-20);
+      }
+
+      .sc-viewbtn {
+        max-inline-size: 7.5rem;
+      }
+
+      /* A 3.5rem axis is a tenth of a phone's width; the core exposes it
+         as one custom property, so one narrowing covers the grid track and
+         both sticky corners. */
+      .actual-calendar {
+        --calendar-axis-size: 2.6rem;
+        --calendar-column-min: 5.5rem;
+      }
+
+      .actual-calendar .cv-day-header,
+      .actual-calendar .cv-resource-header {
+        padding-inline: var(--space-10);
+      }
+
+      .sc-log {
+        max-block-size: 5rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .actual-calendar .cv-event[data-fresh="true"],
+      .actual-calendar .cv-event[data-fresh="true"]::before {
+        animation: none;
+      }
+
+      .actual-calendar .cv-event[data-fresh="true"] {
+        outline: 2px solid var(--sc-tone-fg, #fff);
+        outline-offset: -3px;
+      }
+    }
+
+    @media (forced-colors: active) {
+      .actual-calendar .cv-event[data-parked="true"] {
+        outline-color: Highlight;
+      }
+    }
