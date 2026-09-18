@@ -6,14 +6,12 @@
 
 const ZONE = "Europe/Brussels";
 
-
 // --- Fictitious generic dataset: rooms × bookings ---------------------
 const ROOMS = [
   { id: "room-a", title: "Room A · Atrium", groupId: "main" },
   { id: "room-b", title: "Room B · Loft", groupId: "main" },
   { id: "room-c", title: "Room C · Studio", groupId: "annexe" },
 ];
-
 
 /**
   * One level, on purpose: the array order is the section order, the
@@ -28,7 +26,6 @@ const ROOM_GROUPS = [
   { id: "annexe", title: "Annexe" },
 ];
 
-
 const KINDS = [
   { id: "review", label: "Review" },
   { id: "planning", label: "Planning" },
@@ -37,7 +34,6 @@ const KINDS = [
   { id: "maintenance", label: "Maintenance" },
   { id: "absence", label: "Absence" },
 ];
-
 
 /** Tabler glyph per kind, for list rows and tooltips. */
 const KIND_ICONS = {
@@ -49,7 +45,6 @@ const KIND_ICONS = {
   absence: "user-off",
 };
 
-
 const TITLES = {
   review: ["Design review", "Code review", "Portfolio review", "Quarterly review"],
   planning: ["Sprint planning", "Roadmap sync", "Capacity planning", "Weekly stand-up"],
@@ -58,7 +53,6 @@ const TITLES = {
   maintenance: ["Equipment check", "Network maintenance", "Deep clean", "Inventory"],
   absence: ["Absence", "Out of office", "Training away", "Conference day"],
 };
-
 
 /**
  * The application's booking policy. `calendar:eventmove` and
@@ -90,7 +84,6 @@ const POLICY = {
   nearFullFreeMinutes: 60,
 };
 
-
 /**
  * Non-bookable ranges, in wall-clock minutes. `dayOfWeek` is ISO
  * (1 = Monday) or null for every day. They are rendered as background
@@ -107,7 +100,6 @@ const BLOCKED = [
   { resourceId: null, dayOfWeek: 2, from: 8 * 60, to: 9 * 60, label: "Safety round" },
 ];
 
-
 /**
  * Extended desk hours outside the official range. Same shape as BLOCKED,
  * opposite meaning: the guard accepts drops fully inside one of these,
@@ -120,12 +112,10 @@ const EXTRA = [
   { resourceId: "room-c", dayOfWeek: 1, from: 7 * 60, to: 8 * 60, label: "Early desk" },
 ];
 
-
 /** How far back and forward the fixture reaches, in days from the anchor. */
 const SEED_BACK = 21;
 
 const SEED_AHEAD = 112;
-
 
 // The application store. The core holds the filtered projection.
 /** @type {Array<any>} */
@@ -141,7 +131,6 @@ const activeKinds = new Set(KINDS.map((kind) => kind.id));
 /** Bookings created in this session, so the aura only ever plays once. */
 const fresh = new Set();
 
-
 /**
  * Scoped availability windows carrying location context (Team day). Unlike
  * `BLOCKED`/`EXTRA` they never refuse a slot by themselves: the green
@@ -155,7 +144,6 @@ const AVAILABILITY = [
   { resourceId: "room-b", from: 14 * 60, to: 18 * 60, location: "Visio", locationId: "visio", mode: "remote" },
 ];
 
-
 /**
  * Background ranges for the visible span: the bookable wash inside
  * official hours, closed hours globally, extended desk hours and the
@@ -164,7 +152,6 @@ const AVAILABILITY = [
  * the span or the room selection actually changed.
  */
 let backgroundKey = "";
-
 
 /**
  * Backgrounds created at runtime ("Block this hour", the create form) are
@@ -177,7 +164,6 @@ let backgroundKey = "";
  * @type {Array<object>}
  */
 const extraBackgrounds = [];
-
 
 // --- Locale ------------------------------------------------------------
 /**
@@ -194,7 +180,6 @@ const LOCALES = [
   { value: "fr", chip: "fr", label: "Français" },
   { value: "nl", chip: "nl", label: "Nederlands" },
 ];
-
 
 /**
  * The fixed strings the core renders itself. `Intl` and `Temporal`
@@ -221,7 +206,6 @@ const CORE_LABELS = {
   },
 };
 
-
 /**
  * The mini calendar's own fixed strings. It ships its translations, so
  * this table only picks one - the same shape as `CORE_LABELS`, minus the
@@ -232,15 +216,12 @@ const CORE_LABELS = {
  */
 let MINI_MESSAGES = {};
 
-
 let chosenLocale = "";
-
 
 // Built by CalendarShowcase.init() once the calendar binding exists; rebuilt
 // by setLocale() on every locale switch. Starts null so an early read fails
 // loudly instead of formatting in the wrong locale.
 let fmt = null;
-
 
 /** Wall-clock “now” in the calendar time zone, as `YYYY-MM-DD HH:mm`. */
 const nowFormat = new Intl.DateTimeFormat("sv-SE", {
@@ -248,7 +229,6 @@ const nowFormat = new Intl.DateTimeFormat("sv-SE", {
   dateStyle: "short",
   timeStyle: "short",
 });
-
 
 /**
  * Deterministic pseudo-random source: the fixture must look busy and
@@ -263,7 +243,6 @@ function makeRandom(seed) {
   };
 }
 
-
 /**
  * The first day the user is actually looking at. The anchor is not always
  * rendered - a hidden Sunday is skipped, and `week` snaps to the civil week
@@ -272,7 +251,6 @@ function makeRandom(seed) {
 function visibleDay() {
   return calendar.getVisibleRange().start;
 }
-
 
 /**
  * First day at or after `date` on which the desk actually opens. Sunday is
@@ -290,7 +268,6 @@ function openDayFrom(date) {
   }
   return cursor;
 }
-
 
 /**
  * Four and a half months of bookings around the anchor date, so navigating
@@ -481,12 +458,10 @@ function seedStore() {
   return store;
 }
 
-
 /** Civil date `N` days out, as a `YYYY-MM-DD` string for all-day seeds. */
 function daysToString(date, days) {
   return /** @type {any} */ (date).add({ days }).toString();
 }
-
 
 /**
  * @param {{ toString(): string }} date PlainDate
@@ -506,7 +481,6 @@ function stamp(date, minutes) {
     .toString();
 }
 
-
 /** @param {number} minutes wall-clock minutes from midnight */
 function clock(minutes) {
   const hour = String(Math.floor(minutes / 60)).padStart(2, "0");
@@ -514,18 +488,15 @@ function clock(minutes) {
     return `${hour}:${minute}`;
 }
 
-
 /** @param {string} iso */
 function wallClock(iso) {
   return iso.slice(11, 16);
 }
 
-
 /** @param {string} iso */
 function wallMinutesOf(iso) {
   return Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
 }
-
 
 /**
  * @param {string} startIso
@@ -534,7 +505,6 @@ function wallMinutesOf(iso) {
 function wallMinutes(startIso, endIso) {
   return wallMinutesOf(endIso) - wallMinutesOf(startIso);
 }
-
 
 /**
  * An abort-aware delay. Both async seams in this shell - the calendar's
@@ -554,18 +524,15 @@ function sleep(ms, signal) {
   });
 }
 
-
 /** @param {string} iso an ISO date, `YYYY-MM-DD` or longer */
 function asDate(iso) {
     return new Date(`${iso.slice(0, 10)}T12:00:00`);
 }
 
-
 /** ISO weekday, 1 = Monday, for a `YYYY-MM-DD` string. @param {string} iso */
 function isoWeekday(iso) {
   return ((asDate(iso).getDay() + 6) % 7) + 1;
 }
-
 
 /** @param {any} item */
 function isLocked(item) {
@@ -574,7 +541,6 @@ function isLocked(item) {
     item.extendedProps?.blocksAvailability === true
   );
 }
-
 
 /**
  * Why a booking cannot be replanned, or `null` when it can. This is the
@@ -611,7 +577,6 @@ function frozenReason(item) {
   return null;
 }
 
-
 /**
  * The same rule at day granularity, for the surfaces that act on a whole
  * civil day instead of one booking: the day-header and empty-slot menus,
@@ -623,7 +588,6 @@ function frozenReason(item) {
 function frozenDayReason(iso) {
   return beforeToday(iso) ? "That day is already over — its bookings stay put." : null;
 }
-
 
 function visibleStore() {
   return store
@@ -641,7 +605,6 @@ function visibleStore() {
     });
 }
 
-
 /**
  * Counts shown in the chrome describe what the user is looking at, so
  * they are always scoped to the range the core reports.
@@ -656,7 +619,6 @@ function inCurrentRange(items) {
     return day >= from && day < to;
   });
 }
-
 
 // --- Booking rules ------------------------------------------------------
 /**
@@ -676,7 +638,6 @@ function blockedRangesOn(resourceId, iso) {
   );
 }
 
-
 /**
  * Extended desk windows covering a day. Same union semantics as
  * `blockedRangesOn`: with a `null` resource the entries of every room
@@ -693,7 +654,6 @@ function extraRangesOn(resourceId, iso) {
       (resourceId === null || range.resourceId === null || range.resourceId === resourceId),
   );
 }
-
 
 /**
  * Backgrounds of one kind out of a `getRangeContext()` snapshot. The two
@@ -712,7 +672,6 @@ function contextBackgrounds(context, bucket, className) {
   return list.filter((range) => range.classNames?.includes(className));
 }
 
-
 /**
  * The availability range covering a proposed slot, if any. Several
  * backgrounds may cover the same range and the core never picks one, so
@@ -729,7 +688,6 @@ function availabilityLocation(context) {
   if (!Array.isArray(list)) return null;
   return list.find((range) => range.extendedProps?.kind === "availability") ?? null;
 }
-
 
 /**
  * The single source of truth for every refusal: pointer drags, keyboard
@@ -836,7 +794,6 @@ function violation({ start, end, resourceId, allDay = false }, context = null, e
   return null;
 }
 
-
 /**
  * Whether an interaction target names the slot an event already holds.
  * Compared by civil date and wall minutes rather than by string form:
@@ -857,7 +814,6 @@ function sameSlot(target, event, allDay) {
     wallMinutesOf(String(target.end)) === wallMinutesOf(String(event.end))
   );
 }
-
 
 /**
  * Occupancy verdict shared by every placement path — pointer move,
@@ -889,7 +845,6 @@ function occupancyReason(context, { allDay = false, room = null, excludeEventId 
     : null;
 }
 
-
 /**
  * @param {string} label
  * @param {string} from wall clock, `HH:MM`
@@ -901,7 +856,6 @@ function blockedReason(label, from, to, resourceId) {
     return `${label} blocks ${from}–${to} ${where}.`;
 }
 
-
 /**
  * Registers a runtime background and makes sure the next repaint includes
  * it even when the derived key has not changed.
@@ -912,7 +866,6 @@ function addExtraBackground(range) {
   backgroundKey = "";
   refreshChrome();
 }
-
 
 function refreshBackgrounds() {
   const view = calendar.view;
@@ -1042,7 +995,6 @@ function refreshBackgrounds() {
   calendar.backgrounds = [...ranges, ...extraBackgrounds];
 }
 
-
 /** @returns {string | undefined} */
 function effectiveLocale() {
   return (
@@ -1052,7 +1004,6 @@ function effectiveLocale() {
     undefined
   );
 }
-
 
 /**
  * The shell's own formatters, rebuilt whenever the locale changes. The
@@ -1075,14 +1026,12 @@ function buildFormatters(locale) {
   };
 }
 
-
 // --- Rendering hooks: geometry stays in the core, content is the app ---
 
 /** @param {string} id */
 function roomTitle(id) {
   return ROOMS.find((room) => room.id === id)?.title ?? id;
 }
-
 
 /** @param {string} name tabler icon suffix */
 function icon(name) {
@@ -1092,16 +1041,13 @@ function icon(name) {
   return node;
 }
 
-
 function nowStamp() {
   return nowFormat.format(new Date());
 }
 
-
 function todayIso() {
   return nowStamp().slice(0, 10);
 }
-
 
 /**
  * Drag freeze boundary. Events that ended before today are archived and
@@ -1116,4 +1062,4 @@ function todayIso() {
 function beforeToday(iso) {
   return String(iso).slice(0, 10) < todayIso();
 }
-Object.assign(globalThis.ShowcaseFoundation ??= {}, { makeRandom, visibleDay, openDayFrom, seedStore, daysToString, stamp, clock, wallClock, wallMinutesOf, wallMinutes, sleep, asDate, isoWeekday, isLocked, frozenReason, frozenDayReason, visibleStore, inCurrentRange, blockedRangesOn, extraRangesOn, contextBackgrounds, availabilityLocation, violation, sameSlot, occupancyReason, blockedReason, addExtraBackground, refreshBackgrounds, effectiveLocale, buildFormatters, roomTitle, icon, nowStamp, todayIso, beforeToday });
+globalThis.ShowcaseFoundation = { makeRandom, visibleDay, openDayFrom, seedStore, daysToString, stamp, clock, wallClock, wallMinutesOf, wallMinutes, sleep, asDate, isoWeekday, isLocked, frozenReason, frozenDayReason, visibleStore, inCurrentRange, blockedRangesOn, extraRangesOn, contextBackgrounds, availabilityLocation, violation, sameSlot, occupancyReason, blockedReason, addExtraBackground, refreshBackgrounds, effectiveLocale, buildFormatters, roomTitle, icon, nowStamp, todayIso, beforeToday };

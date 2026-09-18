@@ -4,7 +4,6 @@
 // Extracted verbatim from demo/showcase.html; see .temp/split-showcase.mjs.
 "use strict";
 
-
 // --- Move workbench + copy clipboard --------------------------------------
 // Moving across weeks cannot be a pointer drag: the target week is not
 // rendered. Cut / park / bulk fill all converge on the workbench, and the
@@ -19,14 +18,11 @@ const workbenchList = document.getElementById("workbench-list");
 
 const workbenchCount = document.getElementById("workbench-count");
 
-
 /** Progressively built workbench rows currently registered as drop sources. @type {HTMLElement[]} */
 let externalRows = [];
 
-
 /** @type {{ view: string, dates: Array<{ toString(): string }>, resources: Array<{ id: string, title?: string }> }} */
 let lastRender = { view: "", dates: [], resources: [] };
-
 
 // Copy stays a plain clipboard (a duplicated booking is not "waiting to be
 // placed"), so it never pollutes the workbench queue.
@@ -38,13 +34,11 @@ let lastSlot = null;
 
 const clipboardBar = document.getElementById("clipboard-bar");
 
-
 /** Civil date plus `N` days, back to a `YYYY-MM-DD` string. @param {string} iso @param {number} days */
 function addDays(iso, days) {
   const [year, month, day] = iso.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
-
 
 /**
  * Application policy on one workbench placement target — shared by the
@@ -95,7 +89,6 @@ function workbenchTargetReason(eventId, target) {
   });
 }
 
-
 /**
  * Place one workbench item at a target (drag drop or paste): validate like
  * the ghost, then commit through the normal optimistic move. Successes
@@ -142,7 +135,6 @@ function placeWorkbenchItem(eventId, date, minutes, resourceId) {
       toast(`Moved “${title}” — ${workbench.size} left in the queue.`, "success");
   }
 }
-
 
 function renderWorkbench() {
   const items = workbench.items;
@@ -198,7 +190,6 @@ function renderWorkbench() {
   }
 }
 
-
 /**
  * Jump to one civil day in the day view - the same navigation
  * `calendar:moreclick` performs, and the one read-only verb the past-time
@@ -211,7 +202,6 @@ function openDay(iso) {
     record(`opened day ${iso.slice(0, 10)}`);
 }
 
-
 /** @param {any} item */
 function parkEvent(item) {
   const queued = workbench.add(item);
@@ -219,7 +209,6 @@ function parkEvent(item) {
     record(queued ? `parked: ${item.id}` : `armed: ${item.id}`);
   hideTip();
 }
-
 
 /** Add every current booking of one civil day to the workbench. @param {string} iso */
 function parkDay(iso) {
@@ -238,7 +227,6 @@ function parkDay(iso) {
   const added = workbench.addMany(inDay);
     record(`workbench +${added} from ${iso}`);
 }
-
 
 /** Add the bookings of one resource on one civil day. @param {string} iso @param {string} resourceId */
 function parkDayFor(iso, resourceId) {
@@ -259,7 +247,6 @@ function parkDayFor(iso, resourceId) {
     record(`workbench +${added} from ${iso} (${resourceId})`);
 }
 
-
 /**
  * Re-apply the "parked" look after any calendar render: queued events keep
  * their place in the grid but read as waiting. `data-parked="true"` so the
@@ -272,7 +259,6 @@ function syncWorkbenchMarkers() {
     else node.removeAttribute("data-parked");
   }
 }
-
 
 /**
  * Repaints the placement preview for the current target + payload pair.
@@ -331,13 +317,11 @@ function syncPlacementPreview() {
   calendar.clearPreview();
 }
 
-
 /** @param {{ date: string, minutes: number, resourceId: string | null } | null} slot */
 function setLastSlot(slot) {
   lastSlot = slot;
   syncPlacementPreview();
 }
-
 
 function renderClipboard() {
   if (!copyClipboard) {
@@ -360,7 +344,6 @@ function renderClipboard() {
   clipboardBar.append(icon("copy"), text, actions);
 }
 
-
 /** @param {{ id: string, title: string, durationMin: number }} entry */
 function setCopyClipboard(entry) {
   copyClipboard = entry;
@@ -368,7 +351,6 @@ function setCopyClipboard(entry) {
   syncPlacementPreview();
     record(`copy: ${entry.id} ready to paste`);
 }
-
 
 /** @param {string} [reason] */
 function clearCopyClipboard(reason = "cancelled") {
@@ -378,7 +360,6 @@ function clearCopyClipboard(reason = "cancelled") {
   syncPlacementPreview();
     record(`copy clipboard ${reason}`);
 }
-
 
 /**
  * Commit a copy at an empty-slot target. Failures keep the clipboard and
@@ -420,7 +401,6 @@ function pasteCopy(slot) {
   clearCopyClipboard("pasted");
   setLastSlot(null);
 }
-
 
 // --- Move and resize: the application refuses what it cannot honour -----
 /**
@@ -510,7 +490,6 @@ function guard(event, kind) {
 }
 function placementInitEarly() {
 
-
     // Drag from the sidebar row onto the grid commits through the same path.
     calendar.addEventListener("calendar:externaldrop", (event) => {
       const detail = event.detail;
@@ -525,7 +504,6 @@ function placementInitEarly() {
       );
     });
 
-
     // Dragging an event out of the calendar parks it — the mirror existence of
     // the external drop, feeding the same queue.
     calendar.addEventListener("calendar:eventdropout", (event) => {
@@ -536,7 +514,6 @@ function placementInitEarly() {
       toast(`“${String(item.title ?? "Booking")}” parked — find it a new slot.`, "warning");
       }
     });
-
 
     workbench.addEventListener("change", () => {
       renderWorkbench();
@@ -556,7 +533,6 @@ function placementInitEarly() {
     calendar.addEventListener("calendar:render", (event) => {
       lastRender = event.detail;
     });
-
 
     /**
      * Right-click a day header to queue that whole day: the header is core
@@ -612,11 +588,9 @@ function placementInitEarly() {
     record(`day contextmenu: ${date}${resource ? ` · ${resource.id}` : ""}${frozen ? " (over)" : ""}`);
     });
 
-
     calendar.addEventListener("calendar:render", syncWorkbenchMarkers);
 }
 function placementConfigureCalendar() {
-
 
     calendar.configure({
       pxPerMinute: 1.5,
@@ -860,11 +834,9 @@ function placementConfigureCalendar() {
 }
 function placementInitGuards() {
 
-
     calendar.addEventListener("calendar:eventmove", (event) => guard(event, "move"));
 
     calendar.addEventListener("calendar:eventresize", (event) => guard(event, "resize"));
-
 
     // A pointer drop the policy refuses commits nothing and dispatches
     // nothing, so `guard` never sees it: the gesture just ends. The painted
@@ -888,4 +860,4 @@ function placementInitGuards() {
       { capture: true },
     );
 }
-Object.assign(globalThis.ShowcasePlacement ??= {}, { addDays, workbenchTargetReason, placeWorkbenchItem, renderWorkbench, openDay, parkEvent, parkDay, parkDayFor, syncWorkbenchMarkers, syncPlacementPreview, setLastSlot, renderClipboard, setCopyClipboard, clearCopyClipboard, pasteCopy, guard });
+globalThis.ShowcasePlacement = { addDays, workbenchTargetReason, placeWorkbenchItem, renderWorkbench, openDay, parkEvent, parkDay, parkDayFor, syncWorkbenchMarkers, syncPlacementPreview, setLastSlot, renderClipboard, setCopyClipboard, clearCopyClipboard, pasteCopy, guard };

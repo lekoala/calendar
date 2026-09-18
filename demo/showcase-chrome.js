@@ -4,13 +4,6 @@
 // Extracted verbatim from demo/showcase.html; see .temp/split-showcase.mjs.
 "use strict";
 
-
-// TODO(runtime): chrome controls still rely on native `title` tooltips
-// (pinned tools, view switch, locale chips, theme swatches). Later pass:
-// wire Actual's own runtime (`actual-css/js/tooltip` via `data-tooltip`),
-// or route these triggers through the same floating-backed `.tooltip` the
-// event hover already uses (`showTip`).
-
 const shell = document.getElementById("shell");
 
 const sidebar = document.getElementById("sidebar");
@@ -27,13 +20,11 @@ const cockpit = document.getElementById("cockpit");
 // no second opinion on what a calendar day is.
 const { toPlainDate } = /** @type {any} */ (calendar.constructor).dates;
 
-
 let logged = 0;
 
 let busy = false;
 
 let lastIntent = "shell ready";
-
 
 // --- Views --------------------------------------------------------------
 /**
@@ -51,7 +42,6 @@ const VIEWS = [
   { id: "list", label: "List", short: "List", icon: "list-details", group: "Overview" },
 ];
 
-
 const viewMenu = document.getElementById("view-menu");
 
 // The popover is the menu itself: one element, one role, no wrapper that
@@ -64,7 +54,6 @@ const viewLabel = document.getElementById("view-label");
 
 const viewIcon = document.getElementById("view-icon");
 
-
 // --- Toolbar and chrome --------------------------------------------------
 const anchorLabel = document.getElementById("anchor-label");
 
@@ -73,7 +62,6 @@ const anchorLong = document.getElementById("anchor-long");
 const anchorShort = document.getElementById("anchor-short");
 
 const anchorSub = document.getElementById("anchor-sub");
-
 
 // --- Mini month: a navigator, not a date-picker -------------------------
 // `<date-calendar selection="none">` owns the grid, the month/year header,
@@ -94,7 +82,6 @@ let miniFirstDay = 1;
 /** The core's own month math, reached statically so the classic-script build (file:// friendly) shares it. */
 const miniDates = /** @type {any} */ (calendar.constructor).dates;
 
-
 /** The words behind each verdict, appended to the day's accessible name. */
 const MINI_STATUS = {
   neutral: "no rooms selected",
@@ -104,7 +91,6 @@ const MINI_STATUS = {
   free: "free",
 };
 
-
 // --- Room checklist ------------------------------------------------------
 const roomList = document.getElementById("room-list");
 
@@ -112,10 +98,8 @@ const roomSummary = document.getElementById("room-summary");
 
 const roomAll = document.getElementById("room-all");
 
-
 // --- Kind legend (also a filter) -----------------------------------------
 const kindLegend = document.getElementById("kind-legend");
-
 
 // --- Shell chrome ---------------------------------------------------------
 // Below 64rem the sidebar is off-canvas. Making the same element a
@@ -125,18 +109,15 @@ const drawerQuery = window.matchMedia("(max-width: 63.999rem)");
 
 const sidebarToggle = document.getElementById("sidebar-toggle");
 
-
 const focusToggle = document.getElementById("focus-toggle");
 
 const focusIcon = document.getElementById("focus-icon");
-
 
 const activity = document.getElementById("activity");
 
 const activityToggle = document.getElementById("activity-toggle");
 
 const activityMenuItem = document.getElementById("activity-menu-item");
-
 
 const shortcutsDialog = document.getElementById("shortcuts-dialog");
 
@@ -154,7 +135,6 @@ const SHORTCUTS = [
   [["?"], "this dialog"],
 ];
 
-
 /** @param {string} message */
 function record(message) {
   const item = document.createElement("li");
@@ -166,7 +146,6 @@ function record(message) {
   dockCount.textContent = String(logged);
   renderCockpit();
 }
-
 
 function renderViewMenu() {
   viewMenuList.replaceChildren();
@@ -220,7 +199,6 @@ function renderViewMenu() {
     viewToggle.title = `View: ${current?.label ?? calendar.view}`;
 }
 
-
 function refreshChrome() {
   const view = calendar.view;
   const { start, end } = calendar.getVisibleRange();
@@ -263,7 +241,6 @@ function refreshChrome() {
   renderCockpit();
 }
 
-
 /**
  * Bookings the core currently reports as running. The fact is read off
  * the rendered nodes rather than recomputed: every event node carries
@@ -280,7 +257,6 @@ function inProgressCount() {
   }
   return ids.size;
 }
-
 
 function renderCockpit() {
   const inRange = inCurrentRange(calendar.events);
@@ -317,7 +293,6 @@ function renderCockpit() {
   }
 }
 
-
 /** The newest intent, so the log can stay closed without looking dead. */
 function lastChip() {
   const node = document.createElement("span");
@@ -328,7 +303,6 @@ function lastChip() {
   node.append(text);
   return node;
 }
-
 
 /**
  * `at 14:00` for today, `Fri 4 Sept, 09:00` otherwise.
@@ -343,14 +317,12 @@ function whenLabel(iso) {
     return `${fmt.day.format(asDate(day))} ${fmt.range.format(asDate(day))}, ${time}`;
 }
 
-
 /** @param {Array<string | Node>} parts */
 function chip(parts) {
   const node = document.createElement("span");
   node.append(...parts);
   return node;
 }
-
 
 /** @param {string} text */
 function strong(text) {
@@ -359,13 +331,11 @@ function strong(text) {
   return node;
 }
 
-
 function dot() {
   const node = document.createElement("span");
   node.className = "sc-dot";
   return node;
 }
-
 
 /** @param {string} label @param {string} [tone] */
 function legendItem(label, tone = "") {
@@ -378,7 +348,6 @@ function legendItem(label, tone = "") {
   item.append(marker, text);
   return item;
 }
-
 
 /**
  * Free wall-clock parts of `window` after removing every covered range.
@@ -405,12 +374,10 @@ function freeIntervals(window, covered) {
   return free;
 }
 
-
 /** Whole civil days between two `YYYY-MM-DD` dates. */
 function daysBetween(fromIso, toIso) {
   return Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 86400000);
 }
-
 
 /**
  * Day state for one mini-month cell, from application data: blocked
@@ -460,7 +427,6 @@ function miniDayState(iso, weekday) {
   return { closed, hasAvailability, bookable, soonFull, neutral: false };
 }
 
-
 /**
  * Booked wall-clock minutes per room for one civil date, clipped to the
  * day. A range ending exactly at midnight does not occupy the next day.
@@ -493,7 +459,6 @@ function occupiedForMini(iso) {
   return ranges;
 }
 
-
 /**
  * `first-day` counts 0-6 with Sunday = 0 and takes ISO 7 as a Sunday alias
  * (date-picker 0.3.0), so the core's Temporal 1-7 goes straight through
@@ -506,7 +471,6 @@ function applyMiniFirstDay() {
   if (mini.getAttribute("first-day") !== attribute) mini.setAttribute("first-day", attribute);
 }
 
-
 /** The legend follows the viewer, exactly like the markers do. */
 function renderMiniLegend() {
   miniLegend.replaceChildren(
@@ -515,7 +479,6 @@ function renderMiniLegend() {
     legendItem("Fully booked", "is-danger"),
   );
 }
-
 
 function renderMiniMonth() {
   const anchorIso = calendar.date.toString();
@@ -533,7 +496,6 @@ function renderMiniMonth() {
   mini.render();
   renderMiniLegend();
 }
-
 
 /**
  * The sidebar sections, following the same rule the core applies to the
@@ -557,7 +519,6 @@ function roomSections() {
   if (leftover.length > 0) sections.push({ group: null, rooms: leftover });
   return sections;
 }
-
 
 /**
  * A whole group in one click. Nothing group-shaped reaches the core: this
@@ -592,7 +553,6 @@ function groupHeadingRow(group, rooms) {
   return item;
 }
 
-
 /** @param {(typeof ROOMS)[number]} room */
 function roomRow(room) {
   const item = document.createElement("li");
@@ -621,7 +581,6 @@ function roomRow(room) {
   return item;
 }
 
-
 function renderRooms() {
     roomSummary.textContent = `${activeRooms.size}/${ROOMS.length}`;
   roomAll.checked = activeRooms.size === ROOMS.length;
@@ -633,7 +592,6 @@ function renderRooms() {
   }
   roomList.dataset.grouped = String(roomSections().some((section) => section.group !== null));
 }
-
 
 function renderLegend() {
   kindLegend.replaceChildren();
@@ -664,7 +622,6 @@ function renderLegend() {
   }
 }
 
-
 // --- Booking rules, written from the constants the guard enforces --------
 function renderRules() {
   const rules = [
@@ -689,7 +646,6 @@ function renderRules() {
   }
 }
 
-
 /**
  * Grouping is a declaration, not a reordering: `calendar.resources` keeps
  * this application's own order and the core derives the sections. A group
@@ -699,7 +655,6 @@ function renderRules() {
 function applyRoomGroups() {
   calendar.resourceGroups = groupRooms ? ROOM_GROUPS : [];
 }
-
 
 function applyFilters() {
   calendar.resources = ROOMS.filter((room) => activeRooms.has(room.id));
@@ -711,7 +666,6 @@ function applyFilters() {
   refreshChrome();
 }
 
-
 function syncDrawerMode() {
   if (drawerQuery.matches) {
     if (!sidebar.hasAttribute("popover")) sidebar.setAttribute("popover", "auto");
@@ -722,7 +676,6 @@ function syncDrawerMode() {
   sidebarToggle.setAttribute("aria-expanded", "false");
 }
 
-
 /** @param {boolean} [force] */
 function toggleActivity(force) {
   const open = force ?? activity.hidden;
@@ -730,7 +683,6 @@ function toggleActivity(force) {
   activityToggle.setAttribute("aria-expanded", String(open));
   activityMenuItem.setAttribute("aria-checked", String(open));
 }
-
 
 function renderShortcuts() {
   const list = document.getElementById("shortcuts-list");
@@ -752,7 +704,6 @@ function chromeInit() {
     // First use of the shell formatters (was a load-time initializer inline;
     // deferred so the calendar binding exists). Everything below may format.
     fmt = buildFormatters(effectiveLocale());
-
 
     /**
      * Application state for one cell. `disabled` is never returned: a closed
@@ -782,7 +733,6 @@ function chromeInit() {
       return { verdict, anchor, description };
     };
 
-
     /**
      * One decorative node per day, placed by the component in an
      * `aria-hidden` slot at the bottom of the cell. The class name is ours,
@@ -800,13 +750,11 @@ function chromeInit() {
       return marker;
     };
 
-
     // Activation is navigation: the anchor moves and no value is ever taken,
     // which is what `selection="none"` buys. A closed day reaches here too.
     mini.addEventListener("dateactivate", (event) => {
       calendar.gotoDate(event.detail.date);
     });
-
 
     // The dots describe the events currently shown: the core already renders
     // on every mutation, so `calendar:render` is the one beat to watch.
@@ -819,7 +767,6 @@ function chromeInit() {
       renderCockpit();
     });
 
-
     // The master toggle flips every room at once: checked for all, unchecked
     // for none, indeterminate for the middle — `<input type="checkbox">`
     // carries `indeterminate` natively, no ARIA needed.
@@ -831,7 +778,6 @@ function chromeInit() {
       record(roomAll.checked ? "rooms → all" : "rooms → none");
       applyFilters();
     });
-
 
     // --- Boot ---------------------------------------------------------------
     // A phone opens on a single day: the grid is what the user came for.
@@ -852,14 +798,12 @@ function chromeInit() {
 
     calendar.events = visibleStore();
 
-
     // --- Navigation ----------------------------------------------------------
     document.getElementById("nav-prev").addEventListener("click", () => calendar.prev());
 
     document.getElementById("nav-next").addEventListener("click", () => calendar.next());
 
     document.getElementById("nav-today").addEventListener("click", () => calendar.today());
-
 
     // The core announces its own state changes; the shell just follows.
     // Navigation also spends the keyboard target: a preview for another date
@@ -891,11 +835,9 @@ function chromeInit() {
 }
 function chromeInitShell() {
 
-
     drawerQuery.addEventListener("change", syncDrawerMode);
 
     syncDrawerMode();
-
 
     sidebar.addEventListener("toggle", (event) => {
       const open = event.newState === "open";
@@ -910,17 +852,14 @@ function chromeInitShell() {
     focusIcon.className = `ti ti-lg ti-layout-sidebar-left-${on ? "expand" : "collapse"}`;
     });
 
-
     activityToggle.addEventListener("click", () => toggleActivity());
 
     document.getElementById("activity-close").addEventListener("click", () => toggleActivity(false));
-
 
     document.getElementById("shortcuts-open").addEventListener("click", () => {
       if (sidebar.matches(":popover-open")) sidebar.hidePopover();
       shortcutsDialog.showModal();
     });
-
 
     // Workbench and clipboard keys. Cut parks the focused event (add + arm it in
     // the workbench); copy duplicates through the copy clipboard; paste uses the
@@ -972,7 +911,6 @@ function chromeInitShell() {
       }
     });
 
-
     document.addEventListener("keydown", (event) => {
       const target = event.target;
       const typing = target instanceof HTMLElement &&
@@ -1002,7 +940,6 @@ function chromeInitShell() {
       }
     });
 
-
     // `.dialog-close` is a plain button, so one listener replaces the
     // `<form method="dialog">` wrappers the sheets used to carry. A click on
     // the backdrop closes them too: the dialog's own box is the sheet body, so
@@ -1013,7 +950,6 @@ function chromeInitShell() {
         if (event.target === dialog) dialog.close();
       });
     }
-
 
     renderRules();
 
@@ -1031,4 +967,4 @@ function chromeInitShell() {
 
     record("shell ready: core renders, app owns the chrome");
 }
-Object.assign(globalThis.ShowcaseChrome ??= {}, { record, renderViewMenu, refreshChrome, inProgressCount, renderCockpit, lastChip, whenLabel, chip, strong, dot, legendItem, freeIntervals, daysBetween, miniDayState, occupiedForMini, applyMiniFirstDay, renderMiniLegend, renderMiniMonth, roomSections, groupHeadingRow, roomRow, renderRooms, renderLegend, renderRules, applyRoomGroups, applyFilters, syncDrawerMode, toggleActivity, renderShortcuts });
+globalThis.ShowcaseChrome = { record, renderViewMenu, refreshChrome, inProgressCount, renderCockpit, lastChip, whenLabel, chip, strong, dot, legendItem, freeIntervals, daysBetween, miniDayState, occupiedForMini, applyMiniFirstDay, renderMiniLegend, renderMiniMonth, roomSections, groupHeadingRow, roomRow, renderRooms, renderLegend, renderRules, applyRoomGroups, applyFilters, syncDrawerMode, toggleActivity, renderShortcuts };

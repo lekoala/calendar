@@ -4,7 +4,6 @@
 // Extracted verbatim from demo/showcase.html; see .temp/split-showcase.mjs.
 "use strict";
 
-
 // --- Tools menu ----------------------------------------------------------
 const sources = {
   local: undefined,
@@ -19,7 +18,6 @@ const sources = {
   },
 };
 
-
 // --- Tools shelf: filter + pinned tools ----------------------------------
 // The mega menu is a catalog; the shelf narrows it. Pins are session-only
 // (an application would persist the ids), which keeps the demo restartable.
@@ -28,7 +26,6 @@ const toolsFilter = document.getElementById("tools-filter");
 const toolsPinnedSection = document.getElementById("tools-pinned");
 
 const toolsPinnedList = document.getElementById("tools-pinned-list");
-
 
 // --- Account menu, including the theme switcher --------------------------
 // Light/dark is a mode and belongs in a list; the named themes are a
@@ -40,9 +37,7 @@ const THEME_MODES = [
   { value: "dark", label: "Dark", icon: "moon" },
 ];
 
-
 const THEME_ACCENTS = ["indigo", "ocean", "forest", "sunset", "brutalist"];
-
 
 const themeMenu = document.getElementById("theme-menu");
 
@@ -51,7 +46,6 @@ const themeSwatches = document.getElementById("theme-swatches");
 const localeChips = document.getElementById("locale-chips");
 
 const skinChips = document.getElementById("skin-chips");
-
 
 // Two card skins, switched by `data-skin` on the root element and nothing
 // else: no re-render, no `configure()`, no second markup path. `soft` is
@@ -66,7 +60,6 @@ const SKINS = [
   { value: "solid", label: "Solid", icon: "square" },
 ];
 
-
 // --- Search: a command palette over the loaded bookings ------------------
 // `<combo-box>` enhances a real `input list`, which keeps owning the text;
 // the shell only supplies the results and decides what a selection means.
@@ -79,7 +72,6 @@ const searchCombo = document.getElementById("search-combo");
 
 const searchInput = document.getElementById("tools-search");
 
-
 /** The five strings the combobox generates, per locale, like the core's. */
 const SEARCH_MESSAGES = {
   en: { noResults: "No booking matches", loading: "Searching…", loadError: "The booking search failed" },
@@ -87,13 +79,11 @@ const SEARCH_MESSAGES = {
   nl: { noResults: "Geen boeking gevonden", loading: "Zoeken…", loadError: "Zoeken is mislukt" },
 };
 
-
 function refreshPinnedSection() {
   // Re-derive visibility with the current filter: it keeps any row found.
   applyToolFilter();
   renderPinnedBar();
 }
-
 
 /**
  * Pinned tools as a one-click desktop strip: an icon per pinned row that
@@ -120,7 +110,6 @@ function renderPinnedBar() {
   bar.hidden = pinned.length === 0;
 }
 
-
 function applyToolFilter() {
   const query = toolsFilter.value.trim().toLowerCase();
   for (const section of toolsMenu.querySelectorAll(":scope > section")) {
@@ -136,7 +125,6 @@ function applyToolFilter() {
     section.hidden = query !== "" ? !any : pinned && toolsPinnedList.children.length === 0;
   }
 }
-
 
 /**
  * Wrap one pinnable tool row with its pin button. The pin sits beside the
@@ -174,14 +162,12 @@ function decorateToolRow(row) {
   row.append(pin);
 }
 
-
 /** @param {string} value */
 function applySkin(value) {
   document.documentElement.dataset.skin = value;
   renderSkins();
     record(`skin → ${value} (one attribute; the cards are not re-rendered)`);
 }
-
 
 function renderSkins() {
   const current = document.documentElement.dataset.skin ?? "soft";
@@ -200,7 +186,6 @@ function renderSkins() {
     skinChips.append(chip);
   }
 }
-
 
 /**
  * One call carries both halves of the contract: `locale` for everything
@@ -227,7 +212,6 @@ function setLocale(value) {
     record(`locale → ${effectiveLocale() ?? "runtime default"}`);
 }
 
-
 function renderLocales() {
   localeChips.replaceChildren();
   for (const entry of LOCALES) {
@@ -244,7 +228,6 @@ function renderLocales() {
   }
 }
 
-
 /** @param {string} value */
 function applyTheme(value) {
   if (value) document.documentElement.dataset.theme = value;
@@ -252,7 +235,6 @@ function applyTheme(value) {
   renderThemes();
     record(`theme → ${value || "system"}`);
 }
-
 
 function renderThemes() {
   const current = document.documentElement.dataset.theme ?? "";
@@ -297,11 +279,9 @@ function renderThemes() {
   }
 }
 
-
 function searchMessages() {
   return SEARCH_MESSAGES[(effectiveLocale() ?? "en").slice(0, 2)] ?? SEARCH_MESSAGES.en;
 }
-
 
 function openSearch() {
   if (sidebar.matches(":popover-open")) sidebar.hidePopover();
@@ -316,7 +296,6 @@ function openSearch() {
   if (!searchDialog.open) searchDialog.showModal();
   searchInput.focus();
 }
-
 
 /** @param {string} id */
 async function revealBooking(id) {
@@ -334,7 +313,6 @@ async function revealBooking(id) {
 }
 function toolsInit() {
 
-
     // The shelf pins rows into a separate lane, so every tool handler
     // delegates from the menu root instead of its section list: a pinned row
     // still reaches its own section logic.
@@ -350,7 +328,6 @@ function toolsInit() {
       if (mode === "local") calendar.events = visibleStore();
       else void calendar.refetchEvents();
     });
-
 
     // Grid density and derivation options, all of them `configure()` calls.
     toolsMenu.addEventListener("click", (event) => {
@@ -399,9 +376,7 @@ function toolsInit() {
     record(`grid → ${option} ${on ? "on" : "off"}`);
     });
 
-
     toolsFilter.addEventListener("input", applyToolFilter);
-
 
     // A text field inside an `auto` popover swallows Escape by spec, so the
     // platform never closes the shelf from the input: Escape first clears the
@@ -418,7 +393,6 @@ function toolsInit() {
       }
     });
 
-
     // The menu keeps its DOM across renders, so a closed shelf must forget any
     // filter before the next open shows a half-hidden catalog.
     toolsMenu.addEventListener("toggle", (event) => {
@@ -427,11 +401,9 @@ function toolsInit() {
       applyToolFilter();
     });
 
-
     refreshPinnedSection();
 
     for (const row of toolsMenu.querySelectorAll("li")) decorateToolRow(row);
-
 
     toolsMenu.addEventListener("click", (event) => {
       const tool = event.target.closest("[data-tool]")?.dataset?.tool;
@@ -458,7 +430,6 @@ function toolsInit() {
       toolsMenu.hidePopover();
     });
 
-
     accountMenu.addEventListener("click", (event) => {
       const action = event.target.closest("[data-account]")?.dataset?.account;
       if (!action) return;
@@ -470,7 +441,6 @@ function toolsInit() {
     record(`account → ${action} (the shell stops at the intent)`);
     toast(`“${action}” is a stand-in in this demo.`, "success");
     });
-
 
     searchCombo.configure({
       minChars: 2,
@@ -518,7 +488,6 @@ function toolsInit() {
       },
     });
 
-
     // Focusing the input asks the engine to open the picker. With an empty
     // catalogue - every suggestion comes from `load()` - that means an empty
     // query would open a picker with nothing but a state row in it. The
@@ -528,11 +497,9 @@ function toolsInit() {
       if (searchInput.value.trim().length < 2) event.preventDefault();
     });
 
-
     document.getElementById("search-toggle").addEventListener("click", openSearch);
 
     document.getElementById("search-open").addEventListener("click", openSearch);
-
 
     // For an `input list` combobox the input *is* the source control, so the
     // value events land on it.
@@ -541,11 +508,9 @@ function toolsInit() {
       revealBooking(String(event.detail.item.value));
     });
 
-
     searchInput.addEventListener("combobox:loaderror", (event) => {
     record(`search failed: ${event.detail?.error?.message ?? "unknown"}`);
     });
-
 
     // --- Realtime stand-ins --------------------------------------------------
     document.getElementById("rt-add").addEventListener("click", () => {
@@ -567,7 +532,6 @@ function toolsInit() {
       toolsMenu.hidePopover();
     });
 
-
     document.getElementById("rt-move").addEventListener("click", () => {
       if (!calendar.getEventById("live")) {
         record("realtime move: “Live sync” no longer exists");
@@ -577,7 +541,6 @@ function toolsInit() {
       }
       toolsMenu.hidePopover();
     });
-
 
     document.getElementById("rt-remove").addEventListener("click", () => {
       if (calendar.removeEvent("live")) {
@@ -590,4 +553,4 @@ function toolsInit() {
       toolsMenu.hidePopover();
     });
 }
-Object.assign(globalThis.ShowcaseTools ??= {}, { refreshPinnedSection, renderPinnedBar, applyToolFilter, decorateToolRow, applySkin, renderSkins, setLocale, renderLocales, applyTheme, renderThemes, searchMessages, openSearch, revealBooking });
+globalThis.ShowcaseTools = { refreshPinnedSection, renderPinnedBar, applyToolFilter, decorateToolRow, applySkin, renderSkins, setLocale, renderLocales, applyTheme, renderThemes, searchMessages, openSearch, revealBooking };

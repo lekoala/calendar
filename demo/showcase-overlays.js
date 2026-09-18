@@ -9,17 +9,14 @@
 // import statically and stay file:// compatible); read at event time only.
 let autoUpdate, reposition, repositionAt;
 
-
 const toolsMenu = document.getElementById("tools-menu");
 
 const accountMenu = document.getElementById("account-menu");
-
 
 // --- Toast: a refusal has to say why ------------------------------------
 const toastNode = document.getElementById("toast");
 
 let toastTimer = 0;
-
 
 // --- Creation sheet ------------------------------------------------------
 const createDialog = document.getElementById("create-dialog");
@@ -27,19 +24,16 @@ const createDialog = document.getElementById("create-dialog");
 /** @type {{ start: string, end: string, resourceId: string | null, location: { location: string, locationId: string, mode: string } | null } | null} */
 let pendingSlot = null;
 
-
 // --- Detail sheet --------------------------------------------------------
 const detailDialog = document.getElementById("detail-dialog");
 
 /** @type {string | null} */
 let detailId = null;
 
-
 // --- Context menu (core intent, app menu) --------------------------------
 const contextMenu = document.getElementById("context-menu");
 
 const contextMenuList = contextMenu;
-
 
 // A drag suppresses the hover tooltip.
 let dragging = false;
@@ -47,7 +41,6 @@ let dragging = false;
 // Whether a pointer is currently pressed, captured once for the overlays
 // that have to cooperate with the platform's own dismissal.
 let pointerDown = false;
-
 
 // --- Hover intent --------------------------------------------------------
 // Short cards drop their tag and their meta line; the tooltip is where
@@ -61,7 +54,6 @@ let tipStop;
 let tipTimer = 0;
 
 let tipId = "";
-
 
 // --- Overlays: platform first, geometry second ---------------------------
 /**
@@ -89,7 +81,6 @@ function anchorPopover(menu, trigger, options = {}) {
   });
 }
 
-
 /**
  * @param {string} message
  * @param {"danger" | "warning" | "success"} [intent]
@@ -103,7 +94,6 @@ function toast(message, intent = "danger") {
   );
   toastTimer = window.setTimeout(() => toastNode.classList.remove("is-open"), 4200);
 }
-
 
 /**
  * @param {string} startIso
@@ -131,7 +121,6 @@ function openCreate(startIso, endIso, resourceId, context = null) {
   createDialog.showModal();
 }
 
-
 /**
  * A new booking gets an aura for a few seconds. The flag lives in the
  * application, and `eventContent` puts it on the node, so re-renders in
@@ -146,7 +135,6 @@ function markFresh(id) {
     if (node instanceof HTMLElement) delete node.dataset.fresh;
   }, 4600);
 }
-
 
 /** @param {any} item */
 function openDetail(item) {
@@ -169,7 +157,6 @@ function openDetail(item) {
   detailDialog.showModal();
 }
 
-
 /**
  * Wall-clock +1h on the ISO string keeps the demo free of date math;
  * a real application would use Temporal here.
@@ -178,7 +165,6 @@ function openDetail(item) {
 function shiftHour(iso) {
     return iso.replace(/T(\d{2}):/, (_, hour) => `T${String((Number(hour) + 1) % 24).padStart(2, "0")}:`);
 }
-
 
 /** @param {string} id */
 function shiftById(id) {
@@ -194,7 +180,6 @@ function shiftById(id) {
   );
 }
 
-
 /** Move an all-day booking forward by one civil day. @param {string} id */
 function shiftDay(id) {
   const item = calendar.getEventById(id);
@@ -205,7 +190,6 @@ function shiftDay(id) {
   const end = /** @type {any} */ (item.end).add({ days: 1 });
   return Boolean(calendar.moveEvent(id, { start, end }));
 }
-
 
 /**
  * `popover=auto` light dismiss closes on the pointer *release*, measured
@@ -223,7 +207,6 @@ function afterPointerRelease(run) {
   }
   document.addEventListener("pointerup", () => window.setTimeout(run, 0), { once: true });
 }
-
 
 /**
  * One menu, two kinds of row: an action, or a `note` that names a rule.
@@ -282,7 +265,6 @@ function openContextMenu(rows, x, y) {
   });
 }
 
-
 /** @param {any} item */
 function duplicate(item) {
     const id = `copy-${Date.now()}`;
@@ -302,7 +284,6 @@ function duplicate(item) {
   refreshChrome();
 }
 
-
 function hideTip() {
   window.clearTimeout(tipTimer);
   tipStop?.();
@@ -310,7 +291,6 @@ function hideTip() {
   tipId = "";
   if (tip.matches(":popover-open")) tip.hidePopover();
 }
-
 
 /**
  * @param {HTMLElement} node
@@ -377,7 +357,6 @@ function overlaysInitHead() {
 }
 function overlaysInit() {
 
-
     calendar.addEventListener("calendar:select", (event) => {
       const detail = event.detail;
       const start = String(detail.start);
@@ -401,7 +380,6 @@ function overlaysInit() {
       openCreate(start, end, resourceId, detail.context);
     });
 
-
     document.getElementById("new-booking").addEventListener("click", () => {
       const room = ROOMS.find((item) => activeRooms.has(item.id));
       const resourceId = calendar.view.startsWith("resource") ? (room?.id ?? null) : null;
@@ -409,7 +387,6 @@ function overlaysInit() {
       const day = visibleDay();
       openCreate(stamp(day, 9 * 60), stamp(day, 9 * 60 + 30), resourceId);
     });
-
 
     createDialog.addEventListener("click", (event) => {
       const kind = event.target.closest("[data-create]")?.dataset?.create;
@@ -450,19 +427,16 @@ function overlaysInit() {
       createDialog.close();
     });
 
-
     calendar.addEventListener("calendar:eventclick", (event) => {
       const item = event.detail.event;
       openDetail(item);
     record(`eventclick: ${item.id}`);
     });
 
-
     document.getElementById("detail-shift").addEventListener("click", () => {
       if (detailId) shiftById(detailId);
       detailDialog.close();
     });
-
 
     document.getElementById("detail-delete").addEventListener("click", () => {
       if (detailId && calendar.removeEvent(detailId)) {
@@ -483,7 +457,6 @@ function overlaysInit() {
       pointerDown = false;
       dragging = false;
     }, true);
-
 
     calendar.addEventListener("calendar:eventcontextmenu", (event) => {
       event.preventDefault();
@@ -708,7 +681,6 @@ function overlaysInit() {
     record(`eventcontextmenu: empty slot ${date} ${clock(minutes)}${frozenDay ? " (over)" : ""}`);
     });
 
-
     // The core reports that a month day has more than it can show; this
     // application answers by opening that day.
     calendar.addEventListener("calendar:moreclick", (event) => {
@@ -717,7 +689,6 @@ function overlaysInit() {
       calendar.setView("day");
     record(`moreclick: ${date} (+${hidden} not shown) - opened the day`);
     });
-
 
     calendar.addEventListener("pointerover", (event) => {
       if (event.pointerType !== "mouse" || dragging) return;
@@ -732,7 +703,6 @@ function overlaysInit() {
       tipTimer = window.setTimeout(() => showTip(node, item), 140);
     });
 
-
     calendar.addEventListener("pointerout", (event) => {
       const node = event.target instanceof Element ? event.target.closest("[data-event-id]") : null;
       if (!node) return;
@@ -741,10 +711,9 @@ function overlaysInit() {
       hideTip();
     });
 
-
     calendar.addEventListener("pointerdown", () => {
       dragging = true;
       hideTip();
     });
 }
-Object.assign(globalThis.ShowcaseOverlays ??= {}, { anchorPopover, toast, openCreate, markFresh, openDetail, shiftHour, shiftById, shiftDay, afterPointerRelease, openContextMenu, duplicate, hideTip, showTip });
+globalThis.ShowcaseOverlays = { anchorPopover, toast, openCreate, markFresh, openDetail, shiftHour, shiftById, shiftDay, afterPointerRelease, openContextMenu, duplicate, hideTip, showTip };

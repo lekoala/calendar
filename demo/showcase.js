@@ -11,9 +11,8 @@
 // instead of two copies of the positioning engine. `@lekoala/date-picker/calendar`
 // is the calendar-only door of the picker package: it pulls no positioning
 // engine and no text field, so the mini month costs one element and nothing else.
-// (Kept from the former inline module; dynamic import() keeps it working over
-// file://, where static imports of local files are CORS-blocked but the CDN
-// imports below are allowed.)
+// Dynamic import() keeps this working over file://, where static imports of
+// local files are CORS-blocked but the CDN imports below are allowed.)
 //
 // TODO(runtime): chrome controls still rely on native `title` tooltips
 // (pinned tools, view switch, locale chips, theme swatches). Later pass:
@@ -24,14 +23,15 @@
 
 globalThis.CalendarShowcase = class CalendarShowcase {
   /**
-   * @param {Document} [root] scope for the initial boot; the sections keep
-   * reading shared bindings, so this is only the entry point, not a sandbox.
+   * @param {Document} [root] entry-point scope, kept as a future injection
+   * seam: the sections currently read shared bindings (and `document`)
+   * directly, so this is stored, not yet threaded through.
    */
   constructor(root = document) {
     this.root = root;
-    // Debuggable handles over the section APIs (see Object.assign at the end
-    // of each showcase-*.js). The sections themselves stay stateless wikis of
-    // functions over shared top-level bindings.
+    // Debuggable handles over the section APIs (see the globalThis assignment
+    // at the end of each showcase-*.js). The sections themselves stay
+    // stateless collections of functions over shared top-level bindings.
     this.foundation = globalThis.ShowcaseFoundation;
     this.chrome = globalThis.ShowcaseChrome;
     this.placement = globalThis.ShowcasePlacement;
@@ -41,7 +41,7 @@ globalThis.CalendarShowcase = class CalendarShowcase {
 
   /**
    * Load the CDN dependencies, publish the async shared state they provide,
-   * then run the init phases in the order the former inline script used.
+   * then run the init phases in load order.
    * @returns {Promise<CalendarShowcase>}
    */
   async init() {
@@ -60,7 +60,9 @@ globalThis.CalendarShowcase = class CalendarShowcase {
     ]);
     customElements.define("date-calendar", DateCalendarElement);
     MINI_MESSAGES = { fr: fr.default, nl: nl.default };
-    // Same order as the former inline script, top to bottom.
+    // Boot order mirrors the historical top-to-bottom flow: configure the
+    // calendar before seeding it, attach guards before the sheets that use
+    // them, render the chrome last.
     placementInitEarly();
     placementConfigureCalendar();
     chromeInit();
