@@ -6,12 +6,14 @@ import {
   isResourceView,
   minutesFromMidnight,
   resolveLocale,
+  resolveSlotBounds,
   startOfWeek,
   stepAnchor,
   toPlainDate,
 } from "./core/dates.js";
 import { resolveLabels } from "./core/labels.js";
 import {
+  isInvertedRange,
   isMovable,
   isResizable,
   normalizeBackground,
@@ -118,6 +120,23 @@ const DEFAULTS = {
   defaultTimedEventDuration: Temporal.Duration.from({ minutes: 30 }),
 };
 
+/**
+ * View names the element knows how to render. Anything else still renders
+ * (date derivation tolerates it as a rolling range) but is reported once so a
+ * typo does not pass silently.
+ *
+ * @type {Set<string>}
+ */
+const KNOWN_VIEWS = new Set([
+  "day",
+  "threeDays",
+  "week",
+  "month",
+  "resourceDay",
+  "resourceThreeDays",
+  "list",
+]);
+
 // Largest delay a `setTimeout` accepts; aging boundaries beyond it simply
 // re-arm on the next render instead of overflowing.
 const MAX_TIMEOUT_MS = 2147483647;
@@ -206,6 +225,17 @@ export class CalendarViewElement extends HTMLElement {
   /** @type {AbortController | null} */
   #abortController = null;
   #requestVersion = 0;
+  /**
+   * True while a source request is in flight. A disconnect during that window
+   * arms `#refetchOnReconnect` so `connectedCallback` restarts the load the
+   * disconnect aborted instead of leaving the calendar empty.
+   */
+  #loadInFlight = false;
+  #refetchOnReconnect = false;
+  /** Raw `date` attribute value already reported as invalid; warns once each. @type {string | null} */
+  #warnedDate = null;
+  /** View name already reported as unknown; warns once each. @type {string | null} */
+  #warnedView = null;
   #batchDepth = 0;
   #renderQueued = false;
   #interactionRevision = 0;
@@ -244,12 +274,20 @@ export class CalendarViewElement extends HTMLElement {
       this.setAttribute("date", Temporal.Now.plainDateISO(timeZone).toString());
     }
     this.#queueRender();
+    // A disconnect that aborted an in-flight load leaves `#refetchOnReconnect`
+    // armed; restart it so moving the element (layout reorder, framework
+    // reparenting) never silently drops the data it was loading.
+    if (this.#refetchOnReconnect) {
+      this.#refetchOnReconnect = false;
+      void this.refetchEvents();
+    }
   }
 
   disconnectedCallback() {
     this.#cancelExternalPointer?.();
     this.#clearExternalDrag();
     this.#externalDropTarget = null;
+    if (this.#loadInFlight) this.#refetchOnReconnect = true;
     this.#abortController?.abort();
     // No work survives a disconnect: drop queued post-render callbacks and
     // cancel the single pending announce frame, if any. Dropping is not
@@ -298,10 +336,25 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Anchor date as a `Temporal.PlainDate`. A malformed `date` attribute falls
+   * back to today in the configured zone and warns once instead of throwing
+   * inside the render frame and leaving a stale tree behind.
+   *
    * @returns {Temporal.PlainDate}
    */
   get date() {
-    return toPlainDate(/** @type {string} */ (this.getAttribute("date")));
+    const raw = this.getAttribute("date");
+    try {
+      return toPlainDate(/** @type {string} */ (raw));
+    } catch {
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      const fallback = Temporal.Now.plainDateISO(timeZone);
+      if (raw !== null && this.#warnedDate !== raw) {
+        this.#warnedDate = raw;
+        console.warn(`calendar-view: invalid date attribute "${raw}", using ${fallback}`);
+      }
+      return fallback;
+    }
   }
 
   /** @param {Temporal.PlainDate | string} value */
@@ -358,7 +411,7 @@ export class CalendarViewElement extends HTMLElement {
     if (oldView === view) return;
     this.setAttribute("view", view);
     this.dispatchEvent(new CustomEvent("calendar:viewchange", { detail: { oldView, view } }));
-    this.#announce(`${view}, ${this.getAttribute("date")}`);
+    this.#announce(`${view}, ${this.date}`);
     void this.refetchEvents();
   }
 
@@ -385,17 +438,26 @@ export class CalendarViewElement extends HTMLElement {
     return getViewRange(this.date, this.view, this.#dateOptions());
   }
 
+  /**
+   * @returns {Promise<void>} the source reload `gotoDate` triggered, like `gotoDate`
+   */
   prev() {
-    this.gotoDate(stepAnchor(this.date, this.view, -1, this.#dateOptions()));
+    return this.gotoDate(stepAnchor(this.date, this.view, -1, this.#dateOptions()));
   }
 
+  /**
+   * @returns {Promise<void>} the source reload `gotoDate` triggered, like `gotoDate`
+   */
   next() {
-    this.gotoDate(stepAnchor(this.date, this.view, 1, this.#dateOptions()));
+    return this.gotoDate(stepAnchor(this.date, this.view, 1, this.#dateOptions()));
   }
 
+  /**
+   * @returns {Promise<void>} the source reload `gotoDate` triggered, like `gotoDate`
+   */
   today() {
     const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
-    this.gotoDate(Temporal.Now.plainDateISO(timeZone));
+    return this.gotoDate(Temporal.Now.plainDateISO(timeZone));
   }
 
   /**
@@ -777,7 +839,7 @@ export class CalendarViewElement extends HTMLElement {
    * @param {object} input
    * @param {import("./core/model.js").NormalizedEvent} input.event
    * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.previous
-   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.current
+   * @param {{ start: unknown, end: unknown, resourceId: string | number | null }} input.current
    * @param {string} input.name
    * @param {Event | null} input.nativeEvent
    * @returns {import("./core/model.js").NormalizedEvent | null} the optimistic event, or null when rejected immediately
@@ -793,8 +855,11 @@ export class CalendarViewElement extends HTMLElement {
     const optimistic = {
       start: normalizeRangeBound(current.start, allDay),
       end: normalizeRangeBound(current.end, allDay),
-      resourceId: current.resourceId,
+      resourceId: current.resourceId == null ? null : String(current.resourceId),
     };
+    // An inverted placement is refused like any other invalid mutation: the
+    // caller gets `null` and no optimistic state is published.
+    if (isInvertedRange(optimistic.start, optimistic.end)) return null;
     const restored = { start: before.start, end: before.end, resourceId: before.resourceId ?? null };
     /**
      * @param {{ start: unknown, end: unknown, resourceId: string | null }} state
@@ -831,7 +896,7 @@ export class CalendarViewElement extends HTMLElement {
           event: this.getEventById(id),
           previous,
           current,
-          context: this.getRangeContext(current),
+          context: this.getRangeContext(optimistic),
           nativeEvent,
           revert,
         },
@@ -845,7 +910,7 @@ export class CalendarViewElement extends HTMLElement {
    * @param {object} input
    * @param {import("./core/model.js").NormalizedEvent} input.event
    * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.previous
-   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.current
+   * @param {{ start: unknown, end: unknown, resourceId: string | number | null }} input.current
    * @param {Event | null} [input.nativeEvent]
    * @returns {import("./core/model.js").NormalizedEvent | null}
    */
@@ -857,7 +922,7 @@ export class CalendarViewElement extends HTMLElement {
    * @param {object} input
    * @param {import("./core/model.js").NormalizedEvent} input.event
    * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.previous
-   * @param {{ start: unknown, end: unknown, resourceId: string | null }} input.current
+   * @param {{ start: unknown, end: unknown, resourceId: string | number | null }} input.current
    * @param {Event | null} [input.nativeEvent]
    * @returns {import("./core/model.js").NormalizedEvent | null}
    */
@@ -871,7 +936,7 @@ export class CalendarViewElement extends HTMLElement {
    * one contract.
    *
    * @param {string | number} id
-   * @param {{ start?: unknown, end?: unknown, resourceId?: string | null }} current
+   * @param {{ start?: unknown, end?: unknown, resourceId?: string | number | null }} current
    * @returns {import("./core/model.js").NormalizedEvent | null}
    */
   moveEvent(id, current) {
@@ -883,7 +948,10 @@ export class CalendarViewElement extends HTMLElement {
       current: {
         start: current.start ?? event.start,
         end: current.end ?? event.end,
-        resourceId: current.resourceId ?? event.resourceId ?? null,
+        // An explicit `resourceId: null` detaches the event; an omitted key
+        // keeps its current resource. `??` would collapse the two, making
+        // resource removal impossible through the API.
+        resourceId: "resourceId" in current ? (current.resourceId ?? null) : (event.resourceId ?? null),
       },
     });
   }
@@ -1146,28 +1214,31 @@ export class CalendarViewElement extends HTMLElement {
 
     this.setAttribute("aria-busy", "true");
     this.#announceLoading(true);
+    this.#loadInFlight = true;
     try {
       const [events, backgrounds] = await Promise.all([
         eventSource ? eventSource(context) : null,
         backgroundSource ? backgroundSource(context) : null,
       ]);
       if (controller.signal.aborted || version !== this.#requestVersion) return;
+      // Normalize both collections before touching state: a malformed payload
+      // must leave the previous events *and* backgrounds intact, so a rejected
+      // refetch never publishes a half-updated calendar.
+      const nextEvents = eventSource
+        ? Array.from(/** @type {import("./core/model.js").EventInput[]} */ (events ?? []), normalizeEvent)
+        : null;
+      const nextBackgrounds = backgroundSource
+        ? Array.from(
+            /** @type {import("./core/model.js").BackgroundInput[]} */ (backgrounds ?? []),
+            normalizeBackground,
+          )
+        : null;
       // Each collection is replaced only by its own source. Reading the
       // other one before the await and writing it back here would undo the
       // incremental mutations (`addEvent`, `updateEvent`, `removeEvent`)
       // an application applied while the request was in flight.
-      if (eventSource) {
-        this.#events = Array.from(
-          /** @type {import("./core/model.js").EventInput[]} */ (events ?? []),
-          normalizeEvent,
-        );
-      }
-      if (backgroundSource) {
-        this.#backgrounds = Array.from(
-          /** @type {import("./core/model.js").BackgroundInput[]} */ (backgrounds ?? []),
-          normalizeBackground,
-        );
-      }
+      if (nextEvents) this.#events = nextEvents;
+      if (nextBackgrounds) this.#backgrounds = nextBackgrounds;
       this.#queueRender();
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -1176,6 +1247,7 @@ export class CalendarViewElement extends HTMLElement {
       // Only the newest request settles the busy state: an aborted or stale
       // one is always followed by a request that is still in flight.
       if (version === this.#requestVersion) {
+        this.#loadInFlight = false;
         this.removeAttribute("aria-busy");
         this.#announceLoading(false);
       }
@@ -1298,14 +1370,20 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   #options() {
+    const bounds = resolveSlotBounds(
+      this.getAttribute("slot-min") ?? "",
+      this.getAttribute("slot-max") ?? "",
+      DEFAULTS,
+    );
+    const rawDuration = Number(this.getAttribute("slot-duration") || DEFAULTS.slotDuration);
     return {
       timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
       locale: this.#resolveLocale(),
       labels: resolveLabels(this.#config.labels),
       editable: this.#config.editable,
-      slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
-      slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
-      slotDuration: Number(this.getAttribute("slot-duration") || DEFAULTS.slotDuration),
+      slotMin: bounds.slotMin,
+      slotMax: bounds.slotMax,
+      slotDuration: Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : DEFAULTS.slotDuration,
       slotLabelInterval: this.#config.slotLabelInterval ?? DEFAULTS.slotLabelInterval,
       pxPerMinute: this.#config.pxPerMinute ?? DEFAULTS.pxPerMinute,
       snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
@@ -1318,6 +1396,10 @@ export class CalendarViewElement extends HTMLElement {
   #render() {
     this.#externalDropTarget?.clear();
     this.#externalDropTarget = null;
+    if (!KNOWN_VIEWS.has(this.view) && this.#warnedView !== this.view) {
+      this.#warnedView = this.view;
+      console.warn(`calendar-view: unknown view "${this.view}", rendering as a rolling range`);
+    }
     const options = this.#options();
 
     const dateOptions = this.#dateOptions();
@@ -1362,6 +1444,8 @@ export class CalendarViewElement extends HTMLElement {
           eventContent: this.#config.eventContent,
           moreLinkContent: this.#config.moreLinkContent,
           getRangeContext: (range) => this.getRangeContext(range),
+          checkInteraction: (/** @type {Parameters<CalendarViewElement["checkInteraction"]>[0]} */ input) =>
+            this.checkInteraction(input),
         }),
       );
       visibleScope = {

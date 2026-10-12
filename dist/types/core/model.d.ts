@@ -21,7 +21,7 @@ export type EventInput = {
     title?: string;
     start?: unknown;
     end?: unknown;
-    resourceId?: string | null;
+    resourceId?: string | number | null;
     allDay?: boolean;
     editable?: boolean;
     movable?: boolean;
@@ -79,7 +79,7 @@ export type CalendarBackground = {
  * @property {string} [title]
  * @property {unknown} [start]
  * @property {unknown} [end]
- * @property {string | null} [resourceId]
+ * @property {string | number | null} [resourceId]
  * @property {boolean} [allDay]
  * @property {boolean} [editable]
  * @property {boolean} [movable]
@@ -119,6 +119,17 @@ export type CalendarBackground = {
  * @returns {Temporal.ZonedDateTime | Temporal.PlainDate}
  */
 export declare function normalizeRangeBound(value: unknown, allDay: boolean): Temporal.ZonedDateTime | Temporal.PlainDate;
+/**
+ * True when a canonical `[start, end)` range is inverted (`end < start`).
+ * Timed and civil bounds are compared with their own `Temporal` relation;
+ * equal-length and mixed-type pairs are never inverted (mixed types are
+ * already rejected by `normalizeRangeBound`).
+ *
+ * @param {unknown} start
+ * @param {unknown} end
+ * @returns {boolean}
+ */
+export declare function isInvertedRange(start: unknown, end: unknown): boolean;
 /**
  * @param {EventInput} event
  * @returns {NormalizedEvent}
@@ -218,7 +229,7 @@ export type BackgroundInput = {
     id?: unknown;
     start?: unknown;
     end?: unknown;
-    resourceId?: string;
+    resourceId?: string | number | null;
     allDay?: boolean;
     classNames?: string[];
     extendedProps?: Record<string, unknown>;
@@ -231,7 +242,7 @@ export type BackgroundInput = {
  * @property {unknown} [id]
  * @property {unknown} [start]
  * @property {unknown} [end]
- * @property {string} [resourceId]
+ * @property {string | number | null} [resourceId]
  * @property {boolean} [allDay]
  * @property {string[]} [classNames]
  * @property {Record<string, unknown>} [extendedProps]

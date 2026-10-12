@@ -22,9 +22,17 @@ import { Temporal } from "temporal-polyfill";
  * @param {(info: object) => unknown} [input.moreLinkContent]
  * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @param {(range: { start: unknown, end: unknown, resourceId?: string | null }) => import("../core/overlaps.js").RangeContext} [input.getRangeContext] canonical range context for the selected day
+ * @param {(input: {
+ *   action: "select",
+ *   event: import("../core/model.js").NormalizedEvent | null,
+ *   start: unknown,
+ *   end: unknown,
+ *   resourceId: string | null,
+ *   allDay?: boolean,
+ * }) => import("../core/policy.js").PolicyDecision} [input.checkInteraction] synchronous policy gate for the day selection
  * @returns {DocumentFragment}
  */
-export declare function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent, getRangeContext, }: {
+export declare function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent, getRangeContext, checkInteraction, }: {
     weeks: Temporal.PlainDate[][];
     month: number;
     events: import("../core/model.js").NormalizedEvent[];
@@ -42,5 +50,13 @@ export declare function renderMonthGrid({ weeks, month, events, options, now, ev
         end: unknown;
         resourceId?: string | null;
     }) => import("../core/overlaps.js").RangeContext;
+    checkInteraction?: (input: {
+        action: "select";
+        event: import("../core/model.js").NormalizedEvent | null;
+        start: unknown;
+        end: unknown;
+        resourceId: string | null;
+        allDay?: boolean;
+    }) => import("../core/policy.js").PolicyDecision;
 }): DocumentFragment;
 //# sourceMappingURL=month-grid.d.ts.map

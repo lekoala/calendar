@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+* A numeric `resourceId` no longer detaches its event: event and background
+  normalization stringify `resourceId` alongside the resource `id`, so an
+  event assigned with an SQL-style numeric id stays in its resource column
+  instead of silently disappearing from resource views.
+* Month day-cell selection now consults `configure({ interactionPolicy })`
+  like every other user-originated gesture: a refused selection dispatches no
+  `calendar:select`, matching the time-grid contract.
+* `slot-max="24:00"` renders a full-day grid instead of an empty component:
+  `24:00` and `24:00:00` are accepted as the exclusive end of day (1440
+  minutes), which `Temporal.PlainTime` cannot hold itself.
+* Inverted ranges are rejected consistently: `normalizeEvent` and
+  `normalizeBackground` throw when `end` precedes `start` (civil or timed),
+  and `moveEvent`/`resizeEvent` return `null` without publishing optimistic
+  state.
+* A failed refetch no longer publishes a half-updated calendar: the event and
+  background collections are normalized before either is committed, so a
+  malformed payload leaves the previous state (and DOM) intact and only emits
+  `calendar:loaderror`.
+* Moving the element while a source request is in flight restarts the aborted
+  load on reconnect instead of leaving the calendar empty; the reload is
+  tracked independently of the busy state.
+* `updateEvent()` merge semantics are explicit and a field can be cleared: an
+  omitted key keeps its previous value while an explicit `null`/`undefined`
+  clears it, and `moveEvent(id, { resourceId: null })` detaches an event from
+  its resource instead of keeping it through `??`.
+* Invalid attributes fall back instead of throwing inside the render frame: a
+  malformed `date` anchors on today in the configured zone with a one-time
+  warning, and a malformed or inverted `slot-min`/`slot-max` pair resets to
+  the defaults.
+
+### Changed
+
+* `prev()`, `next()` and `today()` return the source reload they trigger, so
+  every navigator can be awaited like `gotoDate()`; they previously returned
+  `void`.
+* An unknown `view` name is reported once with `console.warn` instead of
+  passing silently while rendering as a rolling range.
+
+### Notes
+
+* Range geometry stays wall-clock based, so an event whose real duration
+  crosses a daylight-saving fall-back but whose civil start and end coincide
+  renders no visible slice while `getEventOverlaps()` still matches. This is
+  now documented in `docs/VIEWS.md`.
+
 ## 0.2.0 — 2026
 
 The planned 0.2 operational-trace (`docs/ROADMAP.md`, milestones 10–17). Each

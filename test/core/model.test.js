@@ -129,3 +129,56 @@ test("normalizeBackground shares the civil contract", () => {
   assert.equal(background.allDay, true);
   assert.ok(background.start instanceof Temporal.PlainDate);
 });
+
+test("normalizeEvent stringifies a numeric resourceId so columns match", () => {
+  const event = normalizeEvent({ id: "a", ...TIMED, resourceId: 1 });
+  assert.equal(event.resourceId, "1");
+});
+
+test("normalizeBackground stringifies a numeric resourceId", () => {
+  const background = normalizeBackground({ id: "bg", ...TIMED, resourceId: 2 });
+  assert.equal(background.resourceId, "2");
+});
+
+test("normalizeEvent distinguishes an omitted resourceId from an explicit null", () => {
+  const omitted = normalizeEvent({ id: "a", ...TIMED });
+  assert.equal("resourceId" in omitted, false);
+  const cleared = normalizeEvent({ id: "a", ...TIMED, resourceId: null });
+  assert.equal(cleared.resourceId, null);
+});
+
+test("normalizeEvent rejects an inverted timed range", () => {
+  assert.throws(
+    () =>
+      normalizeEvent({
+        id: "a",
+        start: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+      }),
+    TypeError,
+  );
+});
+
+test("normalizeEvent rejects an inverted all-day range", () => {
+  assert.throws(
+    () => normalizeEvent({ id: "a", allDay: true, start: "2026-09-05", end: "2026-09-03" }),
+    TypeError,
+  );
+});
+
+test("normalizeEvent allows a zero-length range", () => {
+  const event = normalizeEvent({ id: "a", ...TIMED, end: TIMED.start });
+  assert.equal(String(event.start), String(event.end));
+});
+
+test("normalizeBackground rejects an inverted range", () => {
+  assert.throws(
+    () =>
+      normalizeBackground({
+        id: "bg",
+        start: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+      }),
+    TypeError,
+  );
+});

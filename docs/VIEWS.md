@@ -94,6 +94,8 @@ The two predicates are intentionally asymmetric — do not unify them:
 
 Multi-day ranges are sliced and clipped per visible day (`sliceTimedEventForDay`), so `Mon 22:00 → Tue 02:00` renders as `Mon 22:00 → slotMax` and `slotMin → Tue 02:00` where the slot range overlaps. Slices with no positive visible duration render nothing. Geometry uses wall-clock minutes in `calendar.timeZone`, including across DST transitions.
 
+One consequence of wall-clock geometry: an event whose real duration spans a daylight-saving fall-back but whose civil wall-clock start and end coincide (for example `02:30+02:00 → 02:30+01:00`, one real hour) has a zero-minute wall-clock slice and therefore renders nothing, even though `getEventOverlaps()` still reports the overlap. This is consistent with the documented clock-face model, not a slicing bug.
+
 ### The all-day lane
 
 Timed events live in the day columns; `allDay` events and backgrounds live in a lane that mirrors the **same column tracks** and sits between the sticky day headers and the scrolling time bodies. `allDaySlot` (default `true`) shows the lane whenever an all-day event or background is visible in range; an empty lane takes no space.

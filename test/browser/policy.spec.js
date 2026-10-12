@@ -219,3 +219,41 @@ test("an external drop consults the policy with action external and a null event
   expect(external.length).toBeGreaterThan(0);
   expect(external[0].event).toBe(null);
 });
+
+test("a refused month day selection dispatches no select", async ({ page }) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    /** @type {any} */ (window).__selects = [];
+    /** @type {any} */ (window).__policyCalls = [];
+    calendar.addEventListener("calendar:select", () => /** @type {any} */ (window).__selects.push(1));
+    calendar.configure({
+      interactionPolicy: (/** @type {any} */ input) => {
+        /** @type {any} */ (window).__policyCalls.push(input.action);
+        return input.action === "select" ? "Never" : true;
+      },
+    });
+    calendar.setView("month");
+  });
+  await flushRender(page);
+  await flushRender(page);
+  await page.locator('.cv-month-day[data-date="2026-09-10"]').click();
+  await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__selects.length)).toBe(0);
+  const calls = await page.evaluate(() => /** @type {any} */ (window).__policyCalls);
+  expect(calls).toContain("select");
+});
+
+test("an allowed month day selection still dispatches select", async ({ page }) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    /** @type {any} */ (window).__selects = [];
+    calendar.addEventListener("calendar:select", () => /** @type {any} */ (window).__selects.push(1));
+    calendar.configure({ interactionPolicy: () => true });
+    calendar.setView("month");
+  });
+  await flushRender(page);
+  await flushRender(page);
+  await page.locator('.cv-month-day[data-date="2026-09-10"]').click();
+  await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__selects.length)).toBe(1);
+});

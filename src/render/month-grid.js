@@ -27,6 +27,14 @@ import { temporalState } from "../core/temporal.js";
  * @param {(info: object) => unknown} [input.moreLinkContent]
  * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @param {(range: { start: unknown, end: unknown, resourceId?: string | null }) => import("../core/overlaps.js").RangeContext} [input.getRangeContext] canonical range context for the selected day
+ * @param {(input: {
+ *   action: "select",
+ *   event: import("../core/model.js").NormalizedEvent | null,
+ *   start: unknown,
+ *   end: unknown,
+ *   resourceId: string | null,
+ *   allDay?: boolean,
+ * }) => import("../core/policy.js").PolicyDecision} [input.checkInteraction] synchronous policy gate for the day selection
  * @returns {DocumentFragment}
  */
 export function renderMonthGrid({
@@ -38,6 +46,7 @@ export function renderMonthGrid({
   eventContent,
   moreLinkContent,
   getRangeContext,
+  checkInteraction,
 }) {
   const timeZone = options.timeZone ?? "UTC";
   const renderNow = now ?? Temporal.Now.zonedDateTimeISO(timeZone);
@@ -148,6 +157,17 @@ export function renderMonthGrid({
         }
         const start = zonedDateTimeAt(date, 0, timeZone);
         const range = { start, end: start.add({ days: 1 }), resourceId: null };
+        // Same policy contract as the time grid: a refused selection neither
+        // dispatches nor paints a ghost.
+        const decision = checkInteraction?.({
+          action: "select",
+          event: null,
+          start: range.start,
+          end: range.end,
+          resourceId: range.resourceId,
+          allDay: false,
+        }) ?? { ok: true, reason: null };
+        if (!decision.ok) return;
         cell.dispatchEvent(
           new CustomEvent("calendar:select", {
             bubbles: true,

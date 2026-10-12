@@ -397,3 +397,25 @@ test("dragging toward the horizontal edge autoscrolls the wide resource grid", a
   expect(after.lastVisible).toBe(true);
   await page.evaluate(() => document.getElementById("wide")?.remove());
 });
+
+test("a numeric resourceId still matches its resource column", async ({ page }) => {
+  await openDemo(page, "resources");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.resources = [{ id: 1, title: "One" }];
+    calendar.events = [
+      {
+        id: "numeric",
+        title: "Numeric",
+        resourceId: 1,
+        start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+      },
+    ];
+    calendar.setView("resourceDay");
+  });
+  await flushRender(page);
+  await flushRender(page);
+  await expect(page.locator('[data-event-id="numeric"]')).toHaveCount(1);
+  await expect(page.locator('.cv-day[data-resource-id="1"] [data-event-id="numeric"]')).toHaveCount(1);
+});

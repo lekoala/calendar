@@ -3863,8 +3863,30 @@
     return Temporal2.PlainTime.from(value);
   }
   function minutesFromMidnight(value) {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed === "24:00" || trimmed === "24:00:00")
+        return 1440;
+    }
     const time = value instanceof Temporal2.PlainTime ? value : parseClock(value);
     return time.hour * 60 + time.minute + time.second / 60;
+  }
+  function resolveSlotBounds(min, max, defaults) {
+    const start = /^\s*$/.test(min) ? Number.NaN : parseMinutesOrNaN(min);
+    const end = /^\s*$/.test(max) ? Number.NaN : parseMinutesOrNaN(max);
+    const safeStart = Number.isFinite(start) ? min : defaults.slotMin;
+    const safeEnd = Number.isFinite(end) ? max : defaults.slotMax;
+    if (minutesFromMidnight(safeEnd) <= minutesFromMidnight(safeStart)) {
+      return { slotMin: defaults.slotMin, slotMax: defaults.slotMax };
+    }
+    return { slotMin: safeStart, slotMax: safeEnd };
+  }
+  function parseMinutesOrNaN(value) {
+    try {
+      return minutesFromMidnight(value);
+    } catch {
+      return Number.NaN;
+    }
   }
   function durationMinutes(duration) {
     const value = duration instanceof Temporal2.Duration ? duration : Temporal2.Duration.from(duration);
@@ -3962,17 +3984,35 @@
     }
     throw new TypeError("Timed boundaries must be Temporal.ZonedDateTime or ISO strings with a zone");
   }
+  function normalizeResourceId(value) {
+    return value == null ? null : String(value);
+  }
+  function isInvertedRange(start, end) {
+    if (start instanceof Temporal2.ZonedDateTime && end instanceof Temporal2.ZonedDateTime) {
+      return Temporal2.ZonedDateTime.compare(end, start) < 0;
+    }
+    if (start instanceof Temporal2.PlainDate && end instanceof Temporal2.PlainDate) {
+      return Temporal2.PlainDate.compare(end, start) < 0;
+    }
+    return false;
+  }
   function normalizeEvent(event) {
     if (!event || event.id == null || event.start == null || event.end == null) {
       throw new TypeError("Event requires id, start and end");
     }
-    const { classNames, extendedProps, start, end, allDay = false, ...rest } = event;
+    const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = event;
+    const normalizedStart = normalizeRangeBound(start, allDay);
+    const normalizedEnd = normalizeRangeBound(end, allDay);
+    if (isInvertedRange(normalizedStart, normalizedEnd)) {
+      throw new TypeError("Event end must not precede start");
+    }
     return {
       ...rest,
       id: String(event.id),
+      ...resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) },
       allDay,
-      start: normalizeRangeBound(start, allDay),
-      end: normalizeRangeBound(end, allDay),
+      start: normalizedStart,
+      end: normalizedEnd,
       classNames: Array.from(classNames ?? []),
       extendedProps: { ...extendedProps ?? {} }
     };
@@ -4025,13 +4065,19 @@
     if (!background || background.id == null || background.start == null || background.end == null) {
       throw new TypeError("Background requires id, start and end");
     }
-    const { classNames, extendedProps, start, end, allDay = false, ...rest } = background;
+    const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = background;
+    const normalizedStart = normalizeRangeBound(start, allDay);
+    const normalizedEnd = normalizeRangeBound(end, allDay);
+    if (isInvertedRange(normalizedStart, normalizedEnd)) {
+      throw new TypeError("Background end must not precede start");
+    }
     return {
       ...rest,
       id: String(background.id),
+      ...resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) },
       allDay,
-      start: normalizeRangeBound(start, allDay),
-      end: normalizeRangeBound(end, allDay),
+      start: normalizedStart,
+      end: normalizedEnd,
       classNames: Array.from(classNames ?? []),
       extendedProps: { ...extendedProps ?? {} }
     };
@@ -4349,7 +4395,8 @@
     now,
     eventContent,
     moreLinkContent,
-    getRangeContext
+    getRangeContext,
+    checkInteraction
   }) {
     const timeZone = options.timeZone ?? "UTC";
     const renderNow = now ?? Temporal2.Now.zonedDateTimeISO(timeZone);
@@ -4435,6 +4482,16 @@
           }
           const start = zonedDateTimeAt(date, 0, timeZone);
           const range = { start, end: start.add({ days: 1 }), resourceId: null };
+          const decision = checkInteraction?.({
+            action: "select",
+            event: null,
+            start: range.start,
+            end: range.end,
+            resourceId: range.resourceId,
+            allDay: false
+          }) ?? { ok: true, reason: null };
+          if (!decision.ok)
+            return;
           cell.dispatchEvent(new CustomEvent("calendar:select", {
             bubbles: true,
             composed: true,
@@ -6237,6 +6294,15 @@
     snapDuration: Temporal2.Duration.from({ minutes: 15 }),
     defaultTimedEventDuration: Temporal2.Duration.from({ minutes: 30 })
   };
+  var KNOWN_VIEWS = new Set([
+    "day",
+    "threeDays",
+    "week",
+    "month",
+    "resourceDay",
+    "resourceThreeDays",
+    "list"
+  ]);
   var MAX_TIMEOUT_MS = 2147483647;
   function targetDate(start, timeZone) {
     if (start instanceof Temporal2.PlainDate)
@@ -6265,6 +6331,10 @@
     #config = {};
     #abortController = null;
     #requestVersion = 0;
+    #loadInFlight = false;
+    #refetchOnReconnect = false;
+    #warnedDate = null;
+    #warnedView = null;
     #batchDepth = 0;
     #renderQueued = false;
     #interactionRevision = 0;
@@ -6281,11 +6351,17 @@
         this.setAttribute("date", Temporal2.Now.plainDateISO(timeZone).toString());
       }
       this.#queueRender();
+      if (this.#refetchOnReconnect) {
+        this.#refetchOnReconnect = false;
+        this.refetchEvents();
+      }
     }
     disconnectedCallback() {
       this.#cancelExternalPointer?.();
       this.#clearExternalDrag();
       this.#externalDropTarget = null;
+      if (this.#loadInFlight)
+        this.#refetchOnReconnect = true;
       this.#abortController?.abort();
       const dropped = this.#afterRenderQueue;
       this.#afterRenderQueue = [];
@@ -6322,7 +6398,18 @@
       this.setView(value);
     }
     get date() {
-      return toPlainDate(this.getAttribute("date"));
+      const raw = this.getAttribute("date");
+      try {
+        return toPlainDate(raw);
+      } catch {
+        const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+        const fallback = Temporal2.Now.plainDateISO(timeZone);
+        if (raw !== null && this.#warnedDate !== raw) {
+          this.#warnedDate = raw;
+          console.warn(`calendar-view: invalid date attribute "${raw}", using ${fallback}`);
+        }
+        return fallback;
+      }
     }
     set date(value) {
       this.gotoDate(value);
@@ -6361,7 +6448,7 @@
         return;
       this.setAttribute("view", view);
       this.dispatchEvent(new CustomEvent("calendar:viewchange", { detail: { oldView, view } }));
-      this.#announce(`${view}, ${this.getAttribute("date")}`);
+      this.#announce(`${view}, ${this.date}`);
       this.refetchEvents();
     }
     async gotoDate(value) {
@@ -6378,14 +6465,14 @@
       return getViewRange(this.date, this.view, this.#dateOptions());
     }
     prev() {
-      this.gotoDate(stepAnchor(this.date, this.view, -1, this.#dateOptions()));
+      return this.gotoDate(stepAnchor(this.date, this.view, -1, this.#dateOptions()));
     }
     next() {
-      this.gotoDate(stepAnchor(this.date, this.view, 1, this.#dateOptions()));
+      return this.gotoDate(stepAnchor(this.date, this.view, 1, this.#dateOptions()));
     }
     today() {
       const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
-      this.gotoDate(Temporal2.Now.plainDateISO(timeZone));
+      return this.gotoDate(Temporal2.Now.plainDateISO(timeZone));
     }
     scrollToTime(value) {
       const options = this.#options();
@@ -6600,8 +6687,10 @@
       const optimistic = {
         start: normalizeRangeBound(current.start, allDay),
         end: normalizeRangeBound(current.end, allDay),
-        resourceId: current.resourceId
+        resourceId: current.resourceId == null ? null : String(current.resourceId)
       };
+      if (isInvertedRange(optimistic.start, optimistic.end))
+        return null;
       const restored = { start: before.start, end: before.end, resourceId: before.resourceId ?? null };
       const apply = (state) => {
         this.#events = this.#events.map((item) => item.id === id ? { ...item, ...state } : item);
@@ -6626,7 +6715,7 @@
           event: this.getEventById(id),
           previous,
           current,
-          context: this.getRangeContext(current),
+          context: this.getRangeContext(optimistic),
           nativeEvent,
           revert
         }
@@ -6651,7 +6740,7 @@
         current: {
           start: current.start ?? event.start,
           end: current.end ?? event.end,
-          resourceId: current.resourceId ?? event.resourceId ?? null
+          resourceId: "resourceId" in current ? current.resourceId ?? null : event.resourceId ?? null
         }
       });
     }
@@ -6856,6 +6945,7 @@
       const context = { start, end, resourceIds, signal: controller.signal, calendar: this };
       this.setAttribute("aria-busy", "true");
       this.#announceLoading(true);
+      this.#loadInFlight = true;
       try {
         const [events, backgrounds] = await Promise.all([
           eventSource ? eventSource(context) : null,
@@ -6863,12 +6953,12 @@
         ]);
         if (controller.signal.aborted || version !== this.#requestVersion)
           return;
-        if (eventSource) {
-          this.#events = Array.from(events ?? [], normalizeEvent);
-        }
-        if (backgroundSource) {
-          this.#backgrounds = Array.from(backgrounds ?? [], normalizeBackground);
-        }
+        const nextEvents = eventSource ? Array.from(events ?? [], normalizeEvent) : null;
+        const nextBackgrounds = backgroundSource ? Array.from(backgrounds ?? [], normalizeBackground) : null;
+        if (nextEvents)
+          this.#events = nextEvents;
+        if (nextBackgrounds)
+          this.#backgrounds = nextBackgrounds;
         this.#queueRender();
       } catch (error) {
         if (controller.signal.aborted)
@@ -6876,6 +6966,7 @@
         this.dispatchEvent(new CustomEvent("calendar:loaderror", { detail: { error } }));
       } finally {
         if (version === this.#requestVersion) {
+          this.#loadInFlight = false;
           this.removeAttribute("aria-busy");
           this.#announceLoading(false);
         }
@@ -6943,14 +7034,16 @@
       return resolveLocale(this.#config.locale ?? this.getAttribute("lang") ?? docLang);
     }
     #options() {
+      const bounds = resolveSlotBounds(this.getAttribute("slot-min") ?? "", this.getAttribute("slot-max") ?? "", DEFAULTS);
+      const rawDuration = Number(this.getAttribute("slot-duration") || DEFAULTS.slotDuration);
       return {
         timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
         locale: this.#resolveLocale(),
         labels: resolveLabels(this.#config.labels),
         editable: this.#config.editable,
-        slotMin: this.getAttribute("slot-min") || DEFAULTS.slotMin,
-        slotMax: this.getAttribute("slot-max") || DEFAULTS.slotMax,
-        slotDuration: Number(this.getAttribute("slot-duration") || DEFAULTS.slotDuration),
+        slotMin: bounds.slotMin,
+        slotMax: bounds.slotMax,
+        slotDuration: Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : DEFAULTS.slotDuration,
         slotLabelInterval: this.#config.slotLabelInterval ?? DEFAULTS.slotLabelInterval,
         pxPerMinute: this.#config.pxPerMinute ?? DEFAULTS.pxPerMinute,
         snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
@@ -6962,6 +7055,10 @@
     #render() {
       this.#externalDropTarget?.clear();
       this.#externalDropTarget = null;
+      if (!KNOWN_VIEWS.has(this.view) && this.#warnedView !== this.view) {
+        this.#warnedView = this.view;
+        console.warn(`calendar-view: unknown view "${this.view}", rendering as a rolling range`);
+      }
       const options = this.#options();
       const dateOptions = this.#dateOptions();
       const dates2 = getVisibleDates(this.date, this.view, dateOptions);
@@ -6990,7 +7087,8 @@
           now,
           eventContent: this.#config.eventContent,
           moreLinkContent: this.#config.moreLinkContent,
-          getRangeContext: (range) => this.getRangeContext(range)
+          getRangeContext: (range) => this.getRangeContext(range),
+          checkInteraction: (input) => this.checkInteraction(input)
         }));
         visibleScope = {
           start: weeks[0][0],

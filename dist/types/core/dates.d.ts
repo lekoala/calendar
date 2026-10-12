@@ -143,6 +143,24 @@ export declare function parseClock(value: Temporal.PlainTime | string): Temporal
  */
 export declare function minutesFromMidnight(value: Temporal.PlainTime | string): number;
 /**
+ * Validate the `slot-min`/`slot-max` pair into a usable ordered span. Each
+ * malformed bound falls back to its default independently; a span that ends
+ * at or before its start falls back to both defaults, so the axis is never
+ * zero-height or inverted.
+ *
+ * @param {string} min raw `slot-min` value
+ * @param {string} max raw `slot-max` value
+ * @param {{ slotMin: string, slotMax: string }} defaults
+ * @returns {{ slotMin: string, slotMax: string }}
+ */
+export declare function resolveSlotBounds(min: string, max: string, defaults: {
+    slotMin: string;
+    slotMax: string;
+}): {
+    slotMin: string;
+    slotMax: string;
+};
+/**
  * @param {Temporal.Duration | Parameters<typeof Temporal.Duration.from>[0]} duration
  * @returns {number}
  */

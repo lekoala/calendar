@@ -938,3 +938,59 @@ test("losing the pointer capture cleans up a drag", async ({ page }) => {
   );
   expect(start).toContain("T09:00");
 });
+
+test("updateEvent merges: omitted keys survive, explicit null clears", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const range = {
+      start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T09:30:00+02:00[Europe/Brussels]",
+    };
+    calendar.updateEvent({ id: "a", title: "A", resourceId: "room-a", editable: false, ...range });
+    // Partial echo: only the title changes, the lock and resource survive.
+    calendar.updateEvent({ id: "a", title: "Renamed", ...range });
+    const afterPartial = calendar.getEventById("a");
+    const partial = {
+      title: afterPartial.title,
+      resourceId: afterPartial.resourceId,
+      editable: afterPartial.editable,
+    };
+    // Server removes the lock and the resource.
+    calendar.updateEvent({ id: "a", title: "Renamed", resourceId: null, editable: null, ...range });
+    const afterClear = calendar.getEventById("a");
+    return { partial, cleared: { resourceId: afterClear.resourceId, editable: afterClear.editable } };
+  });
+  expect(outcome.partial).toEqual({ title: "Renamed", resourceId: "room-a", editable: false });
+  expect(outcome.cleared).toEqual({ resourceId: null, editable: null });
+});
+
+test("moveEvent can detach a resource with an explicit null", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.updateEvent({ ...calendar.getEventById("a"), resourceId: "room-a" });
+    calendar.moveEvent("a", { start: "2026-09-03T09:30:00+02:00[Europe/Brussels]" });
+    const kept = calendar.getEventById("a").resourceId;
+    calendar.moveEvent("a", { resourceId: null });
+    const detached = calendar.getEventById("a").resourceId ?? null;
+    return { kept, detached };
+  });
+  expect(outcome.kept).toBe("room-a");
+  expect(outcome.detached).toBe(null);
+});
+
+test("an inverted moveEvent is refused without publishing state", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const before = String(calendar.getEventById("a").start);
+    const result = calendar.moveEvent("a", {
+      start: "2026-09-03T12:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T11:00:00+02:00[Europe/Brussels]",
+    });
+    return { result, after: String(calendar.getEventById("a").start), before };
+  });
+  expect(outcome.result).toBe(null);
+  expect(outcome.after).toBe(outcome.before);
+});

@@ -419,3 +419,142 @@ test("an unconfigured calendar renders in UTC, not in a product zone", async ({ 
   );
   await page.evaluate(() => document.querySelector("#neutral")?.remove());
 });
+
+test("a refetch that fails to normalize backgrounds keeps the previous state", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const before = calendar.events.map((/** @type {any} */ event) => event.id);
+    let errors = 0;
+    calendar.addEventListener("calendar:loaderror", () => {
+      errors += 1;
+    });
+    calendar.configure({
+      eventSource: async () => [
+        {
+          id: "new",
+          title: "New",
+          start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+          end: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+        },
+      ],
+      // The invalid boundary makes `normalizeBackground` throw after the
+      // events were normalized, so nothing must be committed.
+      backgroundSource: async () => [{ id: "bad", start: "nope", end: "also-nope" }],
+    });
+    await calendar.refetchEvents();
+    return { before, events: calendar.events.map((/** @type {any} */ event) => event.id), errors };
+  });
+  expect(outcome.events).toEqual(outcome.before);
+  expect(outcome.errors).toBe(1);
+  await expect(page.locator(".cv-event")).toHaveCount(outcome.before.length);
+});
+
+test("moving the element during a load restarts the aborted request", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    let calls = 0;
+    calendar.configure({
+      eventSource: () => {
+        calls += 1;
+        return new Promise((resolve) =>
+          window.setTimeout(
+            () =>
+              resolve([
+                {
+                  id: "from-source",
+                  title: "From source",
+                  start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+                  end: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+                },
+              ]),
+            120,
+          ),
+        );
+      },
+    });
+    const holder = document.createElement("div");
+    document.body.append(holder);
+    void calendar.refetchEvents();
+    // Reparenting detaches and reconnects the element mid-flight.
+    holder.append(calendar);
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    return {
+      calls,
+      events: calendar.events.map((/** @type {any} */ event) => event.id),
+      busy: calendar.hasAttribute("aria-busy"),
+    };
+  });
+  expect(outcome.calls).toBe(2);
+  expect(outcome.events).toEqual(["from-source"]);
+  expect(outcome.busy).toBe(false);
+  await page.evaluate(() => {
+    const holder = document.querySelector("calendar-view")?.parentElement;
+    if (holder && holder !== document.body) holder.remove();
+  });
+});
+
+test("slot-max 24:00 renders a full-day grid instead of an empty tree", async ({ page }) => {
+  await openDemo(page, "basic");
+  const labels = await page.evaluate(async () => {
+    const calendar = document.createElement("calendar-view");
+    calendar.setAttribute("view", "day");
+    calendar.setAttribute("date", "2026-09-03");
+    calendar.setAttribute("slot-min", "00:00");
+    calendar.setAttribute("slot-max", "24:00");
+    /** @type {any} */ (calendar).events = [];
+    document.body.append(calendar);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const count = calendar.querySelectorAll(".cv-axis-label").length;
+    calendar.remove();
+    return count;
+  });
+  expect(labels).toBeGreaterThan(0);
+});
+
+test("an inverted slot range falls back to the defaults", async ({ page }) => {
+  await openDemo(page, "basic");
+  const counts = await page.evaluate(async () => {
+    /** @param {string} min @param {string} max */
+    const render = async (min, max) => {
+      const calendar = document.createElement("calendar-view");
+      calendar.setAttribute("view", "day");
+      calendar.setAttribute("date", "2026-09-03");
+      calendar.setAttribute("slot-min", min);
+      calendar.setAttribute("slot-max", max);
+      /** @type {any} */ (calendar).events = [];
+      document.body.append(calendar);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const count = calendar.querySelectorAll(".cv-axis-label").length;
+      calendar.remove();
+      return count;
+    };
+    return { inverted: await render("18:00", "08:00"), defaults: await render("08:00", "18:00") };
+  });
+  expect(counts.inverted).toBe(counts.defaults);
+  expect(counts.defaults).toBeGreaterThan(0);
+});
+
+test("a malformed date attribute falls back instead of throwing", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(async () => {
+    const calendar = document.createElement("calendar-view");
+    calendar.setAttribute("view", "day");
+    calendar.setAttribute("date", "nope");
+    /** @type {any} */ (calendar).events = [];
+    document.body.append(calendar);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const result = {
+      hasGrid: calendar.querySelector(".cv-scroller") != null,
+      ctor: calendar.constructor.name,
+      dateType: typeof (/** @type {any} */ (calendar).date),
+      date: /** @type {any} */ (calendar).date?.toString() ?? null,
+    };
+    calendar.remove();
+    return result;
+  });
+  expect(outcome.hasGrid).toBe(true);
+  expect(outcome.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(outcome.ctor).toBe("CalendarViewElement");
+});

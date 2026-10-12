@@ -270,6 +270,14 @@ calendar.scrollToTime("10:00")
 `gotoDate()` returns the source reload it triggered, so callers that must
 act on the loaded state can await a single load instead of firing a second
 one. Ignoring the return keeps the previous fire-and-forget behavior.
+`prev()`, `next()` and `today()` return the same promise, so every navigator
+can be awaited uniformly.
+
+A malformed `date` attribute (`date="nope"`) does not throw inside the
+render frame: the anchor falls back to today in the configured zone and the
+element warns once, keeping the last rendered tree readable. Likewise an
+invalid `slot-min`/`slot-max` string falls back to its default, and a span
+that would end at or before its start resets both bounds to the defaults.
 
 `scrollToTime()` is charitable before the first render: a call made while
 the grid does not exist yet (typical page-init order) is recorded and
@@ -495,7 +503,8 @@ The policy gates before a gesture (no resize handle, no drag or
 selection start — a refused keyboard operation announces its reason when
 it has one) and re-validates the destination only when the snapped
 target changes, painting the existing invalid ghost and `data-reason`.
-A refused drop commits nothing and dispatches nothing. For external
+A refused drop commits nothing and dispatches nothing. A refused month
+day-cell selection likewise dispatches no `calendar:select`. For external
 drops the chain is structural validity, then the global policy, then the
 source-specific `validate` — the first refusal wins. Without a
 configured policy nothing changes.
@@ -535,6 +544,17 @@ calendar.resizeEvent(id, { start, end })
 ```
 
 The server/application remains source of truth. Applications may attach an opaque `extendedProps.revision` to reconcile optimistic updates with realtime echoes.
+
+`updateEvent(event)` **merges** the normalized payload over the stored event:
+a key the payload omits keeps its previous value, while an explicit `null`
+(or `undefined`) clears it. So a server echo that removes a lock
+(`editable: null`) or a resource (`resourceId: null`) is reflected, and a
+partial echo that only carries `title` leaves `resourceId`, `editable` and
+the rest untouched. `moveEvent(id, { resourceId: null })` detaches an event
+from its resource the same way; omitting `resourceId` keeps it. An inverted
+range (`end` before `start`) is refused: `normalizeEvent` throws for
+`addEvent`/`updateEvent`, and `moveEvent`/`resizeEvent` return `null` without
+publishing optimistic state.
 
 ## External placement (drag from application-owned sources)
 

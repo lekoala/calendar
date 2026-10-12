@@ -28,7 +28,7 @@ import { Temporal } from "temporal-polyfill";
  * @property {string} [title]
  * @property {unknown} [start]
  * @property {unknown} [end]
- * @property {string | null} [resourceId]
+ * @property {string | number | null} [resourceId]
  * @property {boolean} [allDay]
  * @property {boolean} [editable]
  * @property {boolean} [movable]
@@ -91,6 +91,38 @@ export function normalizeRangeBound(value, allDay) {
 }
 
 /**
+ * Canonical `resourceId`: `null` when unset, otherwise a string. Resource ids
+ * and event resource references are stringified here so a numeric SQL id does
+ * not silently detach its event from the matching resource column.
+ *
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function normalizeResourceId(value) {
+  return value == null ? null : String(value);
+}
+
+/**
+ * True when a canonical `[start, end)` range is inverted (`end < start`).
+ * Timed and civil bounds are compared with their own `Temporal` relation;
+ * equal-length and mixed-type pairs are never inverted (mixed types are
+ * already rejected by `normalizeRangeBound`).
+ *
+ * @param {unknown} start
+ * @param {unknown} end
+ * @returns {boolean}
+ */
+export function isInvertedRange(start, end) {
+  if (start instanceof Temporal.ZonedDateTime && end instanceof Temporal.ZonedDateTime) {
+    return Temporal.ZonedDateTime.compare(end, start) < 0;
+  }
+  if (start instanceof Temporal.PlainDate && end instanceof Temporal.PlainDate) {
+    return Temporal.PlainDate.compare(end, start) < 0;
+  }
+  return false;
+}
+
+/**
  * @param {EventInput} event
  * @returns {NormalizedEvent}
  */
@@ -98,7 +130,16 @@ export function normalizeEvent(event) {
   if (!event || event.id == null || event.start == null || event.end == null) {
     throw new TypeError("Event requires id, start and end");
   }
-  const { classNames, extendedProps, start, end, allDay = false, ...rest } = event;
+  const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = event;
+  const normalizedStart = /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (
+    normalizeRangeBound(start, allDay)
+  );
+  const normalizedEnd = /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (
+    normalizeRangeBound(end, allDay)
+  );
+  if (isInvertedRange(normalizedStart, normalizedEnd)) {
+    throw new TypeError("Event end must not precede start");
+  }
   // No `editable` default here on purpose: an injected `true` would outrank
   // `configure({ editable: false })` in `isMovable`/`isResizable`, which
   // resolve the event flags *then* the calendar default. An event that omits
@@ -106,9 +147,12 @@ export function normalizeEvent(event) {
   return /** @type {NormalizedEvent} */ ({
     ...rest,
     id: String(event.id),
+    // Present only when the input carried it, so `updateEvent`'s merge keeps
+    // an omitted `resourceId` and an explicit `null` clears it.
+    ...(resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) }),
     allDay,
-    start: /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (normalizeRangeBound(start, allDay)),
-    end: /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (normalizeRangeBound(end, allDay)),
+    start: normalizedStart,
+    end: normalizedEnd,
     classNames: Array.from(classNames ?? []),
     extendedProps: { ...(extendedProps ?? {}) },
   });
@@ -244,7 +288,7 @@ export function normalizeResourceGroup(resourceGroup) {
  * @property {unknown} [id]
  * @property {unknown} [start]
  * @property {unknown} [end]
- * @property {string} [resourceId]
+ * @property {string | number | null} [resourceId]
  * @property {boolean} [allDay]
  * @property {string[]} [classNames]
  * @property {Record<string, unknown>} [extendedProps]
@@ -258,13 +302,23 @@ export function normalizeBackground(background) {
   if (!background || background.id == null || background.start == null || background.end == null) {
     throw new TypeError("Background requires id, start and end");
   }
-  const { classNames, extendedProps, start, end, allDay = false, ...rest } = background;
+  const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = background;
+  const normalizedStart = /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (
+    normalizeRangeBound(start, allDay)
+  );
+  const normalizedEnd = /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (
+    normalizeRangeBound(end, allDay)
+  );
+  if (isInvertedRange(normalizedStart, normalizedEnd)) {
+    throw new TypeError("Background end must not precede start");
+  }
   return /** @type {NormalizedBackground} */ ({
     ...rest,
     id: String(background.id),
+    ...(resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) }),
     allDay,
-    start: /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (normalizeRangeBound(start, allDay)),
-    end: /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (normalizeRangeBound(end, allDay)),
+    start: normalizedStart,
+    end: normalizedEnd,
     classNames: Array.from(classNames ?? []),
     extendedProps: { ...(extendedProps ?? {}) },
   });

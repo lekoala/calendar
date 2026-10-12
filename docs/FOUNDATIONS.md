@@ -29,7 +29,9 @@ Use:
 - `PlainDate` — navigation/date cells and the boundaries of `allDay`
   events/backgrounds (one canonical boundary type per `allDay` flag, both
   half-open `[start, end)`);
-- `PlainTime` — slot boundaries (exclusive day end, not `24:00` as a `PlainTime`);
+- `PlainTime` — slot boundaries. A `PlainTime` cannot hold `24:00`, so the
+  `slot-max` attribute accepts `24:00` as an explicit alias for the exclusive
+  end of a full day (1440 minutes), letting a grid span `00:00`–`24:00`;
 - `Duration` — event/slot duration, including `snapDuration` and `defaultTimedEventDuration`;
 - `ZonedDateTime` — real scheduled items in a named timezone;
 - `Instant` — absolute instants when needed.

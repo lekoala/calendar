@@ -51,7 +51,8 @@
             },
             {
               "kind": "getter",
-              "name": "date"
+              "name": "date",
+              "description": "Anchor date as a `Temporal.PlainDate`."
             },
             {
               "kind": "setter",

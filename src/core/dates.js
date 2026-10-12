@@ -309,8 +309,50 @@ export function parseClock(value) {
  * @returns {number}
  */
 export function minutesFromMidnight(value) {
+  // `Temporal.PlainTime` cannot represent 24:00, so the exclusive end of a
+  // full-day grid arrives as one of those string aliases. They mean the day's
+  // final minute boundary, 1440, which `formatSlotLabel` already renders as a
+  // legacy 24h edge.
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "24:00" || trimmed === "24:00:00") return 1440;
+  }
   const time = value instanceof Temporal.PlainTime ? value : parseClock(value);
   return time.hour * 60 + time.minute + time.second / 60;
+}
+
+/**
+ * Validate the `slot-min`/`slot-max` pair into a usable ordered span. Each
+ * malformed bound falls back to its default independently; a span that ends
+ * at or before its start falls back to both defaults, so the axis is never
+ * zero-height or inverted.
+ *
+ * @param {string} min raw `slot-min` value
+ * @param {string} max raw `slot-max` value
+ * @param {{ slotMin: string, slotMax: string }} defaults
+ * @returns {{ slotMin: string, slotMax: string }}
+ */
+export function resolveSlotBounds(min, max, defaults) {
+  const start = /^\s*$/.test(min) ? Number.NaN : parseMinutesOrNaN(min);
+  const end = /^\s*$/.test(max) ? Number.NaN : parseMinutesOrNaN(max);
+  const safeStart = Number.isFinite(start) ? min : defaults.slotMin;
+  const safeEnd = Number.isFinite(end) ? max : defaults.slotMax;
+  if (minutesFromMidnight(safeEnd) <= minutesFromMidnight(safeStart)) {
+    return { slotMin: defaults.slotMin, slotMax: defaults.slotMax };
+  }
+  return { slotMin: safeStart, slotMax: safeEnd };
+}
+
+/**
+ * @param {string} value
+ * @returns {number}
+ */
+function parseMinutesOrNaN(value) {
+  try {
+    return minutesFromMidnight(value);
+  } catch {
+    return Number.NaN;
+  }
 }
 
 /**

@@ -184,6 +184,10 @@ export declare class CalendarViewElement extends HTMLElement {
     /** @param {string} value */
     set view(value: string);
     /**
+     * Anchor date as a `Temporal.PlainDate`. A malformed `date` attribute falls
+     * back to today in the configured zone and warns once instead of throwing
+     * inside the render frame and leaving a stale tree behind.
+     *
      * @returns {Temporal.PlainDate}
      */
     get date(): Temporal.PlainDate;
@@ -220,9 +224,18 @@ export declare class CalendarViewElement extends HTMLElement {
         start: Temporal.PlainDate;
         end: Temporal.PlainDate;
     };
-    prev(): void;
-    next(): void;
-    today(): void;
+    /**
+     * @returns {Promise<void>} the source reload `gotoDate` triggered, like `gotoDate`
+     */
+    prev(): Promise<void>;
+    /**
+     * @returns {Promise<void>} the source reload `gotoDate` triggered, like `gotoDate`
+     */
+    next(): Promise<void>;
+    /**
+     * @returns {Promise<void>} the source reload `gotoDate` triggered, like `gotoDate`
+     */
+    today(): Promise<void>;
     /**
      * Scrolls the time-grid body so `value` sits at the top of the viewport.
      * Charitable before the first render: a call during page init — before any
@@ -388,13 +401,13 @@ export declare class CalendarViewElement extends HTMLElement {
      * one contract.
      *
      * @param {string | number} id
-     * @param {{ start?: unknown, end?: unknown, resourceId?: string | null }} current
+     * @param {{ start?: unknown, end?: unknown, resourceId?: string | number | null }} current
      * @returns {import("./core/model.js").NormalizedEvent | null}
      */
     moveEvent(id: string | number, current: {
         start?: unknown;
         end?: unknown;
-        resourceId?: string | null;
+        resourceId?: string | number | null;
     }): import("./core/model.js").NormalizedEvent | null;
     /**
      * Non-pointer equivalent of resizing an event. Runs the same optimistic
