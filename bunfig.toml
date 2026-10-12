@@ -1,0 +1,6 @@
+# Bun test discovery. The Playwright suites under test/browser, test/dist and
+# test/showcase define their own `test()` and need the Playwright runner, so a
+# bare `bun test` must not collect them. `bun run test` scopes to test/core and
+# test/sync explicitly; this keeps the unscoped command equivalent.
+[test]
+pathIgnorePatterns = ["test/browser/**", "test/dist/**", "test/showcase/**"]
