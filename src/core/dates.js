@@ -377,6 +377,11 @@ export function durationMinutes(duration) {
 }
 
 /**
+ * Zoned instant for a wall-clock offset into `date`. A boundary can be the
+ * exclusive end of day (`1440` for `24:00`), which `Temporal.PlainTime` cannot
+ * hold: whole days roll into the civil date, so `1440` becomes the next
+ * midnight instead of being constrained to `23:00` by `PlainTime.from`.
+ *
  * @param {Temporal.PlainDate | string} date
  * @param {number} minutes
  * @param {string} timeZone
@@ -384,8 +389,10 @@ export function durationMinutes(duration) {
  */
 export function zonedDateTimeAt(date, minutes, timeZone) {
   const day = toPlainDate(date);
-  const time = Temporal.PlainTime.from({ hour: Math.floor(minutes / 60), minute: Math.floor(minutes % 60) });
-  return day.toPlainDateTime(time).toZonedDateTime(timeZone);
+  const days = Math.floor(minutes / 1440);
+  const rest = minutes - days * 1440;
+  const time = Temporal.PlainTime.from({ hour: Math.floor(rest / 60), minute: Math.floor(rest % 60) });
+  return day.add({ days }).toPlainDateTime(time).toZonedDateTime(timeZone);
 }
 
 /**

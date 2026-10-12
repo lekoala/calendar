@@ -3939,8 +3939,10 @@
   }
   function zonedDateTimeAt(date, minutes, timeZone) {
     const day = toPlainDate(date);
-    const time = Temporal2.PlainTime.from({ hour: Math.floor(minutes / 60), minute: Math.floor(minutes % 60) });
-    return day.toPlainDateTime(time).toZonedDateTime(timeZone);
+    const days = Math.floor(minutes / 1440);
+    const rest = minutes - days * 1440;
+    const time = Temporal2.PlainTime.from({ hour: Math.floor(rest / 60), minute: Math.floor(rest % 60) });
+    return day.add({ days }).toPlainDateTime(time).toZonedDateTime(timeZone);
   }
   function formatClock(minutes) {
     const clamped = Math.max(0, minutes);
@@ -6808,7 +6810,7 @@
       if (index < 0)
         return this.addEvent(event);
       const current = this.#events[index];
-      const allDay = event.allDay === undefined ? current.allDay === true : event.allDay === true;
+      const allDay = "allDay" in event ? event.allDay === true : current.allDay === true;
       const normalized = normalizeEvent({
         ...event,
         id,

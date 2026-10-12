@@ -175,6 +175,11 @@ export declare function resolveSlotBounds(min: string, max: string, defaults: {
  */
 export declare function durationMinutes(duration: Temporal.Duration | Parameters<typeof Temporal.Duration.from>[0]): number;
 /**
+ * Zoned instant for a wall-clock offset into `date`. A boundary can be the
+ * exclusive end of day (`1440` for `24:00`), which `Temporal.PlainTime` cannot
+ * hold: whole days roll into the civil date, so `1440` becomes the next
+ * midnight instead of being constrained to `23:00` by `PlainTime.from`.
+ *
  * @param {Temporal.PlainDate | string} date
  * @param {number} minutes
  * @param {string} timeZone

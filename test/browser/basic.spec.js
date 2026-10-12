@@ -214,6 +214,42 @@ test("clicking an empty slot selects a snapped default-duration range", async ({
   expect(selection.cancelable).toBe(true);
 });
 
+test("a click at the end of a 24:00 grid selects a non-inverted range", async ({ page, isMobile }) => {
+  // The full-day grid is taller than a 390px touch viewport: the last hour is
+  // not reliably reachable by pointer. The boundary itself is covered by the
+  // `zonedDateTimeAt` unit test; chromium/webkit cover the wiring.
+  test.skip(Boolean(isMobile), "full-day grid end is out of reach in the mobile viewport");
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.setAttribute("slot-min", "00:00");
+    calendar.setAttribute("slot-max", "24:00");
+    calendar.setView("day");
+    calendar.gotoDate("2026-09-03");
+  });
+  await flushRender(page);
+  await flushRender(page);
+  // The full-day grid is taller than the scroller, so bring its end into view
+  // before clicking: the click must land inside the last hour of the day.
+  const point = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const scroller = /** @type {HTMLElement} */ (calendar.querySelector(".cv-scroller"));
+    scroller.scrollTop = scroller.scrollHeight;
+    const body = /** @type {HTMLElement} */ (calendar.querySelector(".cv-day-body"));
+    const rect = body.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.bottom - 4 };
+  });
+  await trackSelections(page);
+  await page.mouse.click(point.x, point.y);
+  await expect.poll(() => selectionCount(page)).toBe(1);
+  const [selection] = await readSelections(page);
+  // The 24:00 end is the exclusive end of day: it must resolve to the next
+  // midnight, never a same-day 23:00 that would invert the range.
+  expect(selection.start).toContain("2026-09-03T23");
+  expect(selection.end).toContain("2026-09-04T00:00");
+  expect(selection.start < selection.end).toBe(true);
+});
+
 test("dragging selects a snapped range without a residual click selection", async ({ page }) => {
   await openDemo(page, "basic");
   await trackSelections(page);
@@ -1025,6 +1061,34 @@ test("updateEvent preserves all-day state when the range is omitted", async ({ p
     start: "2026-09-03",
     end: "2026-09-04",
   });
+});
+
+test("updateEvent clears allDay when the key is present as undefined", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.addEvent({
+      id: "civil",
+      title: "Civil",
+      allDay: true,
+      start: "2026-09-03",
+      end: "2026-09-04",
+    });
+    // A present `allDay: undefined` clears to timed, so zoned bounds are valid
+    // instead of tripping the civil-boundary guard.
+    calendar.updateEvent({
+      id: "civil",
+      title: "Timed",
+      allDay: undefined,
+      start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+    });
+    const event = calendar.getEventById("civil");
+    return { allDay: event.allDay, start: String(event.start), end: String(event.end) };
+  });
+  expect(outcome.allDay).toBe(false);
+  expect(outcome.start).toContain("2026-09-03T09:00");
+  expect(outcome.end).toContain("2026-09-03T10:00");
 });
 
 test("moveEvent can detach a resource with an explicit null", async ({ page }) => {

@@ -14,6 +14,11 @@
 * `slot-max="24:00"` renders a full-day grid instead of an empty component:
   `24:00` and `24:00:00` are accepted as the exclusive end of day (1440
   minutes), which `Temporal.PlainTime` cannot hold itself.
+* The `24:00` boundary no longer collapses to `23:00`: `zonedDateTimeAt` rolls
+  whole days into the civil date, so selecting, dragging or resizing up to the
+  exclusive end of a full-day grid produces the next midnight instead of an
+  inverted range. This fixes interactions (selection, drag, resize, preview,
+  external drop), not only the axis label.
 * Inverted ranges are rejected consistently: `normalizeEvent` and
   `normalizeBackground` throw when `end` precedes `start` (civil or timed),
   and `moveEvent`/`resizeEvent` return `null` without publishing optimistic
@@ -29,7 +34,9 @@
   while an explicit `null`/`undefined` clears it. `start`, `end` and `allDay`
   fall back to the stored event when omitted, so a partial echo needs no range,
   survives a round trip without resetting `classNames`/`extendedProps`, and
-  never flips a civil event to timed. `moveEvent(id, { resourceId: null })`
+  never flips a civil event to timed. `allDay` is distinguished by key
+  presence: an explicit `allDay: undefined`/`null` clears a civil event to
+  timed, while an absent key preserves it. `moveEvent(id, { resourceId: null })`
   detaches an event from its resource instead of keeping it through `??`.
 * Invalid attributes fall back instead of throwing inside the render frame: a
   malformed `date` anchors on today in the configured zone with a one-time

@@ -991,7 +991,11 @@ export class CalendarViewElement extends HTMLElement {
     const index = this.#events.findIndex((item) => item.id === id);
     if (index < 0) return this.addEvent(event);
     const current = this.#events[index];
-    const allDay = event.allDay === undefined ? current.allDay === true : event.allDay === true;
+    // Presence, not value: an explicit `allDay: undefined`/`null` clears to
+    // timed (normalization defaults to `false`), while an absent key keeps the
+    // stored state. `start`/`end` fall back when absent or `undefined`, since a
+    // cleared boundary has no meaningful normalization.
+    const allDay = "allDay" in event ? event.allDay === true : current.allDay === true;
     const normalized = normalizeEvent({
       ...event,
       id,

@@ -550,9 +550,10 @@ payload omits keeps its previous value, while a key it provides — including an
 explicit `null` or `undefined` — replaces or clears it. So a partial echo that
 only carries `title` leaves `resourceId`, `editable`, `classNames`,
 `extendedProps` and the rest untouched, and a server echo that removes a lock
-(`editable: null`) or a resource (`resourceId: null`) is reflected. `start`,
-`end` and `allDay` fall back to the stored event when omitted, so a partial
-payload needs no range and never flips a civil event to timed; a payload that
+(`editable: null`) or a resource (`resourceId: null`) is reflected. `allDay`
+is honored whenever the key is present, so `allDay: undefined` clears a civil
+event back to timed; `start`/`end` fall back to the stored event when absent or
+`undefined`. A partial payload therefore needs no range, and a payload that
 changes `allDay` must carry matching `start`/`end`. `moveEvent(id, {
 resourceId: null })` detaches an event from its resource the same way;
 omitting `resourceId` keeps it. An inverted range (`end` before `start`) is
