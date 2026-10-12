@@ -2,6 +2,19 @@
 
 The calendar is interaction- and geometry-heavy. A DOM unit-test environment alone is not sufficient.
 
+## Running the suites
+
+```bash
+bun run check            # syntax, Biome, tsc, unit tests (test/core + test/sync)
+bun run test:browser     # Playwright, Chromium
+bun run test:browser:all # Playwright, Chromium + Firefox + WebKit + mobile
+```
+
+`bun run test` scopes to `test/core` and `test/sync`; a bare `bun test` is
+equivalent because `bunfig.toml` excludes the Playwright suites (`test/browser`,
+`test/dist`, `test/showcase`) from Bun's discovery — they call Playwright's own
+`test()` and only run under the Playwright runner.
+
 ## Test layers
 
 ### 1. Pure unit tests

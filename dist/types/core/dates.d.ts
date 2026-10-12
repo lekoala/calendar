@@ -1,4 +1,13 @@
 import { Temporal } from "temporal-polyfill";
+/**
+ * Whether `view` names a view the element can render. `month` is a first-class
+ * view without time/date derivation of its own, so it is not in `VIEW_DEFS`;
+ * this predicate is the single source of truth for known view names.
+ *
+ * @param {string} view
+ * @returns {boolean}
+ */
+export declare function isKnownView(view: string): boolean;
 export type DateDerivationOptions = {
     /**
      * first weekday of a civil week, ISO 1-7 (default 1, Monday)

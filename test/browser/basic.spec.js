@@ -947,22 +947,84 @@ test("updateEvent merges: omitted keys survive, explicit null clears", async ({ 
       start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
       end: "2026-09-03T09:30:00+02:00[Europe/Brussels]",
     };
-    calendar.updateEvent({ id: "a", title: "A", resourceId: "room-a", editable: false, ...range });
-    // Partial echo: only the title changes, the lock and resource survive.
-    calendar.updateEvent({ id: "a", title: "Renamed", ...range });
+    calendar.updateEvent({
+      id: "a",
+      title: "A",
+      resourceId: "room-a",
+      editable: false,
+      classNames: ["hot"],
+      extendedProps: { ref: 42 },
+      ...range,
+    });
+    // Partial echo with no range: only the title changes, everything else
+    // survives — including the metadata arrays normalization would default.
+    calendar.updateEvent({ id: "a", title: "Renamed" });
     const afterPartial = calendar.getEventById("a");
     const partial = {
       title: afterPartial.title,
       resourceId: afterPartial.resourceId,
       editable: afterPartial.editable,
+      classNames: afterPartial.classNames,
+      extendedProps: afterPartial.extendedProps,
+      start: String(afterPartial.start),
     };
-    // Server removes the lock and the resource.
-    calendar.updateEvent({ id: "a", title: "Renamed", resourceId: null, editable: null, ...range });
+    // Server removes the lock and the resource; classNames is replaced explicitly.
+    calendar.updateEvent({ id: "a", resourceId: null, editable: null, classNames: [] });
     const afterClear = calendar.getEventById("a");
-    return { partial, cleared: { resourceId: afterClear.resourceId, editable: afterClear.editable } };
+    return {
+      partial,
+      cleared: {
+        title: afterClear.title,
+        resourceId: afterClear.resourceId,
+        editable: afterClear.editable,
+        classNames: afterClear.classNames,
+      },
+    };
   });
-  expect(outcome.partial).toEqual({ title: "Renamed", resourceId: "room-a", editable: false });
-  expect(outcome.cleared).toEqual({ resourceId: null, editable: null });
+  expect(outcome.partial).toEqual({
+    title: "Renamed",
+    resourceId: "room-a",
+    editable: false,
+    classNames: ["hot"],
+    extendedProps: { ref: 42 },
+    start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+  });
+  expect(outcome.cleared).toEqual({
+    title: "Renamed",
+    resourceId: null,
+    editable: null,
+    classNames: [],
+  });
+});
+
+test("updateEvent preserves all-day state when the range is omitted", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.addEvent({
+      id: "civil",
+      title: "Civil",
+      allDay: true,
+      start: "2026-09-03",
+      end: "2026-09-04",
+    });
+    // No allDay/start/end in the payload: the civil event must not be flipped
+    // to a timed one (which the strict boundary normalization would reject).
+    calendar.updateEvent({ id: "civil", title: "Renamed civil" });
+    const event = calendar.getEventById("civil");
+    return {
+      title: event.title,
+      allDay: event.allDay,
+      start: String(event.start),
+      end: String(event.end),
+    };
+  });
+  expect(outcome).toEqual({
+    title: "Renamed civil",
+    allDay: true,
+    start: "2026-09-03",
+    end: "2026-09-04",
+  });
 });
 
 test("moveEvent can detach a resource with an explicit null", async ({ page }) => {

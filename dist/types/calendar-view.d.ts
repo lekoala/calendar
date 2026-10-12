@@ -427,6 +427,12 @@ export declare class CalendarViewElement extends HTMLElement {
      */
     addEvent(event: import("./core/model.js").EventInput): import("./core/model.js").NormalizedEvent;
     /**
+     * Merge an update over the stored event. A field the payload omits keeps its
+     * previous value; a field it provides — including an explicit `null` or
+     * `undefined` — replaces or clears it. The range and `allDay` fall back to
+     * the stored event when omitted, so a partial echo neither throws on a
+     * missing range nor flips a civil event to timed.
+     *
      * @param {import("./core/model.js").EventInput} event
      * @returns {import("./core/model.js").NormalizedEvent}
      */

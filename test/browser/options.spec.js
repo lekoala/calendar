@@ -495,6 +495,50 @@ test("moving the element during a load restarts the aborted request", async ({ p
   });
 });
 
+test("repeated reconnects during a load keep reloading until it settles", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    let calls = 0;
+    calendar.configure({
+      eventSource: () => {
+        calls += 1;
+        return new Promise((resolve) =>
+          window.setTimeout(
+            () =>
+              resolve([
+                {
+                  id: "from-source",
+                  title: "From source",
+                  start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+                  end: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+                },
+              ]),
+            100,
+          ),
+        );
+      },
+    });
+    const holder = document.createElement("div");
+    document.body.append(holder);
+    void calendar.refetchEvents();
+    // Two moves in a row: each detach aborts and arms a reconnect, each
+    // reconnect restarts, and the final request is the one that settles.
+    calendar.remove();
+    holder.append(calendar);
+    document.body.append(calendar);
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    return {
+      calls,
+      events: calendar.events.map((/** @type {any} */ event) => event.id),
+      busy: calendar.hasAttribute("aria-busy"),
+    };
+  });
+  expect(outcome.calls).toBe(3);
+  expect(outcome.events).toEqual(["from-source"]);
+  expect(outcome.busy).toBe(false);
+});
+
 test("slot-max 24:00 renders a full-day grid instead of an empty tree", async ({ page }) => {
   await openDemo(page, "basic");
   const labels = await page.evaluate(async () => {

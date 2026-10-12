@@ -545,16 +545,19 @@ calendar.resizeEvent(id, { start, end })
 
 The server/application remains source of truth. Applications may attach an opaque `extendedProps.revision` to reconcile optimistic updates with realtime echoes.
 
-`updateEvent(event)` **merges** the normalized payload over the stored event:
-a key the payload omits keeps its previous value, while an explicit `null`
-(or `undefined`) clears it. So a server echo that removes a lock
-(`editable: null`) or a resource (`resourceId: null`) is reflected, and a
-partial echo that only carries `title` leaves `resourceId`, `editable` and
-the rest untouched. `moveEvent(id, { resourceId: null })` detaches an event
-from its resource the same way; omitting `resourceId` keeps it. An inverted
-range (`end` before `start`) is refused: `normalizeEvent` throws for
-`addEvent`/`updateEvent`, and `moveEvent`/`resizeEvent` return `null` without
-publishing optimistic state.
+`updateEvent(event)` **merges** the payload over the stored event: a key the
+payload omits keeps its previous value, while a key it provides — including an
+explicit `null` or `undefined` — replaces or clears it. So a partial echo that
+only carries `title` leaves `resourceId`, `editable`, `classNames`,
+`extendedProps` and the rest untouched, and a server echo that removes a lock
+(`editable: null`) or a resource (`resourceId: null`) is reflected. `start`,
+`end` and `allDay` fall back to the stored event when omitted, so a partial
+payload needs no range and never flips a civil event to timed; a payload that
+changes `allDay` must carry matching `start`/`end`. `moveEvent(id, {
+resourceId: null })` detaches an event from its resource the same way;
+omitting `resourceId` keeps it. An inverted range (`end` before `start`) is
+refused: `normalizeEvent` throws for `addEvent`/`updateEvent`, and
+`moveEvent`/`resizeEvent` return `null` without publishing optimistic state.
 
 ## External placement (drag from application-owned sources)
 
@@ -704,10 +707,16 @@ detail: {
   start,
   end,
   resourceId,
+  allDay,               // true for the month day cell (civil bounds)
   context,              // range context of the selected range (see above)
   nativeEvent,
 }
 ```
+
+Time-grid selection is timed: `start`/`end` are zoned instants and `allDay`
+is `false`. The month day cell is a whole civil day with no time geometry, so
+its selection is all-day: `start`/`end` are `Temporal.PlainDate` and `allDay`
+is `true`, matching the all-day model rather than a 24-hour timed range.
 
 ## Renderers
 

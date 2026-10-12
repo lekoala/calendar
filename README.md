@@ -151,6 +151,13 @@ The demos load the committed `dist/` build (classic bundle + stylesheet, Tempora
 
 The project is self-contained: explicit custom-element registration, source ESM, Light DOM, committed generated artifacts, browser tests for real interaction, and an `AGENTS.md` that protects the architectural invariants.
 
+Tooling is aligned with the current LeKoala component repos:
+
+- Bun 1.4.3
+- TypeScript 7.0.2 (`checkJs` + declaration emit)
+- Biome 2.5.15
+- Playwright 1.64.0
+
 ```bash
 npm install
 npm run check

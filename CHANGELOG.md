@@ -25,10 +25,12 @@
 * Moving the element while a source request is in flight restarts the aborted
   load on reconnect instead of leaving the calendar empty; the reload is
   tracked independently of the busy state.
-* `updateEvent()` merge semantics are explicit and a field can be cleared: an
-  omitted key keeps its previous value while an explicit `null`/`undefined`
-  clears it, and `moveEvent(id, { resourceId: null })` detaches an event from
-  its resource instead of keeping it through `??`.
+* `updateEvent()` is a true merge: an omitted key keeps its previous value
+  while an explicit `null`/`undefined` clears it. `start`, `end` and `allDay`
+  fall back to the stored event when omitted, so a partial echo needs no range,
+  survives a round trip without resetting `classNames`/`extendedProps`, and
+  never flips a civil event to timed. `moveEvent(id, { resourceId: null })`
+  detaches an event from its resource instead of keeping it through `??`.
 * Invalid attributes fall back instead of throwing inside the render frame: a
   malformed `date` anchors on today in the configured zone with a one-time
   warning, and a malformed or inverted `slot-min`/`slot-max` pair resets to
@@ -36,11 +38,19 @@
 
 ### Changed
 
+* Month day-cell selection is modeled as an all-day civil selection:
+  `calendar:select` now carries `allDay: true` with `Temporal.PlainDate`
+  `start`/`end` instead of a zoned 24-hour range, and `interactionPolicy`
+  receives the same all-day target. Time-grid selection stays timed.
 * `prev()`, `next()` and `today()` return the source reload they trigger, so
   every navigator can be awaited like `gotoDate()`; they previously returned
   `void`.
 * An unknown `view` name is reported once with `console.warn` instead of
   passing silently while rendering as a rolling range.
+* Tooling aligned with the sibling component repos: Bun 1.4.3,
+  Biome 2.5.15, Playwright 1.64.0 and `temporal-polyfill` 1.0.5. A
+  `bunfig.toml` excludes the Playwright suites from Bun's test discovery, so
+  a bare `bun test` runs only the unit tests.
 
 ### Notes
 

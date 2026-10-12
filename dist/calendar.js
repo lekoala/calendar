@@ -3774,6 +3774,9 @@
     list: { range: "rolling", defaultDayCount: 7 }
   };
   var WEEK_ANCHORED_VIEWS = new Set(["week"]);
+  function isKnownView(view) {
+    return view === "month" || Object.hasOwn(VIEW_DEFS, view);
+  }
   function isoWeekday(value) {
     const day = Number(value);
     if (!Number.isInteger(day) || day < 0 || day > 7)
@@ -4522,15 +4525,14 @@
           if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-month-event, .cv-month-more")) {
             return;
           }
-          const start = zonedDateTimeAt(date, 0, timeZone);
-          const range = { start, end: start.add({ days: 1 }), resourceId: null };
+          const range = { start: date, end: date.add({ days: 1 }), resourceId: null, allDay: true };
           const decision = checkInteraction?.({
             action: "select",
             event: null,
             start: range.start,
             end: range.end,
             resourceId: range.resourceId,
-            allDay: false
+            allDay: true
           }) ?? { ok: true, reason: null };
           if (!decision.ok)
             return;
@@ -4542,6 +4544,7 @@
               start: range.start,
               end: range.end,
               resourceId: range.resourceId,
+              allDay: true,
               context: getRangeContext?.(range) ?? null,
               nativeEvent
             }
@@ -6336,15 +6339,6 @@
     snapDuration: Temporal2.Duration.from({ minutes: 15 }),
     defaultTimedEventDuration: Temporal2.Duration.from({ minutes: 30 })
   };
-  var KNOWN_VIEWS = new Set([
-    "day",
-    "threeDays",
-    "week",
-    "month",
-    "resourceDay",
-    "resourceThreeDays",
-    "list"
-  ]);
   var MAX_TIMEOUT_MS = 2147483647;
   function targetDate(start, timeZone) {
     if (start instanceof Temporal2.PlainDate)
@@ -6809,13 +6803,28 @@
       return normalized;
     }
     updateEvent(event) {
-      const normalized = normalizeEvent(event);
-      const index = this.#events.findIndex((item) => item.id === normalized.id);
+      const id = String(event?.id ?? "");
+      const index = this.#events.findIndex((item) => item.id === id);
       if (index < 0)
-        return this.addEvent(normalized);
-      this.#events = this.#events.map((item, i) => i === index ? { ...this.#events[index], ...normalized } : item);
+        return this.addEvent(event);
+      const current = this.#events[index];
+      const allDay = event.allDay === undefined ? current.allDay === true : event.allDay === true;
+      const normalized = normalizeEvent({
+        ...event,
+        id,
+        allDay,
+        start: event.start === undefined ? current.start : event.start,
+        end: event.end === undefined ? current.end : event.end
+      });
+      const merged = { ...current };
+      const source = normalized;
+      for (const key of Object.keys(event))
+        merged[key] = source[key];
+      merged.id = id;
+      const next = merged;
+      this.#events = this.#events.map((item, i) => i === index ? next : item);
       this.#queueRender();
-      return this.#events[index];
+      return next;
     }
     removeEvent(id) {
       const key = String(id);
@@ -7097,7 +7106,7 @@
     #render() {
       this.#externalDropTarget?.clear();
       this.#externalDropTarget = null;
-      if (!KNOWN_VIEWS.has(this.view) && this.#warnedView !== this.view) {
+      if (!isKnownView(this.view) && this.#warnedView !== this.view) {
         this.#warnedView = this.view;
         console.warn(`calendar-view: unknown view "${this.view}", rendering as a rolling range`);
       }

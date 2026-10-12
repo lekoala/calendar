@@ -175,7 +175,8 @@
             },
             {
               "kind": "method",
-              "name": "updateEvent"
+              "name": "updateEvent",
+              "description": "Merge an update over the stored event."
             },
             {
               "kind": "method",

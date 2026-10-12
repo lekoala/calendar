@@ -3,6 +3,7 @@ import {
   getMonthWeeks,
   getViewRange,
   getVisibleDates,
+  isKnownView,
   isResourceView,
   minutesFromMidnight,
   resolveLocale,
@@ -119,23 +120,6 @@ const DEFAULTS = {
   snapDuration: Temporal.Duration.from({ minutes: 15 }),
   defaultTimedEventDuration: Temporal.Duration.from({ minutes: 30 }),
 };
-
-/**
- * View names the element knows how to render. Anything else still renders
- * (date derivation tolerates it as a rolling range) but is reported once so a
- * typo does not pass silently.
- *
- * @type {Set<string>}
- */
-const KNOWN_VIEWS = new Set([
-  "day",
-  "threeDays",
-  "week",
-  "month",
-  "resourceDay",
-  "resourceThreeDays",
-  "list",
-]);
 
 // Largest delay a `setTimeout` accepts; aging boundaries beyond it simply
 // re-arm on the next render instead of overflowing.
@@ -993,18 +977,39 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Merge an update over the stored event. A field the payload omits keeps its
+   * previous value; a field it provides — including an explicit `null` or
+   * `undefined` — replaces or clears it. The range and `allDay` fall back to
+   * the stored event when omitted, so a partial echo neither throws on a
+   * missing range nor flips a civil event to timed.
+   *
    * @param {import("./core/model.js").EventInput} event
    * @returns {import("./core/model.js").NormalizedEvent}
    */
   updateEvent(event) {
-    const normalized = normalizeEvent(event);
-    const index = this.#events.findIndex((item) => item.id === normalized.id);
-    if (index < 0) return this.addEvent(normalized);
-    this.#events = this.#events.map((item, i) =>
-      i === index ? { ...this.#events[index], ...normalized } : item,
-    );
+    const id = String(event?.id ?? "");
+    const index = this.#events.findIndex((item) => item.id === id);
+    if (index < 0) return this.addEvent(event);
+    const current = this.#events[index];
+    const allDay = event.allDay === undefined ? current.allDay === true : event.allDay === true;
+    const normalized = normalizeEvent({
+      ...event,
+      id,
+      allDay,
+      start: event.start === undefined ? current.start : event.start,
+      end: event.end === undefined ? current.end : event.end,
+    });
+    // Overlay only the keys the caller actually provided, so `classNames`,
+    // `extendedProps` and opaque application metadata survive a partial echo
+    // instead of being reset to their normalization defaults.
+    const merged = /** @type {Record<string, unknown>} */ ({ ...current });
+    const source = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (normalized));
+    for (const key of Object.keys(event)) merged[key] = source[key];
+    merged.id = id;
+    const next = /** @type {import("./core/model.js").NormalizedEvent} */ (merged);
+    this.#events = this.#events.map((item, i) => (i === index ? next : item));
     this.#queueRender();
-    return this.#events[index];
+    return next;
   }
 
   /**
@@ -1396,7 +1401,7 @@ export class CalendarViewElement extends HTMLElement {
   #render() {
     this.#externalDropTarget?.clear();
     this.#externalDropTarget = null;
-    if (!KNOWN_VIEWS.has(this.view) && this.#warnedView !== this.view) {
+    if (!isKnownView(this.view) && this.#warnedView !== this.view) {
       this.#warnedView = this.view;
       console.warn(`calendar-view: unknown view "${this.view}", rendering as a rolling range`);
     }

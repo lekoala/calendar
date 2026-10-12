@@ -119,6 +119,7 @@ test("empty month day click selects the civil day", async ({ page }) => {
           start: String(detail.start),
           end: String(detail.end),
           resourceId: detail.resourceId,
+          allDay: detail.allDay,
         };
       },
     );
@@ -128,8 +129,10 @@ test("empty month day click selects the civil day", async ({ page }) => {
   await page.locator('[data-date="2026-09-05"]').click();
   await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).__select)).not.toBeNull();
   const selection = await page.evaluate(() => /** @type {any} */ (window).__select);
-  expect(selection.start).toContain("2026-09-05T00:00:00+02:00");
-  expect(selection.end).toContain("2026-09-06T00:00:00+02:00");
+  // Month has no time geometry: the selection is a civil all-day range.
+  expect(selection.start).toBe("2026-09-05");
+  expect(selection.end).toBe("2026-09-06");
+  expect(selection.allDay).toBe(true);
   expect(selection.resourceId).toBeNull();
 });
 

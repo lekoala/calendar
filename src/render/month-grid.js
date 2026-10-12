@@ -1,5 +1,4 @@
 import { Temporal } from "temporal-polyfill";
-import { zonedDateTimeAt } from "../core/dates.js";
 import { DEFAULT_LABELS, formatLabel } from "../core/labels.js";
 import { describeEvent, eventOverlapsDate, instantRangeOf } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
@@ -146,8 +145,10 @@ export function renderMonthGrid({
         cell.append(more);
       }
 
-      // Empty-cell click selects the civil day; chips and the `+n more`
-      // button carry their own intent and must not fall through to it.
+      // Empty-cell click selects the civil day as an all-day range; chips and
+      // the `+n more` button carry their own intent and must not fall through
+      // to it. Month has no time geometry, so the selection is civil
+      // (`Temporal.PlainDate`, `allDay: true`) rather than a zoned midnight.
       cell.addEventListener("click", (nativeEvent) => {
         if (
           nativeEvent.target instanceof Element &&
@@ -155,8 +156,7 @@ export function renderMonthGrid({
         ) {
           return;
         }
-        const start = zonedDateTimeAt(date, 0, timeZone);
-        const range = { start, end: start.add({ days: 1 }), resourceId: null };
+        const range = { start: date, end: date.add({ days: 1 }), resourceId: null, allDay: true };
         // Same policy contract as the time grid: a refused selection neither
         // dispatches nor paints a ghost.
         const decision = checkInteraction?.({
@@ -165,7 +165,7 @@ export function renderMonthGrid({
           start: range.start,
           end: range.end,
           resourceId: range.resourceId,
-          allDay: false,
+          allDay: true,
         }) ?? { ok: true, reason: null };
         if (!decision.ok) return;
         cell.dispatchEvent(
@@ -177,6 +177,7 @@ export function renderMonthGrid({
               start: range.start,
               end: range.end,
               resourceId: range.resourceId,
+              allDay: true,
               context: getRangeContext?.(range) ?? null,
               nativeEvent,
             },
