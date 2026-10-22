@@ -372,8 +372,12 @@ export function durationMinutes(duration) {
  */
 export function zonedDateTimeAt(date, minutes, timeZone) {
   const day = toPlainDate(date);
-  const time = Temporal.PlainTime.from({ hour: Math.floor(minutes / 60), minute: Math.floor(minutes % 60) });
-  return day.toPlainDateTime(time).toZonedDateTime(timeZone);
+  // Add on the civil timeline before resolving the zone: 1440 is tomorrow's
+  // midnight even on a 23- or 25-hour day, never a constrained PlainTime.
+  return day
+    .toPlainDateTime("00:00")
+    .add({ milliseconds: Math.round(minutes * 60000) })
+    .toZonedDateTime(timeZone);
 }
 
 /**

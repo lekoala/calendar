@@ -10,7 +10,7 @@
 </head>
 <body>
 <h1>Incremental updates</h1>
-<p>These buttons stand in for WebSocket/SSE/polling messages. The transport is intentionally outside the component.</p>
+<p>These buttons stand in for WebSocket/SSE/polling messages. Updates can contain only changed fields; omitted metadata is preserved. The transport is intentionally outside the component.</p>
 <div>
   <button type="button" id="add">Add event</button>
   <button type="button" id="move">Update event</button>
@@ -31,7 +31,7 @@
   calendar.configure({ timeZone: "Europe/Brussels" });
   calendar.events = [{ id:"live", title:"Live event", start:"2026-09-03T09:00:00+02:00[Europe/Brussels]", end:"2026-09-03T09:40:00+02:00[Europe/Brussels]" }];
   add.onclick = () => calendar.addEvent({ id: crypto.randomUUID(), title:"Pushed event", start:"2026-09-03T13:00:00+02:00[Europe/Brussels]", end:"2026-09-03T13:30:00+02:00[Europe/Brussels]" });
-  move.onclick = () => calendar.updateEvent({ ...calendar.getEventById("live"), id:"live", title:"Updated live event", start:"2026-09-03T10:00:00+02:00[Europe/Brussels]", end:"2026-09-03T10:40:00+02:00[Europe/Brussels]" });
+  move.onclick = () => calendar.updateEvent({ id:"live", title:"Updated live event", start:"2026-09-03T10:00:00+02:00[Europe/Brussels]", end:"2026-09-03T10:40:00+02:00[Europe/Brussels]" });
   remove.onclick = () => calendar.removeEvent("live");
 </script>
 </body>

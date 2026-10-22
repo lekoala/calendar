@@ -997,12 +997,12 @@ export class CalendarViewElement extends HTMLElement {
    * @returns {import("./core/model.js").NormalizedEvent}
    */
   updateEvent(event) {
-    const normalized = normalizeEvent(event);
-    const index = this.#events.findIndex((item) => item.id === normalized.id);
-    if (index < 0) return this.addEvent(normalized);
-    this.#events = this.#events.map((item, i) =>
-      i === index ? { ...this.#events[index], ...normalized } : item,
-    );
+    const index = this.#events.findIndex((item) => item.id === String(event?.id));
+    if (index < 0) return this.addEvent(event);
+    // Merge raw fields before normalization supplies defaults. Omitted
+    // metadata and boundaries survive; explicit clears still normalize.
+    const normalized = normalizeEvent({ ...this.#events[index], ...event });
+    this.#events = this.#events.map((item, i) => (i === index ? normalized : item));
     this.#queueRender();
     return this.#events[index];
   }

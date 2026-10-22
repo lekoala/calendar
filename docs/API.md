@@ -545,12 +545,18 @@ calendar.resizeEvent(id, { start, end })
 
 The server/application remains source of truth. Applications may attach an opaque `extendedProps.revision` to reconcile optimistic updates with realtime echoes.
 
-`updateEvent(event)` **merges** the normalized payload over the stored event:
+`updateEvent(event)` **merges** the input over the stored event before normalizing:
 a key the payload omits keeps its previous value, while an explicit `null`
 (or `undefined`) clears it. So a server echo that removes a lock
 (`editable: null`) or a resource (`resourceId: null`) is reflected, and a
 partial echo that only carries `title` leaves `resourceId`, `editable` and
-the rest untouched. `moveEvent(id, { resourceId: null })` detaches an event
+the rest untouched. This includes `allDay`, boundaries, `classNames` and
+`extendedProps`: `updateEvent({ id, title })` is sufficient to rename an
+existing event. Metadata objects are replaced when supplied, not deep-merged;
+clearing `classNames` or `extendedProps` normalizes to `[]` or `{}`. Required
+boundaries cannot be cleared, and invalid updates leave existing state intact.
+An unknown id still requires a complete event and adds it.
+`moveEvent(id, { resourceId: null })` detaches an event
 from its resource the same way; omitting `resourceId` keeps it. An inverted
 range (`end` before `start`) is refused: `normalizeEvent` throws for
 `addEvent`/`updateEvent`, and `moveEvent`/`resizeEvent` return `null` without

@@ -458,7 +458,10 @@ test("an accepted move can still be reverted after the round-trip", async ({ pag
 test("the context menu is placed from the coordinates the core reports", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  const card = page.locator('.cv-event[data-kind="maintenance"]').first();
+  // The full-day seed is guaranteed; random events in the opening range
+  // need not include this kind on every civil date.
+  await gotoDate(page, openDayFrom((await anchorDate(page)).add({ days: 6 })));
+  const card = page.locator('.cv-event[data-event-id="seed-full-room-a"]').first();
   const box = await card.boundingBox();
   await card.click({ button: "right" });
   await expect(page.locator("#context-menu")).toBeVisible();

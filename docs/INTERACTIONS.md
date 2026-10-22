@@ -210,6 +210,19 @@ Alt + Left/Right      resize end ∓/± snapDuration (shorter/longer)
 
 Minimum duration is one snap step. After a committed key operation the re-rendered event regains focus and a polite live region announces the result (`title, date, start to end`); navigation keys announce nothing. Escape is reserved and currently a no-op.
 
+For multi-day events, a keyboard day move shifts the canonical start by one
+civil day and preserves elapsed duration, regardless of which visible slice
+has focus. The resource and sub-minute precision are preserved.
+
+Pointer resize validates the full proposed event range, with its existing
+resource, through `interactionPolicy`; the unchanged edge is never replaced
+by a clipped slice boundary. The same proposal is committed. Continuation
+edges cannot resize an event. These rules apply to solo and resource grids.
+
+On grids ending at `slot-max="24:00"`, selection and resize resolve that
+exclusive boundary to the next civil midnight in the configured zone,
+including on 23- and 25-hour DST days.
+
 Range creation stays pointer-initiated: applications expose creation through their own controls and feed the resulting range back through events/sources. Day bodies are intentionally not tab stops.
 
 View/date changes (`setView`, `gotoDate`, `prev/next/today`) announce the new anchor (`view, date`) through the same live region.

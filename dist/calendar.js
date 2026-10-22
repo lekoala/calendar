@@ -3936,8 +3936,7 @@
   }
   function zonedDateTimeAt(date, minutes, timeZone) {
     const day = toPlainDate(date);
-    const time = Temporal2.PlainTime.from({ hour: Math.floor(minutes / 60), minute: Math.floor(minutes % 60) });
-    return day.toPlainDateTime(time).toZonedDateTime(timeZone);
+    return day.toPlainDateTime("00:00").add({ milliseconds: Math.round(minutes * 60000) }).toZonedDateTime(timeZone);
   }
   function formatClock(minutes) {
     const clamped = Math.max(0, minutes);
@@ -5432,8 +5431,7 @@
               resourceId: event.resourceId ?? null
             };
           } else {
-            const targetDate = column.date.add({ days: key === "ArrowRight" ? 1 : -1 });
-            const nextStart = zonedDateTimeAt(targetDate, wallMinutes(startZoned), timeZone);
+            const nextStart = startZoned.add({ days: key === "ArrowRight" ? 1 : -1 });
             const duration = Temporal2.Duration.from({
               milliseconds: endZoned.epochMilliseconds - startZoned.epochMilliseconds
             });
@@ -5499,6 +5497,12 @@
         }, beginResize = function(nativeEvent, edge) {
           if (nativeEvent.button !== 0)
             return;
+          const startZoned = toZonedDateTime(event.start, timeZone);
+          const endZoned = toZonedDateTime(event.end, timeZone);
+          const isFirstDay = Temporal2.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
+          const isLastDay = Temporal2.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
+          if (edge === "start" && !isFirstDay || edge === "end" && !isLastDay)
+            return;
           const pressGate = host.checkInteraction({
             action: "resize",
             event,
@@ -5518,7 +5522,7 @@
           const downY = nativeEvent.clientY;
           let moved = false;
           let pending = null;
-          let resizeKey = `${item.start}:${item.end}`;
+          let resizeKey = null;
           let resizeOk = true;
           const onMove = (moveEvent) => {
             if (longPressConsumed)
@@ -5538,7 +5542,11 @@
             } else {
               start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
             }
-            pending = { start, end };
+            pending = {
+              start: edge === "start" ? zonedDateTimeAt(column.date, start, timeZone) : startZoned,
+              end: edge === "end" ? zonedDateTimeAt(column.date, end, timeZone) : endZoned,
+              resourceId: event.resourceId ?? null
+            };
             node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
             node.style.height = `${(end - start) * pxPerMinute}px`;
             const key = `${start}:${end}`;
@@ -5547,9 +5555,7 @@
               const decision = host.checkInteraction({
                 action: "resize",
                 event,
-                start: zonedDateTimeAt(column.date, start, timeZone),
-                end: zonedDateTimeAt(column.date, end, timeZone),
-                resourceId: column.resource?.id ?? null
+                ...pending
               });
               resizeOk = decision.ok;
               node.classList.toggle("cv-invalid", !decision.ok);
@@ -5561,6 +5567,7 @@
           };
           const onUp = (upEvent) => {
             node.removeEventListener("pointermove", onMove);
+            node.removeEventListener("pointerup", onUp);
             node.removeEventListener("pointercancel", onCancel);
             node.removeEventListener("lostpointercapture", onCancel);
             if (longPressConsumed) {
@@ -5578,19 +5585,8 @@
               suppressClick = true;
               return;
             }
-            const startZoned = toZonedDateTime(event.start, timeZone);
-            const endZoned = toZonedDateTime(event.end, timeZone);
-            const isFirstDay = Temporal2.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
-            const isLastDay = Temporal2.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
-            if (edge === "start" && !isFirstDay || edge === "end" && !isLastDay) {
-              node.style.top = savedTop;
-              node.style.height = savedHeight;
-              return;
-            }
             suppressClick = true;
-            const nextStart = edge === "start" ? zonedDateTimeAt(column.date, pending.start, timeZone) : startZoned;
-            const nextEnd = edge === "end" ? zonedDateTimeAt(column.date, pending.end, timeZone) : endZoned;
-            if (Temporal2.ZonedDateTime.compare(nextEnd, nextStart) <= 0) {
+            if (Temporal2.ZonedDateTime.compare(pending.end, pending.start) <= 0) {
               node.style.top = savedTop;
               node.style.height = savedHeight;
               suppressClick = false;
@@ -5599,11 +5595,7 @@
             const result = host.commitEventResize({
               event,
               previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-              current: {
-                start: nextStart,
-                end: nextEnd,
-                resourceId: event.resourceId ?? null
-              },
+              current: pending,
               nativeEvent: upEvent
             });
             if (!result) {
@@ -5614,6 +5606,7 @@
           const onCancel = (_cancelEvent) => {
             node.removeEventListener("pointermove", onMove);
             node.removeEventListener("pointerup", onUp);
+            node.removeEventListener("pointercancel", onCancel);
             node.removeEventListener("lostpointercapture", onCancel);
             node.style.top = savedTop;
             node.style.height = savedHeight;
@@ -6809,11 +6802,11 @@
       return normalized;
     }
     updateEvent(event) {
-      const normalized = normalizeEvent(event);
-      const index = this.#events.findIndex((item) => item.id === normalized.id);
+      const index = this.#events.findIndex((item) => item.id === String(event?.id));
       if (index < 0)
-        return this.addEvent(normalized);
-      this.#events = this.#events.map((item, i) => i === index ? { ...this.#events[index], ...normalized } : item);
+        return this.addEvent(event);
+      const normalized = normalizeEvent({ ...this.#events[index], ...event });
+      this.#events = this.#events.map((item, i) => i === index ? normalized : item);
       this.#queueRender();
       return this.#events[index];
     }

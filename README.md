@@ -61,6 +61,11 @@ An example consumer is an application shell. The core remains equally suitable f
 
 See [docs/FOUNDATIONS.md](docs/FOUNDATIONS.md) for the full contract.
 
+The browser floor is Chromium 99+, Firefox 98+, and Safari 15.4+. CSS colors
+have static fallbacks for those versions; browsers supporting `color-mix()`
+derive their tints from the theme tokens. On older browsers, custom themes
+can override the color tokens and overlay styles directly.
+
 ## Working API shape
 
 Everything below is implemented and exercised by the browser suites:

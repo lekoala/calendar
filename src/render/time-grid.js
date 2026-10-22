@@ -20,13 +20,7 @@ import {
   getTimeGridColumns,
   groupResources,
 } from "../core/resources.js";
-import {
-  describeEvent,
-  eventOverlapsDate,
-  sliceTimedEventForDay,
-  toZonedDateTime,
-  wallMinutes,
-} from "../core/slicing.js";
+import { describeEvent, eventOverlapsDate, sliceTimedEventForDay, toZonedDateTime } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
 import { createAutoscroller } from "./autoscroll.js";
 
@@ -1129,8 +1123,7 @@ export function renderTimeGrid({
             resourceId: event.resourceId ?? null,
           };
         } else {
-          const targetDate = column.date.add({ days: key === "ArrowRight" ? 1 : -1 });
-          const nextStart = zonedDateTimeAt(targetDate, wallMinutes(startZoned), timeZone);
+          const nextStart = startZoned.add({ days: key === "ArrowRight" ? 1 : -1 });
           const duration = Temporal.Duration.from({
             milliseconds: endZoned.epochMilliseconds - startZoned.epochMilliseconds,
           });
@@ -1234,6 +1227,13 @@ export function renderTimeGrid({
        */
       function beginResize(nativeEvent, edge) {
         if (nativeEvent.button !== 0) return;
+        const startZoned = toZonedDateTime(event.start, timeZone);
+        const endZoned = toZonedDateTime(event.end, timeZone);
+        // Only the day owning the real edge may resize it; continuation
+        // slices must never truncate the full event.
+        const isFirstDay = Temporal.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
+        const isLastDay = Temporal.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
+        if ((edge === "start" && !isFirstDay) || (edge === "end" && !isLastDay)) return;
         // Handles only render when allowed, but the policy may read state
         // the calendar never re-renders on: re-check at press time.
         const pressGate = host.checkInteraction({
@@ -1253,12 +1253,12 @@ export function renderTimeGrid({
         const downX = nativeEvent.clientX;
         const downY = nativeEvent.clientY;
         let moved = false;
-        /** @type {{ start: number, end: number } | null} */
+        /** @type {{ start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null} */
         let pending = null;
         // Last evaluated destination (`start:end`) and its policy decision.
-        // Seeded with the entry target so the first identical snap skips.
-        /** @type {string} */
-        let resizeKey = `${item.start}:${item.end}`;
+        // The first destination may differ from a clipped original edge.
+        /** @type {string | null} */
+        let resizeKey = null;
         let resizeOk = true;
 
         /** @param {PointerEvent} moveEvent @returns {void} */
@@ -1276,7 +1276,11 @@ export function renderTimeGrid({
           } else {
             start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
           }
-          pending = { start, end };
+          pending = {
+            start: edge === "start" ? zonedDateTimeAt(column.date, start, timeZone) : startZoned,
+            end: edge === "end" ? zonedDateTimeAt(column.date, end, timeZone) : endZoned,
+            resourceId: event.resourceId ?? null,
+          };
           node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
           node.style.height = `${(end - start) * pxPerMinute}px`;
           const key = `${start}:${end}`;
@@ -1285,9 +1289,7 @@ export function renderTimeGrid({
             const decision = host.checkInteraction({
               action: "resize",
               event,
-              start: zonedDateTimeAt(column.date, start, timeZone),
-              end: zonedDateTimeAt(column.date, end, timeZone),
-              resourceId: column.resource?.id ?? null,
+              ...pending,
             });
             resizeOk = decision.ok;
             node.classList.toggle("cv-invalid", !decision.ok);
@@ -1299,6 +1301,7 @@ export function renderTimeGrid({
         /** @param {PointerEvent} upEvent @returns {void} */
         const onUp = (upEvent) => {
           node.removeEventListener("pointermove", onMove);
+          node.removeEventListener("pointerup", onUp);
           node.removeEventListener("pointercancel", onCancel);
           // See the drag path: the implicit release at `pointerup` would
           // otherwise cancel a resize that already committed.
@@ -1319,24 +1322,8 @@ export function renderTimeGrid({
             suppressClick = true;
             return;
           }
-          // A slice edge clipped by a day boundary is not the true event
-          // edge: resizing it would truncate the multi-day span. Only the
-          // first day owns the start edge and only the last day owns the
-          // end edge.
-          const startZoned = toZonedDateTime(event.start, timeZone);
-          const endZoned = toZonedDateTime(event.end, timeZone);
-          const isFirstDay = Temporal.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
-          const isLastDay = Temporal.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
-          if ((edge === "start" && !isFirstDay) || (edge === "end" && !isLastDay)) {
-            node.style.top = savedTop;
-            node.style.height = savedHeight;
-            return;
-          }
           suppressClick = true;
-          const nextStart =
-            edge === "start" ? zonedDateTimeAt(column.date, pending.start, timeZone) : startZoned;
-          const nextEnd = edge === "end" ? zonedDateTimeAt(column.date, pending.end, timeZone) : endZoned;
-          if (Temporal.ZonedDateTime.compare(nextEnd, nextStart) <= 0) {
+          if (Temporal.ZonedDateTime.compare(pending.end, pending.start) <= 0) {
             node.style.top = savedTop;
             node.style.height = savedHeight;
             suppressClick = false;
@@ -1345,11 +1332,7 @@ export function renderTimeGrid({
           const result = host.commitEventResize({
             event,
             previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-            current: {
-              start: nextStart,
-              end: nextEnd,
-              resourceId: event.resourceId ?? null,
-            },
+            current: pending,
             nativeEvent: upEvent,
           });
           if (!result) {
@@ -1362,6 +1345,7 @@ export function renderTimeGrid({
         const onCancel = (_cancelEvent) => {
           node.removeEventListener("pointermove", onMove);
           node.removeEventListener("pointerup", onUp);
+          node.removeEventListener("pointercancel", onCancel);
           node.removeEventListener("lostpointercapture", onCancel);
           node.style.top = savedTop;
           node.style.height = savedHeight;

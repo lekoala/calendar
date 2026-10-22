@@ -32,6 +32,12 @@ Playwright should cover anything involving:
 - touch/long press;
 - browser-native Temporal/polyfill integration.
 
+`mutation-contracts.spec.js` covers partial update preservation and rejection,
+midnight selection, keyboard moves from continuation slices, full-range
+resize policy in solo/resource views, and CSS fallbacks without `color-mix()`.
+The showcase menu/tooltip tests navigate to a deterministic seeded event
+instead of requiring a randomly generated kind in the initial visible range.
+
 #### Fixture readiness
 
 The element renders once on connect (neutral defaults) before the demo
