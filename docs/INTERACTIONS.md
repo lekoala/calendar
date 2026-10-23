@@ -233,3 +233,5 @@ Interaction feedback must remain understandable with reduced motion and forced c
 
 - `prefers-reduced-motion: reduce` disables transitions/animations inside the component. Autoscroll stays functional (it is viewport movement, not decoration).
 - `forced-colors: active` leaves the system-color remapping to the UA and only restates information that would disappear outright: background ranges keep a dashed `CanvasText` contour once their tint is gone, painted overlays (hover/select ghosts, previews, external drop ghost) keep a `Highlight` outline, the now-indicator keeps `Highlight`, and refused targets keep a distinct `Mark` marking. Text, borders, headers and focus rings are not re-themed.
+
+Pointer previews cache policy decisions per snapped target. Immediately before a user move or resize commits, or a selection intent dispatches, the policy evaluates the exact proposed range again. Application state may change during a gesture without a calendar render; the release decision is authoritative.

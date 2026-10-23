@@ -4,6 +4,7 @@ import { Temporal } from "temporal-polyfill";
 import {
   backgroundAppliesToColumn,
   eventBelongsToColumn,
+  getDaySpans,
   getResourceColumns,
   getTimeGridColumns,
   groupResources,
@@ -170,3 +171,32 @@ test("groupResources with no resources or pools yields no sections", () => {
   assert.deepEqual(groupResources([], [{ id: "a" }]), []);
   assert.deepEqual(groupResources([], []), []);
 });
+
+for (const hidden of [false, true]) {
+  test(`all-day spans retain applicability and resource boundaries with hidden dates ${hidden}`, () => {
+    const days = ["2026-09-04", hidden ? "2026-09-07" : "2026-09-05", "2026-09-08"].map((day) =>
+      Temporal.PlainDate.from(day),
+    );
+    const columns = getResourceColumns(resources, days);
+    const day = { start: days[0], end: days[0].add({ days: 1 }) };
+    const zone = "Europe/Brussels";
+    assert.deepEqual(getDaySpans(columns, day, backgroundAppliesToColumn, zone), [
+      { startDay: 0, endDay: 1 },
+      { startDay: 3, endDay: 4 },
+    ]);
+    assert.deepEqual(getDaySpans(columns, day, eventBelongsToColumn, zone), []);
+    assert.deepEqual(getDaySpans(columns, { ...day, resourceId: null }, eventBelongsToColumn, zone), []);
+    assert.deepEqual(
+      getDaySpans(columns, { ...day, resourceId: resources[1].id }, backgroundAppliesToColumn, zone),
+      [{ startDay: 3, endDay: 4 }],
+    );
+    const full = { start: days[0], end: days[2].add({ days: 1 }) };
+    assert.deepEqual(getDaySpans(columns, full, backgroundAppliesToColumn, zone), [
+      { startDay: 0, endDay: 3 },
+      { startDay: 3, endDay: 6 },
+    ]);
+    assert.deepEqual(getDaySpans(getTimeGridColumns(days), full, eventBelongsToColumn, zone), [
+      { startDay: 0, endDay: 3 },
+    ]);
+  });
+}

@@ -14,7 +14,8 @@ import { formatClock, toPlainDate } from "./dates.js";
  * The grid height represents local wall-clock time, not elapsed seconds.
  * On a 23-hour (spring forward) or 25-hour (fall back) day the same wall
  * minutes map to the same vertical position; absolute durations are never
- * used for geometry.
+ * used for geometry except for a non-increasing projection across the repeated
+ * hour: that slice extends from its start by its positive elapsed duration.
  *
  * @typedef {object} SliceOptions
  * @property {string} timeZone IANA zone used for wall-clock projection
@@ -106,7 +107,13 @@ export function sliceRangeForDay({ start, end, date, timeZone, slotMin, slotMax 
   }
 
   const startWall = Temporal.PlainDate.compare(day, startDay) === 0 ? wallMinutes(startZoned) : slotMin;
-  const endWall = Temporal.PlainDate.compare(day, endDay) === 0 ? wallMinutes(endZoned) : slotMax;
+  let endWall = Temporal.PlainDate.compare(day, endDay) === 0 ? wallMinutes(endZoned) : slotMax;
+  // During a backward clock change, valid instants can project to reversed
+  // or equal wall times. Keep the start anchor and display elapsed duration
+  // for this otherwise invisible slice; canonical boundaries stay unchanged.
+  if (endWall <= startWall && startDay.equals(day) && endDay.equals(day)) {
+    endWall = startWall + startZoned.until(endZoned).total({ unit: "minutes" });
+  }
   const clippedStart = Math.max(slotMin, startWall);
   const clippedEnd = Math.min(slotMax, endWall);
   if (clippedEnd <= clippedStart) return null;

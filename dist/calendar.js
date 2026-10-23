@@ -4162,7 +4162,10 @@
       return null;
     }
     const startWall = Temporal2.PlainDate.compare(day, startDay) === 0 ? wallMinutes(startZoned) : slotMin;
-    const endWall = Temporal2.PlainDate.compare(day, endDay) === 0 ? wallMinutes(endZoned) : slotMax;
+    let endWall = Temporal2.PlainDate.compare(day, endDay) === 0 ? wallMinutes(endZoned) : slotMax;
+    if (endWall <= startWall && startDay.equals(day) && endDay.equals(day)) {
+      endWall = startWall + startZoned.until(endZoned).total({ unit: "minutes" });
+    }
     const clippedStart = Math.max(slotMin, startWall);
     const clippedEnd = Math.min(slotMax, endWall);
     if (clippedEnd <= clippedStart)
@@ -4712,6 +4715,21 @@
       return true;
     return background.resourceId === column.resource.id;
   }
+  function getDaySpans(columns, range, applies, timeZone) {
+    const spans = [];
+    for (let index = 0;index < columns.length; index += 1) {
+      const column = columns[index];
+      if (!applies(range, column) || !eventOverlapsDate(range, column.date, timeZone))
+        continue;
+      const previous = spans[spans.length - 1];
+      if (previous?.endDay === index && columns[index - 1].resource === column.resource) {
+        previous.endDay = index + 1;
+      } else {
+        spans.push({ startDay: index, endDay: index + 1 });
+      }
+    }
+    return spans;
+  }
 
   // src/render/autoscroll.js
   function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
@@ -4929,6 +4947,8 @@
         end: zonedDateTimeAt(column.date, end, timeZone),
         resourceId: column.resource?.id ?? null
       };
+      if (!host.checkInteraction({ action: "select", event: null, ...range }).ok)
+        return;
       body.dispatchEvent(new CustomEvent("calendar:select", {
         bubbles: true,
         composed: true,
@@ -4971,30 +4991,16 @@
       return fragment;
     }
     const overVisibleDays = (range) => dates.some((date) => eventOverlapsDate(range, date, timeZone));
-    const daySpan = (range) => {
-      let start = -1;
-      let end = -1;
-      for (let index = 0;index < columns.length; index += 1) {
-        const column = columns[index];
-        const applies = "resourceId" in range ? eventBelongsToColumn(range, column) : backgroundAppliesToColumn(range, column);
-        if (!applies || !eventOverlapsDate(range, column.date, timeZone))
-          continue;
-        if (start < 0)
-          start = index;
-        end = index;
-      }
-      if (start < 0)
-        return null;
-      return { startDay: start, endDay: end + 1 };
-    };
-    const allDaySegments = events.filter((event) => event.allDay === true && overVisibleDays(event)).map((event) => {
-      const span = daySpan(event);
-      return span === null ? null : { event, resourceId: event.resourceId ?? null, startDay: span.startDay, endDay: span.endDay };
-    }).filter((segment) => segment !== null);
-    const allDayBackgroundSegments = backgrounds.filter((background) => background.allDay === true && overVisibleDays(background)).map((background) => {
-      const span = daySpan(background);
-      return span === null ? null : { background, startDay: span.startDay, endDay: span.endDay };
-    }).filter((segment) => segment !== null);
+    const daySpans = (range, applies) => getDaySpans(columns, range, applies, timeZone);
+    const allDaySegments = events.filter((event) => event.allDay === true && overVisibleDays(event)).flatMap((event) => daySpans(event, eventBelongsToColumn).map((span) => ({
+      event,
+      resourceId: resourceView ? event.resourceId ?? null : null,
+      ...span
+    })));
+    const allDayBackgroundSegments = backgrounds.filter((background) => background.allDay === true && overVisibleDays(background)).flatMap((background) => daySpans(background, backgroundAppliesToColumn).map((span) => ({
+      background,
+      ...span
+    })));
     const showAllDay = options.allDaySlot !== false && (allDaySegments.length > 0 || allDayBackgroundSegments.length > 0);
     const allDayBars = [];
     const columnAtX = (clientX) => {
@@ -5025,7 +5031,7 @@
         nativeEvent
       });
     };
-    function beginAllDayDrag(bar, event, startDay, endDay, nativeEvent) {
+    function beginAllDayDrag(bar, event, startDay, nativeEvent) {
       if (nativeEvent.button !== 0)
         return;
       if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
@@ -5046,7 +5052,9 @@
       let moved = false;
       let mirror = null;
       let pending = null;
-      let laneKey = startDay;
+      const grabbedColumn = columnIndexAtX(downX);
+      const origin = columns[grabbedColumn < 0 ? startDay : grabbedColumn];
+      let laneKey = grabbedColumn;
       let laneOk = true;
       const onMove = (moveEvent) => {
         if (longPressConsumed)
@@ -5068,11 +5076,19 @@
           return;
         const droppable = columns[index].resource?.droppable !== false;
         pending = { index, droppable };
-        mirror.style.gridColumn = `${index + 2} / ${Math.min(columns.length, index + (endDay - startDay)) + 2}`;
+        const days = columns[index].date.since(origin.date).days;
+        const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
+        const spans = daySpans({
+          start: event.start.add({ days }),
+          end: event.end.add({ days }),
+          resourceId
+        }, eventBelongsToColumn);
+        const span = spans.find((entry) => index >= entry.startDay && index < entry.endDay);
+        mirror.style.gridColumn = span ? `${span.startDay + 2} / ${span.endDay + 2}` : `${index + 2}`;
         mirror.style.gridRow = String(Number.parseFloat(bar.style.gridRow) || 1);
         if (index !== laneKey) {
           laneKey = index;
-          const dayDelta = index - startDay;
+          const dayDelta = columns[index].date.since(origin.date).days;
           const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
           let decision = { ok: true, reason: null };
           if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
@@ -5113,12 +5129,8 @@
           suppressClick = true;
           return;
         }
-        if (!laneOk) {
-          suppressClick = true;
-          return;
-        }
         suppressClick = true;
-        const dayDelta = range.index - startDay;
+        const dayDelta = columns[range.index].date.since(origin.date).days;
         const resourceId = columns[range.index].resource?.id ?? event.resourceId ?? null;
         const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
         if (next) {
@@ -5248,7 +5260,7 @@
             host.announce(describeEvent(next, timeZone, labels.untitledEvent));
         });
         if (movable) {
-          bar.addEventListener("pointerdown", (nativeEvent) => beginAllDayDrag(bar, event, startDay, endDay, nativeEvent));
+          bar.addEventListener("pointerdown", (nativeEvent) => beginAllDayDrag(bar, event, startDay, nativeEvent));
         }
       }
     }
@@ -5523,7 +5535,6 @@
           let moved = false;
           let pending = null;
           let resizeKey = null;
-          let resizeOk = true;
           const onMove = (moveEvent) => {
             if (longPressConsumed)
               return;
@@ -5557,7 +5568,6 @@
                 event,
                 ...pending
               });
-              resizeOk = decision.ok;
               node.classList.toggle("cv-invalid", !decision.ok);
               if (decision.reason)
                 node.dataset.reason = decision.reason;
@@ -5579,12 +5589,6 @@
               return;
             node.classList.remove("cv-invalid");
             delete node.dataset.reason;
-            if (!resizeOk) {
-              node.style.top = savedTop;
-              node.style.height = savedHeight;
-              suppressClick = true;
-              return;
-            }
             suppressClick = true;
             if (Temporal2.ZonedDateTime.compare(pending.end, pending.start) <= 0) {
               node.style.top = savedTop;
@@ -5734,10 +5738,6 @@
               suppressClick = true;
               return;
             }
-            if (!dragOk) {
-              suppressClick = true;
-              return;
-            }
             suppressClick = true;
             const dayDelta = range.column.date.since(column.date).days;
             const minuteDelta = range.start - item.start;
@@ -5865,7 +5865,6 @@
         let ghost = null;
         let ghostChip = null;
         let selectKey = null;
-        let selectOk = true;
         const showHover = (nativeEvent) => {
           const target = nativeEvent.target;
           const overEvent = target instanceof Element && target.closest(".cv-event") !== null;
@@ -5908,7 +5907,6 @@
           if (!gate.ok)
             return;
           selectKey = `${anchor}:${anchor + defaultDuration}`;
-          selectOk = true;
           hover.hidden = true;
           tryCapture(body, nativeEvent.pointerId);
           ghost = document.createElement("div");
@@ -5956,7 +5954,6 @@
               end: zonedDateTimeAt(column.date, end, timeZone),
               resourceId: column.resource?.id ?? null
             });
-            selectOk = decision.ok;
             ghost.classList.toggle("cv-invalid", !decision.ok);
             if (decision.reason)
               ghost.dataset.reason = decision.reason;
@@ -5976,10 +5973,6 @@
           ghostChip = null;
           if (cancelled || wasLongPress)
             return;
-          if (moved && !selectOk) {
-            suppressClick = true;
-            return;
-          }
           if (moved) {
             suppressClick = true;
             dispatchSelect(body, column, start, end, nativeEvent);
@@ -6422,6 +6415,9 @@
         this.#queueRender();
     }
     configure(options = {}) {
+      if ("eventSource" in options && options.eventSource !== this.#config.eventSource || "backgroundSource" in options && options.backgroundSource !== this.#config.backgroundSource) {
+        this.#cancelSourceRequest();
+      }
       this.#config = { ...this.#config, ...options };
       this.#queueRender();
       return this;
@@ -6726,6 +6722,13 @@
       };
       if (isInvertedRange(optimistic.start, optimistic.end))
         return null;
+      if (nativeEvent && !this.checkInteraction({
+        action: name === "calendar:eventmove" ? "move" : "resize",
+        event: before,
+        ...optimistic,
+        allDay
+      }).ok)
+        return null;
       const restored = { start: before.start, end: before.end, resourceId: before.resourceId ?? null };
       const apply = (state) => {
         this.#events = this.#events.map((item) => item.id === id ? { ...item, ...state } : item);
@@ -6966,11 +6969,23 @@
           this.#queueRender();
       }
     }
+    #cancelSourceRequest() {
+      this.#abortController?.abort();
+      this.#abortController = null;
+      this.#requestVersion += 1;
+      this.removeAttribute("aria-busy");
+      if (this.#loadInFlight) {
+        this.#loadInFlight = false;
+        this.#announceLoading(false);
+      }
+    }
     async refetchEvents() {
       const eventSource = this.#config.eventSource;
       const backgroundSource = this.#config.backgroundSource;
-      if (!eventSource && !backgroundSource)
+      if (!eventSource && !backgroundSource) {
+        this.#cancelSourceRequest();
         return;
+      }
       this.#abortController?.abort();
       const controller = new AbortController;
       this.#abortController = controller;

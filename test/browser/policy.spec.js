@@ -131,7 +131,7 @@ test("a refused destination marks the mirror and blocks the commit", async ({ pa
   );
 });
 
-test("the policy runs once per snapped target, not per pointermove", async ({ page }) => {
+test("the preview policy runs once per snapped target and again at commit", async ({ page }) => {
   await openDemo(page, "basic");
   await seedWithPolicy(page, `return true;`);
   const box = await page.locator('[data-event-id="a"]').boundingBox();
@@ -144,7 +144,8 @@ test("the policy runs once per snapped target, not per pointermove", async ({ pa
   await page.mouse.up();
   const calls = (await policyCalls(page)).filter((call) => call.action === "move");
   expect(calls.length).toBeGreaterThan(0);
-  for (let i = 1; i < calls.length; i += 1) {
+  expect(calls.at(-1).start).toBe(calls.at(-2).start);
+  for (let i = 1; i < calls.length - 1; i += 1) {
     expect(calls[i].start).not.toBe(calls[i - 1].start);
   }
 });

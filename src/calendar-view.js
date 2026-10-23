@@ -321,6 +321,12 @@ export class CalendarViewElement extends HTMLElement {
    * @returns {this}
    */
   configure(options = {}) {
+    if (
+      ("eventSource" in options && options.eventSource !== this.#config.eventSource) ||
+      ("backgroundSource" in options && options.backgroundSource !== this.#config.backgroundSource)
+    ) {
+      this.#cancelSourceRequest();
+    }
     this.#config = { ...this.#config, ...options };
     this.#queueRender();
     return this;
@@ -860,6 +866,16 @@ export class CalendarViewElement extends HTMLElement {
     // An inverted placement is refused like any other invalid mutation: the
     // caller gets `null` and no optimistic state is published.
     if (isInvertedRange(optimistic.start, optimistic.end)) return null;
+    if (
+      nativeEvent &&
+      !this.checkInteraction({
+        action: name === "calendar:eventmove" ? "move" : "resize",
+        event: before,
+        ...optimistic,
+        allDay,
+      }).ok
+    )
+      return null;
     const restored = { start: before.start, end: before.end, resourceId: before.resourceId ?? null };
     /**
      * @param {{ start: unknown, end: unknown, resourceId: string | null }} state
@@ -1197,10 +1213,24 @@ export class CalendarViewElement extends HTMLElement {
     }
   }
 
+  #cancelSourceRequest() {
+    this.#abortController?.abort();
+    this.#abortController = null;
+    this.#requestVersion += 1;
+    this.removeAttribute("aria-busy");
+    if (this.#loadInFlight) {
+      this.#loadInFlight = false;
+      this.#announceLoading(false);
+    }
+  }
+
   async refetchEvents() {
     const eventSource = this.#config.eventSource;
     const backgroundSource = this.#config.backgroundSource;
-    if (!eventSource && !backgroundSource) return;
+    if (!eventSource && !backgroundSource) {
+      this.#cancelSourceRequest();
+      return;
+    }
 
     this.#abortController?.abort();
     const controller = new AbortController();
@@ -1244,8 +1274,8 @@ export class CalendarViewElement extends HTMLElement {
       if (controller.signal.aborted) return;
       this.dispatchEvent(new CustomEvent("calendar:loaderror", { detail: { error } }));
     } finally {
-      // Only the newest request settles the busy state: an aborted or stale
-      // one is always followed by a request that is still in flight.
+      // Only the newest request settles busy state. Explicit cancellation
+      // settles it itself when no replacement request is started.
       if (version === this.#requestVersion) {
         this.#loadInFlight = false;
         this.removeAttribute("aria-busy");
