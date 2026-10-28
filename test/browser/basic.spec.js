@@ -903,6 +903,57 @@ test("a deferred revert leaves a newer move alone", async ({ page }) => {
   expect(start).toContain("T15:00");
 });
 
+test("a deferred revert ignores an ABA sequence that returned to its range", async ({ page }) => {
+  await openDemo(page, "basic");
+  const start = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const hooks = /** @type {any} */ (window);
+    hooks.__revert = null;
+    calendar.addEventListener("calendar:eventmove", (/** @type {Event} */ event) => {
+      hooks.__revert ??= /** @type {CustomEvent} */ (event).detail.revert;
+    });
+    const item = calendar.getEventById("a");
+    const move = (/** @type {string} */ from, /** @type {string} */ to) =>
+      calendar.moveEvent("a", {
+        start: String(item.start).replace("T09:", `T${from}:`),
+        end: String(item.end).replace("T10:", `T${to}:`),
+      });
+    // A → B, then B → C, then C → B: the placement matches the first
+    // optimistic write again, but that write is no longer the newest one.
+    move("11", "12");
+    move("13", "14");
+    move("11", "12");
+    hooks.__revert();
+    return String(calendar.getEventById("a").start);
+  });
+  expect(start).toContain("T11:00");
+});
+
+test("a late revert does not undo the echo that confirmed the move", async ({ page }) => {
+  await openDemo(page, "basic");
+  const start = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const hooks = /** @type {any} */ (window);
+    hooks.__revert = null;
+    calendar.addEventListener("calendar:eventmove", (/** @type {Event} */ event) => {
+      hooks.__revert ??= /** @type {CustomEvent} */ (event).detail.revert;
+    });
+    const item = calendar.getEventById("a");
+    calendar.moveEvent("a", {
+      start: String(item.start).replace("T09:", "T11:"),
+      end: String(item.end).replace("T10:", "T12:"),
+    });
+    // The server echo carries the geometry the optimistic write already
+    // published. It is a newer authority even though nothing moved, so the
+    // application's late revert must leave it alone.
+    const pending = calendar.getEventById("a");
+    calendar.updateEvent({ id: "a", start: pending.start, end: pending.end });
+    hooks.__revert();
+    return String(calendar.getEventById("a").start);
+  });
+  expect(start).toContain("T11:00");
+});
+
 test("autoscroll stops when the calendar leaves the document mid-drag", async ({ page }) => {
   await openDemo(page, "basic");
   await page.evaluate(() => {

@@ -1,4 +1,4 @@
-/*! @lekoala/calendar v0.2.0 - https://github.com/lekoala/calendar */
+/*! @lekoala/calendar v0.3.0 - https://github.com/lekoala/calendar */
 (() => {
   // node_modules/temporal-polyfill/chunks/root.js
   var NativeTemporal = globalThis.Temporal;
@@ -6340,6 +6340,8 @@
     static observedAttributes = ["view", "date", "lang", "slot-min", "slot-max", "slot-duration"];
     static dates = dates;
     #events = [];
+    #placementTickets = new Map;
+    #placementTicketSource = 0;
     #resources = [];
     #resourceGroups = [];
     #backgrounds = [];
@@ -6443,6 +6445,7 @@
       return [...this.#events];
     }
     set events(value) {
+      this.#placementTickets.clear();
       this.#events = Array.from(value ?? [], normalizeEvent);
       this.#queueRender();
     }
@@ -6703,6 +6706,11 @@
       const now = Temporal2.Now.zonedDateTimeISO(timeZone);
       return normalizePolicyDecision(policy({ action, event, target, context, now }));
     }
+    #stampPlacement(id) {
+      const ticket = ++this.#placementTicketSource;
+      this.#placementTickets.set(String(id), ticket);
+      return ticket;
+    }
     #commitEventMutation({ event, previous, current, name, nativeEvent }) {
       const id = event.id;
       const before = this.getEventById(id);
@@ -6728,6 +6736,7 @@
         this.#events = this.#events.map((item) => item.id === id ? { ...item, ...state } : item);
         this.#queueRender();
       };
+      const ticket = this.#stampPlacement(id);
       apply(optimistic);
       let reverted = false;
       const revert = () => {
@@ -6735,7 +6744,7 @@
           return;
         reverted = true;
         const live = this.getEventById(id);
-        if (!live || !sameRange(live, optimistic))
+        if (!live || this.#placementTickets.get(String(id)) !== ticket || !sameRange(live, optimistic))
           return;
         apply(restored);
       };
@@ -6794,6 +6803,7 @@
     }
     addEvent(event) {
       const normalized = normalizeEvent(event);
+      this.#stampPlacement(normalized.id);
       this.#events = [...this.#events, normalized];
       this.#queueRender();
       return normalized;
@@ -6818,6 +6828,7 @@
         merged[key] = source[key];
       merged.id = id;
       const next = merged;
+      this.#stampPlacement(id);
       this.#events = this.#events.map((item, i) => i === index ? next : item);
       this.#queueRender();
       return next;
@@ -6827,6 +6838,7 @@
       const next = this.#events.filter((event) => event.id !== key);
       if (next.length === this.#events.length)
         return false;
+      this.#stampPlacement(key);
       this.#events = next;
       this.#queueRender();
       return true;
@@ -7014,8 +7026,10 @@
           return;
         const nextEvents = eventSource ? Array.from(events ?? [], normalizeEvent) : null;
         const nextBackgrounds = backgroundSource ? Array.from(backgrounds ?? [], normalizeBackground) : null;
-        if (nextEvents)
+        if (nextEvents) {
+          this.#placementTickets.clear();
           this.#events = nextEvents;
+        }
         if (nextBackgrounds)
           this.#backgrounds = nextBackgrounds;
         this.#queueRender();

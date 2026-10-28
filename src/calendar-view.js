@@ -167,6 +167,17 @@ export class CalendarViewElement extends HTMLElement {
 
   /** @type {Array<import("./core/model.js").NormalizedEvent>} */
   #events = [];
+  /**
+   * Ticket of the newest placement write per event id. A commit keeps the
+   * ticket it took and `revert()` only undoes state that still carries it:
+   * comparing ranges alone cannot tell the ABA sequence A → B → C → B apart
+   * from the write the undo owns.
+   *
+   * @type {Map<string, number>}
+   */
+  #placementTickets = new Map();
+  /** Never reset, so tickets dropped with the map above cannot be issued twice. */
+  #placementTicketSource = 0;
   /** @type {Array<import("./core/model.js").NormalizedResource>} */
   #resources = [];
   /** @type {Array<import("./core/model.js").NormalizedResourceGroup>} */
@@ -358,6 +369,8 @@ export class CalendarViewElement extends HTMLElement {
 
   /** @param {import("./core/model.js").EventInput[] | null | undefined} value */
   set events(value) {
+    // A wholesale replacement is a newer authority than any pending undo.
+    this.#placementTickets.clear();
     this.#events = Array.from(value ?? [], normalizeEvent);
     this.#queueRender();
   }
@@ -821,6 +834,20 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   /**
+   * Claim the newest placement ticket for an event. Every write that can
+   * change where an event sits takes one, so a pending undo can tell that it
+   * has been superseded.
+   *
+   * @param {string | number} id
+   * @returns {number}
+   */
+  #stampPlacement(id) {
+    const ticket = ++this.#placementTicketSource;
+    this.#placementTickets.set(String(id), ticket);
+    return ticket;
+  }
+
+  /**
    * Optimistic mutation path shared by pointer interactions and programmatic
    * commands. Applies `current` immediately, dispatches a cancelable event
    * carrying an idempotent `revert()`, and reverts automatically when the
@@ -869,19 +896,21 @@ export class CalendarViewElement extends HTMLElement {
       this.#events = this.#events.map((item) => (item.id === id ? { ...item, ...state } : item));
       this.#queueRender();
     };
+    const ticket = this.#stampPlacement(id);
     apply(optimistic);
     let reverted = false;
     // `revert()` may run long after the dispatch, once an application has
     // decided asynchronously. By then the event can have been removed,
     // reordered or moved again, so the undo addresses it by id and only
-    // fires while the placement it owns is still the one in state: a stale
-    // revert must never resurrect a deleted event, land on its neighbour,
-    // or undo someone else's newer move.
+    // fires while the write it owns is still the newest one: a stale revert
+    // must never resurrect a deleted event, land on its neighbour, undo
+    // someone else's newer move, or overwrite a newer write that happens to
+    // reproduce the same range (A → B → C → B).
     const revert = () => {
       if (reverted) return;
       reverted = true;
       const live = this.getEventById(id);
-      if (!live || !sameRange(live, optimistic)) return;
+      if (!live || this.#placementTickets.get(String(id)) !== ticket || !sameRange(live, optimistic)) return;
       apply(restored);
     };
     const accepted = this.dispatchEvent(
@@ -987,6 +1016,7 @@ export class CalendarViewElement extends HTMLElement {
    */
   addEvent(event) {
     const normalized = normalizeEvent(event);
+    this.#stampPlacement(normalized.id);
     this.#events = [...this.#events, normalized];
     this.#queueRender();
     return normalized;
@@ -1027,6 +1057,8 @@ export class CalendarViewElement extends HTMLElement {
     for (const key of Object.keys(event)) merged[key] = source[key];
     merged.id = id;
     const next = /** @type {import("./core/model.js").NormalizedEvent} */ (merged);
+    // An echo or a partial edit outranks any undo still waiting on a server.
+    this.#stampPlacement(id);
     this.#events = this.#events.map((item, i) => (i === index ? next : item));
     this.#queueRender();
     return next;
@@ -1040,6 +1072,7 @@ export class CalendarViewElement extends HTMLElement {
     const key = String(id);
     const next = this.#events.filter((event) => event.id !== key);
     if (next.length === this.#events.length) return false;
+    this.#stampPlacement(key);
     this.#events = next;
     this.#queueRender();
     return true;
@@ -1276,7 +1309,11 @@ export class CalendarViewElement extends HTMLElement {
       // other one before the await and writing it back here would undo the
       // incremental mutations (`addEvent`, `updateEvent`, `removeEvent`)
       // an application applied while the request was in flight.
-      if (nextEvents) this.#events = nextEvents;
+      if (nextEvents) {
+        // A resolved refetch is newer than any undo still waiting on it.
+        this.#placementTickets.clear();
+        this.#events = nextEvents;
+      }
       if (nextBackgrounds) this.#backgrounds = nextBackgrounds;
       this.#queueRender();
     } catch (error) {

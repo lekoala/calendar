@@ -425,9 +425,8 @@ left out. (b) Two operators edit while the
 page is open: an optimistic move is pending when a second mutation lands, or
 a realtime echo arrives mid-pending. The existing
 optimistic/`preventDefault()`/`revert()` contract plus
-`revision`/`mutationId` are the seam; the milestone is the test matrix that
-makes pending/conflict/revert/superseded behaviour an explicit acceptance
-surface.
+`revision`/`mutationId` are the seam; 0.3 ships the test matrix that makes
+pending/conflict/revert/superseded behaviour an explicit acceptance surface.
 
 Core stress:
 

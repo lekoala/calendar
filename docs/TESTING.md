@@ -179,7 +179,9 @@ Manual stress only: 12 resources × 3 days, 6 resources × 7 days. Columns keep 
 - multi-day event repeats per overlapped day; midnight-exclusive end;
 - crowded day collapses behind `+n more` honoring `monthEventLimit`;
 - chip click + Enter dispatches `calendar:eventclick`;
-- empty day click selects the civil day (`00:00 → next 00:00`, `resourceId: null`);
+- empty day click dispatches an all-day civil selection: `allDay: true` with
+  `Temporal.PlainDate` `start`/`end` (that day → next day), `resourceId: null`;
+  no zoned midnight range;
 - `prev`/`next` step whole months;
 - month sources receive the week-aligned range;
 - list renders 7 chronological day groups with empty states;

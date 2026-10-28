@@ -312,12 +312,24 @@ Civil-duration semantics (`duration`) were considered but intentionally left
 out of 0.x; `dayCount` covers the scheduling use case of a guaranteed
 number of visible days.
 
-## 0.2 exit conditions
+## 0.3 exit conditions
 
 Cross-cutting, tests only (zero net core surface): the concurrency matrix
 over the existing `revision`/`mutationId`/`revert()` contract — pending →
-commit, pending → revert, pending → superseded move, realtime echo during a
-pending commit, 409-style conflict, no stale render. Use case §19.
+commit, pending → revert, pending → superseded move, pending → ABA
+(A → B → C → B), realtime echo during a pending commit, 409-style conflict,
+no stale render. Use case §19.
+
+The engine side is covered in `test/browser/basic.spec.js`: a deferred
+`revert()` after a removal, after a newer move, after an ABA sequence and
+after an echo that confirmed the optimistic placement. `revert()` therefore
+matches the *write* it created, not only the range in state — an internal
+per-event placement ticket, no public API change.
+
+Application-side reconciliation stays out of the core and is covered by the
+sync adapter contract: echo deduplication (`shouldIgnoreEcho`) and the
+`409` decision (`decideOnConflict`, converged → reload, diverged → choose)
+in `test/sync/sync-adapter.test.js`. Use case §19.
 
 ## Post-0.x candidates (revisit only with a use case)
 

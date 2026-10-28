@@ -1,9 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-28
+
+A consolidation release: 0.2's contracts are tightened and pinned by tests, no
+new feature surface. See [docs/MIGRATION-0.3.md](docs/MIGRATION-0.3.md) for the
+consumer-facing changes.
 
 ### Fixed
 
+* `revert()` is bound to the placement write it created, not to the range it
+  produced. Each event carries an internal monotonic placement ticket that
+  every write (commit, `addEvent`, `updateEvent`, `removeEvent`, wholesale
+  replacement, resolved refetch) takes, so a stale undo no longer overwrites a
+  newer write — including the ABA sequence A → B → C → B and a realtime echo
+  that confirms the pending placement. Geometry equality alone could not tell
+  the two apart.
 * All-day dragging uses civil-date displacement instead of column distance,
   preserving dates across resources and counting hidden weekdays correctly.
   Grabbing a multi-day continuation preserves its offset from the event start;
@@ -79,7 +90,9 @@
 * Tooling aligned with the sibling component repos: Bun 1.4.3,
   Biome 2.5.15, Playwright 1.64.0 and `temporal-polyfill` 1.0.5. A
   `bunfig.toml` excludes the Playwright suites from Bun's test discovery, so
-  a bare `bun test` runs only the unit tests.
+  a bare `bun test` runs only the unit tests. CI runs `verify`, the sharded
+  browser suite, the dist smoke build and the showcase suite, which was
+  previously never executed.
 
 ## 0.2.0 — 2026
 

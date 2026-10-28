@@ -271,6 +271,7 @@ Known structural debt, tracked in
 
 The contract and test matrix are documented in
 [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/TESTING.md](docs/TESTING.md).
+Upgrading from 0.2? See [docs/MIGRATION-0.3.md](docs/MIGRATION-0.3.md).
 
 ## License
 

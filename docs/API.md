@@ -657,10 +657,12 @@ calendar.addEventListener("calendar:loading", (event) => {
 
 `dispatchEvent()` is synchronous: `preventDefault()` must be called synchronously during dispatch. `detail.revert()` is idempotent and may be called later, after an `await`.
 
-A deferred `revert()` addresses its event by id and only undoes the placement
-it applied. Once that placement is gone — the event was removed, or a newer
-move or resize superseded it — the call is a no-op instead of resurrecting
-stale state or landing on another event.
+A deferred `revert()` addresses its event by id and only undoes the write it
+created. Every newer write of that event's placement — a move, a resize,
+`updateEvent()` (including a realtime echo), a refetch — supersedes it, so
+the call is a no-op instead of resurrecting stale state, landing on another
+event, or overwriting a newer write that happens to reproduce the same range
+(the A → B → C → B sequence).
 
 `calendar:eventmove` / `calendar:eventresize` are optimistic reversible mutations:
 
