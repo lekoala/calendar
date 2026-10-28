@@ -16,6 +16,13 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     needs: verify
+    # Each shard keeps the 4 workers the config allows for stability and works
+    # on its own 4 vCPU runner, so sharding cuts wall time without raising
+    # per-job parallelism.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     container:
       image: mcr.microsoft.com/playwright:v1.64.0-noble
     env:
@@ -26,5 +33,11 @@ jobs:
         run: apt-get update && apt-get install -y --no-install-recommends unzip
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun run test:browser:all
-      - run: bun run test:dist
+      # `verify` already ran `sync` and its generated-artifact gate, so each
+      # shard can trust the committed dist instead of rebuilding three times.
+      - name: Browser behavior suite (${{ matrix.shard }}/3)
+        run: bun run test:browser:all --shard=${{ matrix.shard }}/3
+      # The dist smoke build is independent of sharding; run it once.
+      - name: Dist smoke
+        if: matrix.shard == 1
+        run: bun run test:dist
