@@ -1,12 +1,12 @@
 # @lekoala/calendar
 
-A lightweight, framework-agnostic calendar and resource scheduling Web Component built around **Temporal**, normal DOM, and a small public API.
+A composable, framework-agnostic calendar and resource scheduler built on **Temporal**, native Web Components, and plain CSS. Focused on scheduling primitives, not application chrome.
 
 ```html
 <link rel="stylesheet" href="./src/calendar.css">
 <script type="module" src="./src/define.js"></script>
 
-<calendar-view view="week" date="2026-09-03"></calendar-view>
+<calendar-view view="resourceDay" date="2026-09-03"></calendar-view>
 ```
 
 ```js
@@ -27,6 +27,8 @@ calendar.events = [
   },
 ];
 ```
+
+Solo time grids use the same model: omit `resources` and switch to `view="week"` (or `day`, `threeDays`, `month`, `list`).
 
 ## Mission
 
