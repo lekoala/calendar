@@ -106,10 +106,13 @@ to timed events (`getEventOverlaps`), and two consecutive civil midnights
 span the real 23-/25-hour DST day without the civil day changing meaning.
 
 All-day scope in the time grid is the **lane**: see config `allDaySlot` and
-VIEWS. Resizing an all-day event is not wired in v0.x —
-`resizeEvent(id, ...)` returns `null` for it (day-edge resize is deferred).
-Month and list render all-day events as their civil-day chips/rows already;
-`allDaySlot: false` hides them from time grids only.
+VIEWS. All-day ranges are civil and half-open, and must cover **at least one
+day**: `end` must be after `start` (`2026-09-03` to `2026-09-04` is one day).
+An empty range is rejected by normalization and by `resizeEvent()`. All-day
+events resize by day edges through the API, pointer handles and
+`Alt` + arrows; only a visible true edge exposes a handle. Month and list
+render all-day events as their civil-day chips/rows already; `allDaySlot:
+false` hides them from time grids only.
 
 ## Resource model
 
@@ -159,7 +162,7 @@ calendar.resourceGroups = [
 }
 ```
 
-No built-in semantic type. A background without `resourceId` is global and applies to every resource column; an event without `resourceId` is hidden in resource views (see view policy). An `allDay` background ("the room is closed this week") uses the same civil boundary types as all-day events and paints the full-height lane tint in time grids.
+No built-in semantic type. A background without `resourceId` is global and applies to every resource column; an event without `resourceId` is hidden in resource views (see view policy). An `allDay` background ("the room is closed this week") uses the same civil boundary types as all-day events, paints the full-height lane tint in time grids, and must cover at least one civil day.
 
 ## Configuration
 
@@ -543,6 +546,12 @@ calendar.moveEvent(id, { start, end, resourceId })
 calendar.resizeEvent(id, { start, end })
 ```
 
+`resizeEvent()` accepts timed and all-day events. Timed bounds are zoned;
+all-day bounds are civil and must still cover at least one day. Programmatic
+mutations never consult `interactionPolicy`, exactly like `moveEvent()`. An
+inverted or empty all-day range returns `null` without publishing optimistic
+state.
+
 The server/application remains source of truth. Applications may attach an opaque `extendedProps.revision` to reconcile optimistic updates with realtime echoes.
 
 `updateEvent(event)` **merges** the payload over the stored event: a key the
@@ -653,6 +662,8 @@ calendar.addEventListener("calendar:loading", (event) => {
 
 `calendar:render` fires once the rendered subtree exists, with `detail: { view, dates, resources }`. It is the supported way to decorate rendered columns; listeners that mutate state simply queue the next frame, like any other mutation.
 
+A render replaces the grid subtree. When focus was inside an event node, the calendar restores it to the same rendered segment (event id + date + resource) after an external update, and preserves `scrollTop`/`scrollLeft`; focus outside the calendar is never stolen. A render that lands during an active pointer gesture cancels that gesture, removes its mirror/ghost, and commits nothing. Applications that need transactional gestures should not trigger a render mid-drag.
+
 `calendar:moreclick` reports that a month day has more events than `monthEventLimit` allows, with `detail: { date, events, hidden, nativeEvent }`. The core only carries the intent: whether that opens a popover, switches to the day view, or raises the chip limit is an application decision. The `+n more` control is a real button, so pointer and keyboard activation behave alike, and it does not fall through to the day cell's `calendar:select`.
 
 `dispatchEvent()` is synchronous: `preventDefault()` must be called synchronously during dispatch. `detail.revert()` is idempotent and may be called later, after an `await`.
@@ -705,7 +716,7 @@ detail: {
 
 The core never suppresses the native menu; the application calls `preventDefault()` on the native event when it handles the intent.
 
-Keyboard operation follows the pointer contract: arrows move focus between events, `Shift` + arrows move the focused event (time/day, same resource), `Alt` + arrows resize it. Cross-resource moves stay a command operation (`moveEvent` with `resourceId`). Committed key operations refocus the event and announce `title, date, start to end` through a polite live region; view/date changes announce `view, date` the same way.
+Keyboard operation follows the pointer contract: arrows move focus between events, `Shift` + arrows move the focused event (time/day, same resource), `Alt` + arrows resize it (`Up`/`Down` start edge, `Left`/`Right` end edge, for timed and all-day alike; an all-day resize never drops below one day). Cross-resource moves stay a command operation (`moveEvent` with `resourceId`). Committed key operations refocus the event and announce `title, date, start to end` through a polite live region; view/date changes announce `view, date` the same way.
 
 `calendar:select` is an intention with no mutated event, so it carries no `revert()`:
 

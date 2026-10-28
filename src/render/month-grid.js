@@ -101,6 +101,7 @@ export function renderMonthGrid({
         chip.type = "button";
         chip.className = ["cv-month-event", ...(event.classNames ?? [])].join(" ");
         chip.dataset.eventId = event.id;
+        chip.dataset.focusKey = JSON.stringify([event.id, date.toString(), "month"]);
         const state = temporalState(event.start, event.end, renderNow, timeZone);
         chip.dataset.temporalState = state;
         chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));

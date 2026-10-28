@@ -770,7 +770,7 @@ test("no date attribute anchors on today", async ({ page }) => {
         );
       }),
   );
-  expect(date).toBe(Temporal.Now.plainDateISO("Europe/Brussels").toString());
+  expect(date).toBe(Temporal.Now.plainDateISO("UTC").toString());
 });
 
 test("event nodes allow touch scroll while resize handles stay precise", async ({ page }) => {

@@ -131,6 +131,16 @@ export declare function normalizeRangeBound(value: unknown, allDay: boolean): Te
  */
 export declare function isInvertedRange(start: unknown, end: unknown): boolean;
 /**
+ * True when a civil half-open range covers no day. All-day events and
+ * backgrounds must span at least one civil day; timed events keep their
+ * separate contract, where a zero-length range remains meaningful.
+ *
+ * @param {unknown} start
+ * @param {unknown} end
+ * @returns {boolean}
+ */
+export declare function isInvalidCivilRange(start: unknown, end: unknown): boolean;
+/**
  * @param {EventInput} event
  * @returns {NormalizedEvent}
  */

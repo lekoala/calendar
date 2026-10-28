@@ -191,6 +191,7 @@
 }
 
 .cv-allday-event {
+  position: relative;
   z-index: 2;
   min-inline-size: 0;
   margin: 1px 2px;
@@ -613,6 +614,11 @@
   transition: opacity 0.12s ease;
 }
 
+.cv-allday-event .cv-resize-handle::before {
+  inline-size: 0.25rem;
+  block-size: 1.1rem;
+}
+
 .cv-event:hover .cv-resize-handle::before,
 .cv-event:focus-visible .cv-resize-handle::before {
   opacity: 1;
@@ -624,6 +630,29 @@
 
 .cv-resize-s {
   bottom: 0;
+}
+
+/* All-day bars resize horizontally, so their handles take the full block
+   height and a narrow inline footprint instead of the timed n/s shape. */
+.cv-allday-event .cv-resize-handle {
+  inset-inline: auto;
+  inset-block: 0;
+  inline-size: 0.65rem;
+  block-size: auto;
+  cursor: ew-resize;
+}
+
+.cv-allday-event .cv-resize-w {
+  inset-inline-start: 0;
+}
+
+.cv-allday-event .cv-resize-e {
+  inset-inline-end: 0;
+}
+
+.cv-allday-event:hover .cv-resize-handle::before,
+.cv-allday-event:focus-visible .cv-resize-handle::before {
+  opacity: 1;
 }
 
 /* The now indicator is one colour end to end: `currentColor` ties the line

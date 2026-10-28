@@ -331,6 +331,27 @@ sync adapter contract: echo deduplication (`shouldIgnoreEcho`) and the
 `409` decision (`decideOnConflict`, converged → reload, diverged → choose)
 in `test/sync/sync-adapter.test.js`. Use case §19.
 
+## 0.4 - unreleased
+
+Adoption and interaction completeness, not new views:
+
+- all-day ranges are civil half-open ranges and must cover at least one day;
+  empty all-day events and backgrounds are rejected in normalization and in
+  the optimistic commit path;
+- all-day events resize by day edges through `resizeEvent()`, horizontal
+  pointer handles on visible true edges, and `Alt`+arrows. Hidden days count
+  in the civil range, one-day minimums clamp, and programmatic resize remains
+  policy-free;
+- external renders preserve event focus (event id + segment date + resource)
+  and scroll, without stealing application focus; a render during a gesture
+  cancels it without committing;
+- adoption material: `docs/RECIPES.md`, `docs/FRAMEWORKS.md`, showcase
+  prominence, and the existing migration guide as the comparison entry point.
+
+Deferred again, with no version commitment: empty all-day lane selection,
+month multi-day spanning bars, timed↔all-day conversion, framework packages,
+empty-lane configuration, and any renderer reconciler.
+
 ## Post-0.x candidates (revisit only with a use case)
 
 - generic mini-calendar package;

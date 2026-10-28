@@ -14,6 +14,7 @@ import {
 } from "./core/dates.js";
 import { resolveLabels } from "./core/labels.js";
 import {
+  isInvalidCivilRange,
   isInvertedRange,
   isMovable,
   isResizable,
@@ -875,8 +876,10 @@ export class CalendarViewElement extends HTMLElement {
       resourceId: current.resourceId == null ? null : String(current.resourceId),
     };
     // An inverted placement is refused like any other invalid mutation: the
-    // caller gets `null` and no optimistic state is published.
+    // caller gets `null` and no optimistic state is published. All-day
+    // ranges must also cover at least one civil day.
     if (isInvertedRange(optimistic.start, optimistic.end)) return null;
+    if (allDay && isInvalidCivilRange(optimistic.start, optimistic.end)) return null;
     if (
       nativeEvent &&
       !this.checkInteraction({
@@ -996,9 +999,6 @@ export class CalendarViewElement extends HTMLElement {
   resizeEvent(id, current) {
     const event = this.getEventById(id);
     if (!event || !isResizable(event, this.#config.editable)) return null;
-    // All-day events resize by day edges, not wall-clock minutes: the v0.x
-    // time-grid wire-up for that is not shipped yet, so refuse loudly.
-    if (event.allDay) return null;
     return this.#commitEventResize({
       event,
       previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
@@ -1490,6 +1490,13 @@ export class CalendarViewElement extends HTMLElement {
     const scroll = this.querySelector(".cv-scroller");
     const scrollTop = scroll?.scrollTop ?? 0;
     const scrollLeft = scroll?.scrollLeft ?? 0;
+    // A render replaces the whole subtree. Remember which rendered segment
+    // owned focus so an external update cannot drop keyboard users on the
+    // document body; only focus that was already inside the calendar moves.
+    const active = document.activeElement;
+    const focusOwner =
+      active instanceof Element && this.contains(active) ? active.closest("[data-focus-key]") : null;
+    const focusKey = focusOwner instanceof HTMLElement ? (focusOwner.dataset.focusKey ?? null) : null;
     // The live region outlives the grid so announcements scheduled before a
     // render are never lost when the subtree is replaced.
     const status = this.querySelector(":scope > .cv-status") ?? document.createElement("p");
@@ -1587,6 +1594,15 @@ export class CalendarViewElement extends HTMLElement {
     scroller.scrollLeft = scrollLeft;
 
     this.append(status);
+
+    if (focusKey) {
+      const target = /** @type {HTMLElement | undefined} */ (
+        [...this.querySelectorAll("[data-focus-key]")].find(
+          (node) => /** @type {HTMLElement} */ (node).dataset.focusKey === focusKey,
+        )
+      );
+      target?.focus({ preventScroll: true });
+    }
 
     // Dispatched once the whole subtree exists, so applications can decorate
     // rendered columns without observing mutations. Listeners that mutate

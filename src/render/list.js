@@ -70,6 +70,7 @@ export function renderList({ dates, events, options, now, eventContent, dayHeade
       item.type = "button";
       item.className = ["cv-list-event", ...(event.classNames ?? [])].join(" ");
       item.dataset.eventId = event.id;
+      item.dataset.focusKey = JSON.stringify([event.id, date.toString(), "list"]);
       const state = temporalState(event.start, event.end, renderNow, timeZone);
       item.dataset.temporalState = state;
       item.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));

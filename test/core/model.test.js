@@ -166,6 +166,34 @@ test("normalizeEvent rejects an inverted all-day range", () => {
   );
 });
 
+test("normalizeEvent rejects an empty all-day range", () => {
+  assert.throws(
+    () => normalizeEvent({ id: "a", allDay: true, start: "2026-09-03", end: "2026-09-03" }),
+    TypeError,
+  );
+  const oneDay = normalizeEvent({
+    id: "a",
+    allDay: true,
+    start: "2026-09-03",
+    end: "2026-09-04",
+  });
+  assert.equal(String(oneDay.start), "2026-09-03");
+  assert.equal(String(oneDay.end), "2026-09-04");
+});
+
+test("normalizeBackground rejects an empty all-day range", () => {
+  assert.throws(
+    () =>
+      normalizeBackground({
+        id: "bg",
+        allDay: true,
+        start: "2026-09-03",
+        end: "2026-09-03",
+      }),
+    TypeError,
+  );
+});
+
 test("normalizeEvent allows a zero-length range", () => {
   const event = normalizeEvent({ id: "a", ...TIMED, end: TIMED.start });
   assert.equal(String(event.start), String(event.end));

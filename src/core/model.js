@@ -123,6 +123,23 @@ export function isInvertedRange(start, end) {
 }
 
 /**
+ * True when a civil half-open range covers no day. All-day events and
+ * backgrounds must span at least one civil day; timed events keep their
+ * separate contract, where a zero-length range remains meaningful.
+ *
+ * @param {unknown} start
+ * @param {unknown} end
+ * @returns {boolean}
+ */
+export function isInvalidCivilRange(start, end) {
+  return (
+    start instanceof Temporal.PlainDate &&
+    end instanceof Temporal.PlainDate &&
+    Temporal.PlainDate.compare(end, start) <= 0
+  );
+}
+
+/**
  * @param {EventInput} event
  * @returns {NormalizedEvent}
  */
@@ -139,6 +156,9 @@ export function normalizeEvent(event) {
   );
   if (isInvertedRange(normalizedStart, normalizedEnd)) {
     throw new TypeError("Event end must not precede start");
+  }
+  if (allDay && isInvalidCivilRange(normalizedStart, normalizedEnd)) {
+    throw new TypeError("All-day ranges must cover at least one day (exclusive end)");
   }
   // No `editable` default here on purpose: an injected `true` would outrank
   // `configure({ editable: false })` in `isMovable`/`isResizable`, which
@@ -310,6 +330,9 @@ export function normalizeBackground(background) {
   );
   if (isInvertedRange(normalizedStart, normalizedEnd)) {
     throw new TypeError("Background end must not precede start");
+  }
+  if (allDay && isInvalidCivilRange(normalizedStart, normalizedEnd)) {
+    throw new TypeError("All-day ranges must cover at least one day (exclusive end)");
   }
   return /** @type {NormalizedBackground} */ ({
     ...rest,

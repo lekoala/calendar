@@ -106,7 +106,9 @@ Rules:
 - same-room bars stack into rows (`layoutDaySegments`); different rooms freely share a row;
 - solo views stack all all-day bars against each other in the single block, regardless of resource assignment;
 - an all-day background paints the full-height tint of its span, split into separate contiguous segments per resource;
-- interactions v0.x: native button activation (`calendar:eventclick`), context menu / long-press, day-snapped pointer drag across days and resources, and Shift+arrows day moves — all through the same optimistic commit as timed events. Day-edge resize, creating inside the lane and timed↔all-day conversion are deferred;
+- interactions: native button activation (`calendar:eventclick`), context menu / long-press, day-snapped pointer drag across days and resources, `Shift`+arrows day moves, and day-edge resize through pointer handles or `Alt`+arrows — all through the same optimistic commit as timed events. Only a true visible edge exposes a handle: a bar clipped by the visible window or by hidden days can move but not resize that invisible edge;
+- an all-day range must cover at least one civil day (`end > start`), including through `resizeEvent()`; dragging an edge clamps instead of committing zero days. Hidden days count in the civil duration, and an end over a visible Friday is the exclusive Saturday even when Saturday is not rendered;
+- creating inside the lane and timed↔all-day conversion remain deferred;
 - all-day events are civil `Temporal.PlainDate`; month and list keep rendering them as their usual per-day chips/rows, and `allDaySlot: false` only hides them from time grids.
 
 ## Density guidance

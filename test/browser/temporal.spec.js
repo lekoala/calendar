@@ -142,7 +142,11 @@ test("month and list nodes carry data-temporal-state", async ({ page }) => {
     "future",
   );
   await page.evaluate(() => {
-    /** @type {any} */ (document.querySelector("calendar-view")).setView("list");
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.setView("list");
+    // Anchor one day back so the three-hour-past event is still inside the
+    // rolling list window even when the run starts just after midnight.
+    calendar.gotoDate(calendar.date.subtract({ days: 1 }));
   });
   await flushRender(page);
   await expect(page.locator('.cv-list-event[data-event-id="past"]').first()).toHaveAttribute(

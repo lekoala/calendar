@@ -68,6 +68,54 @@ test("partial updates preserve metadata and civil boundaries, and explicit clear
   await expect(page.locator('[data-event-id="civil"]').first()).toContainText("Renamed");
 });
 
+test("all-day resizeEvent commits civil ranges, refuses empty ones and can revert", async ({ page }) => {
+  await openDemo(page, "basic");
+  const result = await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = [{ id: "civil", allDay: true, start: "2026-09-03", end: "2026-09-05" }];
+    /** @type {any} */
+    let detail = null;
+    let dispatched = 0;
+    calendar.addEventListener("calendar:eventresize", (/** @type {any} */ event) => {
+      dispatched += 1;
+      detail = event.detail;
+    });
+    calendar.configure({
+      interactionPolicy() {
+        return "programmatic mutations stay authoritative";
+      },
+    });
+    const resized = calendar.resizeEvent("civil", { start: "2026-09-04", end: "2026-09-06" });
+    const committed = calendar.getEventById("civil");
+    const previous = detail
+      ? { start: String(detail.previous.start), end: String(detail.previous.end) }
+      : null;
+    const current = detail ? { start: String(detail.current.start), end: String(detail.current.end) } : null;
+    detail?.revert();
+    const reverted = calendar.getEventById("civil");
+    const empty = calendar.resizeEvent("civil", { start: "2026-09-06", end: "2026-09-06" });
+    const afterEmpty = calendar.getEventById("civil");
+    return {
+      resized: resized && { start: String(resized.start), end: String(resized.end) },
+      committed: committed && { start: String(committed.start), end: String(committed.end) },
+      previous,
+      current,
+      dispatched,
+      reverted: reverted && { start: String(reverted.start), end: String(reverted.end) },
+      empty,
+      afterEmpty: afterEmpty && { start: String(afterEmpty.start), end: String(afterEmpty.end) },
+    };
+  });
+  expect(result.resized).toEqual({ start: "2026-09-04", end: "2026-09-06" });
+  expect(result.committed).toEqual({ start: "2026-09-04", end: "2026-09-06" });
+  expect(result.previous).toEqual({ start: "2026-09-03", end: "2026-09-05" });
+  expect(result.current).toEqual({ start: "2026-09-04", end: "2026-09-06" });
+  expect(result.dispatched).toBe(1);
+  expect(result.reverted).toEqual({ start: "2026-09-03", end: "2026-09-05" });
+  expect(result.empty).toBeNull();
+  expect(result.afterEmpty).toEqual({ start: "2026-09-03", end: "2026-09-05" });
+});
+
 for (const view of ["threeDays", "resourceThreeDays"]) {
   test(`${view}: moving a continuation by keyboard shifts the whole event by one day`, async ({ page }) => {
     await openDemo(page, "basic");

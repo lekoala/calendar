@@ -4040,6 +4040,9 @@
     }
     return false;
   }
+  function isInvalidCivilRange(start, end) {
+    return start instanceof Temporal2.PlainDate && end instanceof Temporal2.PlainDate && Temporal2.PlainDate.compare(end, start) <= 0;
+  }
   function normalizeEvent(event) {
     if (!event || event.id == null || event.start == null || event.end == null) {
       throw new TypeError("Event requires id, start and end");
@@ -4049,6 +4052,9 @@
     const normalizedEnd = normalizeRangeBound(end, allDay);
     if (isInvertedRange(normalizedStart, normalizedEnd)) {
       throw new TypeError("Event end must not precede start");
+    }
+    if (allDay && isInvalidCivilRange(normalizedStart, normalizedEnd)) {
+      throw new TypeError("All-day ranges must cover at least one day (exclusive end)");
     }
     return {
       ...rest,
@@ -4114,6 +4120,9 @@
     const normalizedEnd = normalizeRangeBound(end, allDay);
     if (isInvertedRange(normalizedStart, normalizedEnd)) {
       throw new TypeError("Background end must not precede start");
+    }
+    if (allDay && isInvalidCivilRange(normalizedStart, normalizedEnd)) {
+      throw new TypeError("All-day ranges must cover at least one day (exclusive end)");
     }
     return {
       ...rest,
@@ -4404,6 +4413,7 @@
         item.type = "button";
         item.className = ["cv-list-event", ...event.classNames ?? []].join(" ");
         item.dataset.eventId = event.id;
+        item.dataset.focusKey = JSON.stringify([event.id, date.toString(), "list"]);
         const state = temporalState(event.start, event.end, renderNow, timeZone);
         item.dataset.temporalState = state;
         item.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
@@ -4484,6 +4494,7 @@
           chip.type = "button";
           chip.className = ["cv-month-event", ...event.classNames ?? []].join(" ");
           chip.dataset.eventId = event.id;
+          chip.dataset.focusKey = JSON.stringify([event.id, date.toString(), "month"]);
           const state = temporalState(event.start, event.end, renderNow, timeZone);
           chip.dataset.temporalState = state;
           chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
@@ -5037,6 +5048,9 @@
     function beginAllDayDrag(bar, event, startDay, nativeEvent) {
       if (nativeEvent.button !== 0)
         return;
+      if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
+        return;
+      }
       if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
         const startGate = host.checkInteraction({
           action: "move",
@@ -5151,6 +5165,150 @@
       bar.addEventListener("pointercancel", onCancel);
       bar.addEventListener("lostpointercapture", onCancel);
     }
+    function beginAllDayResize(bar, event, edge, nativeEvent) {
+      if (nativeEvent.button !== 0)
+        return;
+      if (!(event.start instanceof Temporal2.PlainDate) || !(event.end instanceof Temporal2.PlainDate))
+        return;
+      const startDate = event.start;
+      const endDate = event.end;
+      const pressGate = host.checkInteraction({
+        action: "resize",
+        event,
+        start: startDate,
+        end: endDate,
+        resourceId: event.resourceId ?? null,
+        allDay: true
+      });
+      if (!pressGate.ok)
+        return;
+      nativeEvent.stopPropagation();
+      nativeEvent.preventDefault();
+      tryCapture(bar, nativeEvent.pointerId);
+      const savedGridColumn = bar.style.gridColumn;
+      const downX = nativeEvent.clientX;
+      const downY = nativeEvent.clientY;
+      let moved = false;
+      let pending = null;
+      let resizeKey = null;
+      let resizeOk = true;
+      const spanFor = (start, end) => {
+        let first = -1;
+        let last = -1;
+        for (let index = 0;index < columns.length; index += 1) {
+          if (!belongsToEventBlock(columns[index]))
+            continue;
+          const date = columns[index].date;
+          if (first < 0 && Temporal2.PlainDate.compare(date, start) >= 0)
+            first = index;
+          if (Temporal2.PlainDate.compare(date, end) < 0)
+            last = index;
+        }
+        if (first < 0 || last < first)
+          return null;
+        return `${first + 2} / ${last + 3}`;
+      };
+      const belongsToEventBlock = (column) => !resourceView || event.resourceId == null || column.resource?.id === event.resourceId;
+      const lastVisibleBefore = (bound) => {
+        let found = null;
+        for (const column of columns) {
+          if (belongsToEventBlock(column) && Temporal2.PlainDate.compare(column.date, bound) < 0) {
+            found = column.date;
+          }
+        }
+        return found;
+      };
+      const onMove = (moveEvent) => {
+        if (longPressConsumed)
+          return;
+        if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
+          moved = true;
+        if (!moved)
+          return;
+        const index = columnIndexAtX(moveEvent.clientX);
+        if (index < 0)
+          return;
+        if (!belongsToEventBlock(columns[index]))
+          return;
+        const pointerDate = columns[index].date;
+        let nextStart = startDate;
+        let nextEnd = endDate;
+        if (edge === "start") {
+          if (Temporal2.PlainDate.compare(pointerDate, endDate) >= 0) {
+            const last = lastVisibleBefore(endDate);
+            if (!last)
+              return;
+            nextStart = last;
+          } else {
+            nextStart = pointerDate;
+          }
+        } else {
+          const endFromDay = pointerDate.add({ days: 1 });
+          nextEnd = Temporal2.PlainDate.compare(endFromDay, startDate.add({ days: 1 })) < 0 ? startDate.add({ days: 1 }) : endFromDay;
+        }
+        const span = spanFor(nextStart, nextEnd);
+        if (!span)
+          return;
+        pending = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
+        bar.style.gridColumn = span;
+        const key = `${nextStart}:${nextEnd}`;
+        if (key !== resizeKey) {
+          resizeKey = key;
+          const decision = host.checkInteraction({
+            action: "resize",
+            event,
+            ...pending,
+            allDay: true
+          });
+          resizeOk = decision.ok;
+          bar.classList.toggle("cv-invalid", !decision.ok);
+          if (decision.reason)
+            bar.dataset.reason = decision.reason;
+          else
+            delete bar.dataset.reason;
+        }
+      };
+      const onUp = (upEvent) => {
+        cleanup();
+        if (longPressConsumed || !moved || !pending)
+          return;
+        suppressClick = true;
+        if (!resizeOk) {
+          bar.style.gridColumn = savedGridColumn;
+          return;
+        }
+        const result = host.commitEventResize({
+          event,
+          previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+          current: pending,
+          nativeEvent: upEvent
+        });
+        if (!result) {
+          bar.style.gridColumn = savedGridColumn;
+          return;
+        }
+        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
+        host.refocusEvent(event.id);
+      };
+      const onCancel = (_cancelEvent) => {
+        cleanup();
+        bar.style.gridColumn = savedGridColumn;
+        longPressConsumed = false;
+        suppressClick = false;
+      };
+      const cleanup = () => {
+        bar.removeEventListener("pointermove", onMove);
+        bar.removeEventListener("pointerup", onUp);
+        bar.removeEventListener("pointercancel", onCancel);
+        bar.removeEventListener("lostpointercapture", onCancel);
+        bar.classList.remove("cv-invalid");
+        delete bar.dataset.reason;
+      };
+      bar.addEventListener("pointermove", onMove);
+      bar.addEventListener("pointerup", onUp);
+      bar.addEventListener("pointercancel", onCancel);
+      bar.addEventListener("lostpointercapture", onCancel);
+    }
     const lane = document.createElement("div");
     lane.className = "cv-allday";
     lane.style.gridTemplateColumns = gridTemplate;
@@ -5175,6 +5333,7 @@
         bar.type = "button";
         bar.className = ["cv-allday-event", ...event.classNames ?? []].join(" ");
         bar.dataset.eventId = event.id;
+        bar.dataset.focusKey = JSON.stringify([event.id, "allday", event.resourceId ?? null]);
         const barState = stateOf(event);
         bar.dataset.temporalState = barState;
         bar.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
@@ -5233,35 +5392,109 @@
           }, press);
         });
         const movable = isMovable(event, host.editable);
+        const resizable = isResizable(event, host.editable);
         bar.addEventListener("keydown", (keyboardEvent) => {
-          if (keyboardEvent.ctrlKey || keyboardEvent.metaKey || !keyboardEvent.shiftKey)
+          if (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
             return;
           const key = keyboardEvent.key;
-          if (key !== "ArrowLeft" && key !== "ArrowRight")
+          if (keyboardEvent.shiftKey) {
+            if (key !== "ArrowLeft" && key !== "ArrowRight")
+              return;
+            if (!movable)
+              return;
+            keyboardEvent.preventDefault();
+            const days = key === "ArrowRight" ? 1 : -1;
+            if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
+              const gate = host.checkInteraction({
+                action: "move",
+                event,
+                start: event.start.add({ days }),
+                end: event.end.add({ days }),
+                resourceId: event.resourceId ?? null,
+                allDay: true
+              });
+              if (!gate.ok) {
+                if (gate.reason)
+                  host.announce(gate.reason);
+                return;
+              }
+            }
+            const next = commitAllDayMove(event, days, event.resourceId ?? null, keyboardEvent);
+            if (next)
+              host.announce(describeEvent(next, timeZone, labels.untitledEvent));
             return;
-          if (!movable)
+          }
+          if (!keyboardEvent.altKey || !resizable)
+            return;
+          if (!(event.start instanceof Temporal2.PlainDate) || !(event.end instanceof Temporal2.PlainDate))
+            return;
+          const adjustsStart = key === "ArrowUp" || key === "ArrowDown";
+          const adjustsEnd = key === "ArrowLeft" || key === "ArrowRight";
+          if (!adjustsStart && !adjustsEnd)
             return;
           keyboardEvent.preventDefault();
-          const days = key === "ArrowRight" ? 1 : -1;
-          if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
-            const gate = host.checkInteraction({
-              action: "move",
-              event,
-              start: event.start.add({ days }),
-              end: event.end.add({ days }),
-              resourceId: event.resourceId ?? null,
-              allDay: true
-            });
-            if (!gate.ok) {
-              if (gate.reason)
-                host.announce(gate.reason);
-              return;
+          let nextStart = event.start;
+          let nextEnd = event.end;
+          if (key === "ArrowUp")
+            nextStart = nextStart.subtract({ days: 1 });
+          else if (key === "ArrowDown")
+            nextStart = nextStart.add({ days: 1 });
+          else if (key === "ArrowLeft")
+            nextEnd = nextEnd.subtract({ days: 1 });
+          else
+            nextEnd = nextEnd.add({ days: 1 });
+          if (Temporal2.PlainDate.compare(nextEnd, nextStart) <= 0)
+            return;
+          const gate = host.checkInteraction({
+            action: "resize",
+            event,
+            start: nextStart,
+            end: nextEnd,
+            resourceId: event.resourceId ?? null,
+            allDay: true
+          });
+          if (!gate.ok) {
+            if (gate.reason)
+              host.announce(gate.reason);
+            return;
+          }
+          const result = host.commitEventResize({
+            event,
+            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+            current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
+            nativeEvent: keyboardEvent
+          });
+          if (!result)
+            return;
+          host.announce(describeEvent(result, timeZone, labels.untitledEvent));
+          host.refocusEvent(event.id);
+        });
+        if (resizable) {
+          const resizeAllowed = host.checkInteraction({
+            action: "resize",
+            event,
+            start: event.start,
+            end: event.end,
+            resourceId: event.resourceId ?? null,
+            allDay: true
+          }).ok;
+          const startEdgeVisible = event.start instanceof Temporal2.PlainDate && Temporal2.PlainDate.compare(columns[startDay].date, event.start) === 0;
+          const endEdgeVisible = event.end instanceof Temporal2.PlainDate && Temporal2.PlainDate.compare(columns[endDay - 1].date.add({ days: 1 }), event.end) === 0;
+          if (resizeAllowed) {
+            for (const edge of ["start", "end"]) {
+              if (edge === "start" && !startEdgeVisible)
+                continue;
+              if (edge === "end" && !endEdgeVisible)
+                continue;
+              const handle = document.createElement("div");
+              handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "w" : "e"}`;
+              bar.append(handle);
+              handle.addEventListener("pointerdown", (nativeEvent) => {
+                beginAllDayResize(bar, event, edge, nativeEvent);
+              });
             }
           }
-          const next = commitAllDayMove(event, days, event.resourceId ?? null, keyboardEvent);
-          if (next)
-            host.announce(describeEvent(next, timeZone, labels.untitledEvent));
-        });
+        }
         if (movable) {
           bar.addEventListener("pointerdown", (nativeEvent) => beginAllDayDrag(bar, event, startDay, nativeEvent));
         }
@@ -5778,6 +6011,7 @@
         node.type = "button";
         node.className = ["cv-event", ...event.classNames ?? []].join(" ");
         node.dataset.eventId = event.id;
+        node.dataset.focusKey = JSON.stringify([event.id, column.date.toString(), column.resource?.id ?? null]);
         const nodeState = stateOf(event);
         node.dataset.temporalState = nodeState;
         node.style.top = `${geometry.top}px`;
@@ -6724,6 +6958,8 @@
       };
       if (isInvertedRange(optimistic.start, optimistic.end))
         return null;
+      if (allDay && isInvalidCivilRange(optimistic.start, optimistic.end))
+        return null;
       if (nativeEvent && !this.checkInteraction({
         action: name === "calendar:eventmove" ? "move" : "resize",
         event: before,
@@ -6788,8 +7024,6 @@
     resizeEvent(id, current) {
       const event = this.getEventById(id);
       if (!event || !isResizable(event, this.#config.editable))
-        return null;
-      if (event.allDay)
         return null;
       return this.#commitEventResize({
         event,
@@ -7140,6 +7374,9 @@
       const scroll = this.querySelector(".cv-scroller");
       const scrollTop = scroll?.scrollTop ?? 0;
       const scrollLeft = scroll?.scrollLeft ?? 0;
+      const active = document.activeElement;
+      const focusOwner = active instanceof Element && this.contains(active) ? active.closest("[data-focus-key]") : null;
+      const focusKey = focusOwner instanceof HTMLElement ? focusOwner.dataset.focusKey ?? null : null;
       const status = this.querySelector(":scope > .cv-status") ?? document.createElement("p");
       status.className = "cv-status";
       status.setAttribute("role", "status");
@@ -7220,6 +7457,10 @@
       scroller.scrollTop = scrollTop;
       scroller.scrollLeft = scrollLeft;
       this.append(status);
+      if (focusKey) {
+        const target = [...this.querySelectorAll("[data-focus-key]")].find((node) => node.dataset.focusKey === focusKey);
+        target?.focus({ preventScroll: true });
+      }
       this.dispatchEvent(new CustomEvent("calendar:render", {
         bubbles: true,
         composed: true,

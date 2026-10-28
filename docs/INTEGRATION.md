@@ -198,3 +198,8 @@ The application can decide defaults such as:
 - month/list → alternate representation.
 
 These are application UX policies, not hard core restrictions. The core never infers the view from `resources.length`.
+
+## Recipes and framework examples
+
+- [RECIPES.md](RECIPES.md): UTC instants, multiple feeds, RRULE/ICS occurrences.
+- [FRAMEWORKS.md](FRAMEWORKS.md): React, Vue and Svelte lifecycle, properties and event cleanup.

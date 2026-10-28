@@ -365,6 +365,9 @@ test("a seeded nearly-full day shows amber from the first load", async ({ page }
   // The three verdicts the legend names are all on screen without touching
   // anything: this fixture is the amber one, three days past the red day.
   const nearIso = openDayFrom((await anchorDate(page)).add({ days: 9 })).toString();
+  // Late in a month the +9 fixture can fall outside the six-week mini grid;
+  // navigate to it to assert the seeded verdict, not the calendar month.
+  await gotoDate(page, nearIso);
   expect(await miniVerdict(page, nearIso)).toBe("soon");
   // Amber is a verdict about the day, not about one room: all three are busy.
   await expect(page.locator(mini.verdict("soon")).first()).toBeVisible();

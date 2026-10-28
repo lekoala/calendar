@@ -1,6 +1,29 @@
 # Changelog
 
-## 0.3.0 — 2026-10-28
+## Unreleased
+
+### Added
+
+* All-day events resize by day edges: `resizeEvent()` now accepts civil
+  ranges, the lane exposes horizontal start/end handles only on visible true
+  edges, and `Alt`+arrows resize from the keyboard. Mutations keep the
+  optimistic `calendar:eventresize`/`revert()` contract; programmatic resizes
+  remain policy-free. Hidden days count in the civil range, and an edge
+  clipped by the visible window exposes no handle.
+* External renders preserve focus and scroll inside the calendar. A focused
+  event segment is restored by event id, date and resource; focus outside the
+  calendar is never stolen. A render that arrives during a pointer gesture
+  cancels the gesture without committing.
+
+### Changed
+
+* All-day events and backgrounds must cover at least one civil day
+  (`end > start`). Normalization rejects empty ranges and `resizeEvent()`
+  returns `null`; timed zero-length ranges keep their existing contract.
+  This is a behavior change for callers that previously inserted an invisible
+  empty all-day range.
+
+## 0.3.0 - 2026-10-28
 
 A consolidation release: 0.2's contracts are tightened and pinned by tests, no
 new feature surface. See [docs/MIGRATION-0.3.md](docs/MIGRATION-0.3.md) for the

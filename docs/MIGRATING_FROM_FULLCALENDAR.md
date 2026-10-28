@@ -368,7 +368,7 @@ This is a **Light DOM** component. Use your own CSS against `.calendar-view`, `.
 - **Timeline, Gantt, multi-month, custom view plugins, virtualized resource trees:** no equivalent in 0.3.
 - **Built-in toolbar, date picker, popovers, event editor, week-number UI:** compose in the host application. `calendar:moreclick`, `calendar:eventclick`, and other intents help, but they do not instantiate application UI.
 - **FullCalendar resource hierarchies, multi-resource event assignment and group-coupled dragging:** not supported as equivalent core behaviors. One-level `resourceGroups` are just headers.
-- **All-day day-edge resize and timed ↔ all-day dragging:** not implemented in 0.3. All-day drag and keyboard day moves **are** implemented.
+- **All-day day-edge resize and timed ↔ all-day dragging:** day-edge resize is available from 0.4 (API, handles, keyboard); 0.3 returned `null`. Timed ↔ all-day dragging remains unimplemented. All-day drag and keyboard day moves **are** implemented.
 - **Month/list dragging or selecting arbitrary multi-day spans:** no equivalent; month supports a single civil day selection and list is read-only.
 - **Multiple event feeds and URL-based feed machinery:** aggregate in `eventSource` or application state.
 - **View- and event-specific plugin callbacks, automatic calendar `eventChange` notifications:** use documented intents for user gestures and explicit mutation APIs for app/server updates. `updateEvent()` does not emit a FullCalendar-style `eventChange` event.

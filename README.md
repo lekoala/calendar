@@ -30,6 +30,8 @@ calendar.events = [
 
 Solo time grids use the same model: omit `resources` and switch to `view="week"` (or `day`, `threeDays`, `month`, `list`).
 
+See the [showcase](demo/showcase.html) for a full room-booking application shell built around the same element: resource columns, application booking rules, and a toolbar, search and dialogs composed around the calendar rather than shipped inside it.
+
 ## Mission
 
 The component should be very good at:
@@ -280,6 +282,12 @@ The contract and test matrix are documented in
 - Coming from FullCalendar? See [docs/MIGRATING_FROM_FULLCALENDAR.md](docs/MIGRATING_FROM_FULLCALENDAR.md)
   for the view/option mapping, the stricter event model, event-source and
   callback replacements, and an explicit list of what has no equivalent.
+
+## Guides
+
+- Transforming API payloads (UTC instants, multiple feeds, RRULE/ICS)? See [docs/RECIPES.md](docs/RECIPES.md).
+- Using React, Vue or Svelte? See [docs/FRAMEWORKS.md](docs/FRAMEWORKS.md) for
+  property assignment, lifecycle, event cleanup and loading behavior.
 
 ## License
 
