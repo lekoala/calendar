@@ -1,3 +1,5 @@
+import { eventOverlapsDate } from "./slicing.js";
+
 /**
  * Resource/date column derivation for the time grid.
  *
@@ -119,4 +121,30 @@ export function backgroundAppliesToColumn(background, column) {
   if (!column.resource) return true;
   if (background.resourceId == null) return true;
   return background.resourceId === column.resource.id;
+}
+
+/**
+ * Contiguous civil range spans, split at resource boundaries and unmatched
+ * columns. The caller supplies event or background applicability explicitly.
+ *
+ * @param {TimeGridColumn[]} columns
+ * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
+ * @param {typeof eventBelongsToColumn} applies
+ * @param {string} timeZone
+ * @returns {Array<{ startDay: number, endDay: number }>}
+ */
+export function getDaySpans(columns, range, applies, timeZone) {
+  /** @type {Array<{ startDay: number, endDay: number }>} */
+  const spans = [];
+  for (let index = 0; index < columns.length; index += 1) {
+    const column = columns[index];
+    if (!applies(range, column) || !eventOverlapsDate(range, column.date, timeZone)) continue;
+    const previous = spans[spans.length - 1];
+    if (previous?.endDay === index && columns[index - 1].resource === column.resource) {
+      previous.endDay = index + 1;
+    } else {
+      spans.push({ startDay: index, endDay: index + 1 });
+    }
+  }
+  return spans;
 }

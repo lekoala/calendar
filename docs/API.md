@@ -554,11 +554,15 @@ only carries `title` leaves `resourceId`, `editable`, `classNames`,
 is honored whenever the key is present, so `allDay: undefined` clears a civil
 event back to timed; `start`/`end` fall back to the stored event when absent or
 `undefined`. A partial payload therefore needs no range, and a payload that
-changes `allDay` must carry matching `start`/`end`. `moveEvent(id, {
-resourceId: null })` detaches an event from its resource the same way;
-omitting `resourceId` keeps it. An inverted range (`end` before `start`) is
-refused: `normalizeEvent` throws for `addEvent`/`updateEvent`, and
-`moveEvent`/`resizeEvent` return `null` without publishing optimistic state.
+changes `allDay` must carry matching `start`/`end`. Metadata objects are
+replaced when supplied, not deep-merged; clearing `classNames` or
+`extendedProps` normalizes to `[]` or `{}`. Required boundaries cannot be
+cleared, and an invalid update leaves existing state intact. An unknown id
+still requires a complete event and adds it. `moveEvent(id, { resourceId:
+null })` detaches an event from its resource the same way; omitting
+`resourceId` keeps it. An inverted range (`end` before `start`) is refused:
+`normalizeEvent` throws for `addEvent`/`updateEvent`, and `moveEvent`/
+`resizeEvent` return `null` without publishing optimistic state.
 
 ## External placement (drag from application-owned sources)
 

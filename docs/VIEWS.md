@@ -94,7 +94,7 @@ The two predicates are intentionally asymmetric — do not unify them:
 
 Multi-day ranges are sliced and clipped per visible day (`sliceTimedEventForDay`), so `Mon 22:00 → Tue 02:00` renders as `Mon 22:00 → slotMax` and `slotMin → Tue 02:00` where the slot range overlaps. Slices with no positive visible duration render nothing. Geometry uses wall-clock minutes in `calendar.timeZone`, including across DST transitions.
 
-One consequence of wall-clock geometry: an event whose real duration spans a daylight-saving fall-back but whose civil wall-clock start and end coincide (for example `02:30+02:00 → 02:30+01:00`, one real hour) has a zero-minute wall-clock slice and therefore renders nothing, even though `getEventOverlaps()` still reports the overlap. This is consistent with the documented clock-face model, not a slicing bug.
+During the repeated autumn hour, a positive instant range whose wall-clock end is at or before its start stays visible: its slice starts at the local start time and extends by its elapsed duration, then clips to the visible slots. For example, `02:45+02:00 → 02:15+01:00` paints `02:45 → 03:15`, and `02:30+02:00 → 02:30+01:00` paints `02:30 → 03:30`. This fallback applies equally to events and backgrounds; canonical boundaries and overlap queries retain the original instants. Other slices retain wall-clock geometry.
 
 ### The all-day lane
 
@@ -104,8 +104,8 @@ Rules:
 
 - a bar spans its civil days (`[start, end)` exclusive) inside **one resource block only** — it never crosses into the neighbouring room;
 - same-room bars stack into rows (`layoutDaySegments`); different rooms freely share a row;
-- solo views stack unassigned all-day bars against each other in the single block;
-- an all-day background paints the full-height tint of its span;
+- solo views stack all all-day bars against each other in the single block, regardless of resource assignment;
+- an all-day background paints the full-height tint of its span, split into separate contiguous segments per resource;
 - interactions v0.x: native button activation (`calendar:eventclick`), context menu / long-press, day-snapped pointer drag across days and resources, and Shift+arrows day moves — all through the same optimistic commit as timed events. Day-edge resize, creating inside the lane and timed↔all-day conversion are deferred;
 - all-day events are civil `Temporal.PlainDate`; month and list keep rendering them as their usual per-day chips/rows, and `allDaySlot: false` only hides them from time grids.
 
@@ -157,3 +157,5 @@ List is a minimal generic renderer over the same visible event state: 7 consecut
 Switching views preserves the anchor date, reusable event data and vertical scroll position where the newly rendered scroller allows it; the visible range is recomputed, so sources are refetched for the new range (`start/end/resourceIds/signal` as always). There is no range cache by design — see data docs. Horizontal scroll is intentionally not contractual across representations.
 
 Concretely: `timeGrid ↔ resourceTimeGrid ↔ month ↔ list` never rebuilds application-owned toolbar/sidebar state and never requires re-selecting resources.
+
+All-day pointer moves use the civil dates of the grabbed and destination columns. Moving across resources on the same date preserves the date; hidden weekdays count toward the civil displacement. Grabbing a continuation preserves its offset from the event start.

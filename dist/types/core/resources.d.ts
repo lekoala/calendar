@@ -1,3 +1,7 @@
+export type TimeGridColumn = {
+    date: import("temporal-polyfill").Temporal.PlainDate;
+    resource: import("./model.js").CalendarResource | null;
+};
 /**
  * Resource/date column derivation for the time grid.
  *
@@ -24,10 +28,6 @@
  * - a background without `resourceId` is global context and applies to
  *   every column. Do not "unify" the two predicates in a refactor.
  */
-export type TimeGridColumn = {
-    date: import("temporal-polyfill").Temporal.PlainDate;
-    resource: import("./model.js").CalendarResource | null;
-};
 /**
  * @typedef {object} TimeGridColumn
  * @property {import("temporal-polyfill").Temporal.PlainDate} date
@@ -101,4 +101,22 @@ export declare function eventBelongsToColumn(event: {
 export declare function backgroundAppliesToColumn(background: {
     resourceId?: string | null;
 }, column: TimeGridColumn): boolean;
+/**
+ * Contiguous civil range spans, split at resource boundaries and unmatched
+ * columns. The caller supplies event or background applicability explicitly.
+ *
+ * @param {TimeGridColumn[]} columns
+ * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
+ * @param {typeof eventBelongsToColumn} applies
+ * @param {string} timeZone
+ * @returns {Array<{ startDay: number, endDay: number }>}
+ */
+export declare function getDaySpans(columns: TimeGridColumn[], range: {
+    start: unknown;
+    end: unknown;
+    resourceId?: string | null;
+}, applies: typeof eventBelongsToColumn, timeZone: string): Array<{
+    startDay: number;
+    endDay: number;
+}>;
 //# sourceMappingURL=resources.d.ts.map

@@ -228,3 +228,24 @@ test("eventOverlapsDate covers civil half-open spans, end exclusive", () => {
   assert.equal(eventOverlapsDate(range, "2026-09-05", ZONE), false);
   assert.equal(eventOverlapsDate(range, "2026-09-02", ZONE), false);
 });
+
+/** @type {Array<[string, string, {start: number, end: number}]>} */
+const repeatedHourCases = [
+  ["02:45:00+02:00", "02:15:00+01:00", { start: 165, end: 195 }],
+  ["02:30:00+02:00", "02:30:00+01:00", { start: 150, end: 210 }],
+];
+for (const [start, end, expected] of repeatedHourCases) {
+  test(`repeated hour ${start} to ${end} retains a positive slice`, () => {
+    const input = {
+      start: `2026-10-25T${start}[${ZONE}]`,
+      end: `2026-10-25T${end}[${ZONE}]`,
+      date: "2026-10-25",
+      timeZone: ZONE,
+      slotMin: 0,
+      slotMax: 300,
+    };
+    assert.deepEqual(sliceRangeForDay(input), expected);
+    assert.equal(sliceRangeForDay({ ...input, slotMin: 240 }), null);
+    assert.deepEqual(sliceRangeForDay({ ...input, slotMax: 180 }), { start: expected.start, end: 180 });
+  });
+}

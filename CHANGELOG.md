@@ -4,6 +4,28 @@
 
 ### Fixed
 
+* All-day dragging uses civil-date displacement instead of column distance,
+  preserving dates across resources and counting hidden weekdays correctly.
+  Grabbing a multi-day continuation preserves its offset from the event start;
+  preview validation and commit use the same proposed range.
+* Removing or replacing an async source invalidates and aborts pending work,
+  including sources that ignore abort. Refetching with no sources also
+  invalidates obsolete requests, and cancellation settles the loading state.
+* Timed events and backgrounds remain visible across the repeated autumn hour
+  when their wall-clock end is at or before their start: the slice extends
+  from its local start by its elapsed duration, clipped to the visible slots.
+  Canonical boundaries and overlap queries keep the original instants.
+* All-day events assigned to different resources stack without overlapping in
+  solo views; resource views retain independent rows within their columns.
+* Global all-day backgrounds render as separate contiguous segments per
+  resource, without painting unrelated dates between resource blocks.
+* Unassigned all-day events stay hidden in resource views, whether their
+  resource id is omitted or null. Global all-day backgrounds still apply to
+  every resource, and solo views retain both kinds of entry.
+* User moves, resizes and selections revalidate the exact proposed range
+  immediately before committing or dispatching the intent. Changes in
+  application-owned policy state during a gesture take effect on release,
+  even when the snapped target has not changed.
 * A numeric `resourceId` no longer detaches its event: event and background
   normalization stringify `resourceId` alongside the resource `id`, so an
   event assigned with an SQL-style numeric id stays in its resource column
@@ -58,13 +80,6 @@
   Biome 2.5.15, Playwright 1.64.0 and `temporal-polyfill` 1.0.5. A
   `bunfig.toml` excludes the Playwright suites from Bun's test discovery, so
   a bare `bun test` runs only the unit tests.
-
-### Notes
-
-* Range geometry stays wall-clock based, so an event whose real duration
-  crosses a daylight-saving fall-back but whose civil start and end coincide
-  renders no visible slice while `getEventOverlaps()` still matches. This is
-  now documented in `docs/VIEWS.md`.
 
 ## 0.2.0 — 2026
 

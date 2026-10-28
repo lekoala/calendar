@@ -179,7 +179,8 @@ test("an all-day bar clicks and moves by day, pointer and keyboard alike", async
   expect(box).not.toBeNull();
   const second = await page.locator(".cv-day").nth(1).boundingBox();
   expect(second).not.toBeNull();
-  await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) / 2, (box?.y ?? 0) + (box?.height ?? 0) / 2);
+  // Grab inside the first date; grabbing the continuation preserves its offset.
+  await page.mouse.move((box?.x ?? 0) + (second?.width ?? 0) / 2, (box?.y ?? 0) + (box?.height ?? 0) / 2);
   await page.mouse.down();
   await page.mouse.move((second?.x ?? 0) + (second?.width ?? 0) / 2, (box?.y ?? 0) + 4, { steps: 5 });
   await page.mouse.up();

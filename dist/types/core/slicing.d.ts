@@ -26,7 +26,8 @@ export type SliceOptions = {
  * The grid height represents local wall-clock time, not elapsed seconds.
  * On a 23-hour (spring forward) or 25-hour (fall back) day the same wall
  * minutes map to the same vertical position; absolute durations are never
- * used for geometry.
+ * used for geometry except for a non-increasing projection across the repeated
+ * hour: that slice extends from its start by its positive elapsed duration.
  *
  * @typedef {object} SliceOptions
  * @property {string} timeZone IANA zone used for wall-clock projection

@@ -147,8 +147,7 @@ export function normalizeEvent(event) {
   return /** @type {NormalizedEvent} */ ({
     ...rest,
     id: String(event.id),
-    // Present only when the input carried it, so `updateEvent`'s merge keeps
-    // an omitted `resourceId` and an explicit `null` clears it.
+    // An absent reference stays optional; explicit null means unassigned.
     ...(resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) }),
     allDay,
     start: normalizedStart,

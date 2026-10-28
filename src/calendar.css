@@ -4,10 +4,10 @@
   --calendar-surface: #ffffff;
   --calendar-line: #e2e8f0;
   --calendar-text: #1f2328;
-  --calendar-muted: color-mix(in srgb, var(--calendar-text) 58%, var(--calendar-surface));
-  --calendar-event-bg: color-mix(in srgb, var(--calendar-accent) 12%, var(--calendar-surface));
-  --calendar-event-border: color-mix(in srgb, var(--calendar-accent) 35%, var(--calendar-surface));
-  --calendar-background-bg: color-mix(in srgb, var(--calendar-accent) 10%, transparent);
+  --calendar-muted: #7d7f82;
+  --calendar-event-bg: #e5edfc;
+  --calendar-event-border: #b3c9f7;
+  --calendar-background-bg: rgb(37 99 235 / 0.1);
   --calendar-column-min: 10rem;
   /* Width of the time axis strip the column tracks repeat after, shared
      with the renderer's own grid template. */
@@ -24,6 +24,17 @@
   /* Typography belongs to the host application; the dense small print
      below keeps explicit sizes of its own. */
   font: inherit;
+}
+
+/* Custom properties accept unknown functions as tokens, so their enhanced
+   values need a feature query rather than a preceding fallback declaration. */
+@supports (color: color-mix(in srgb, black, white)) {
+  .calendar-view {
+    --calendar-muted: color-mix(in srgb, var(--calendar-text) 58%, var(--calendar-surface));
+    --calendar-event-bg: color-mix(in srgb, var(--calendar-accent) 12%, var(--calendar-surface));
+    --calendar-event-border: color-mix(in srgb, var(--calendar-accent) 35%, var(--calendar-surface));
+    --calendar-background-bg: color-mix(in srgb, var(--calendar-accent) 10%, transparent);
+  }
 }
 
 .calendar-view *,
@@ -206,7 +217,7 @@
 .cv-allday-background {
   z-index: 1;
   margin: 1px 2px;
-  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 40%, transparent);
+  border-inline-start: 2px solid rgb(37 99 235 / 0.4);
   background: var(--calendar-background-bg);
   pointer-events: none;
 }
@@ -417,61 +428,6 @@
   }
 }
 
-/* Forced colors: the UA already keeps text, borders and focus rings
-   legible, so only the information that would disappear outright is
-   restated in system colors — tinted fills, painted overlays, the now
-   indicator and refusal markings. No parallel theme. */
-@media (forced-colors: active) {
-  /* Background tints vanish; a dashed contour keeps the zone legible
-     without faking the fill. */
-  .cv-background,
-  .cv-allday-background {
-    border: 1px dashed CanvasText;
-    background: transparent;
-  }
-
-  /* Painted overlays lose both fill and tint: their outlines keep the
-     target readable as Highlight. */
-  .cv-hover,
-  .cv-select-ghost,
-  .cv-preview,
-  .cv-external-ghost {
-    border-color: Highlight;
-    background: transparent;
-  }
-
-  .cv-hover-chip,
-  .cv-select-chip {
-    color: Highlight;
-  }
-
-  .cv-now {
-    color: Highlight;
-  }
-
-  /* A refusal must not collapse into a plain overlay: Mark stays distinct
-     from Highlight where the deterministic red cannot render. */
-  .cv-drag-mirror.cv-invalid,
-  .cv-event.cv-invalid {
-    outline-color: Mark;
-  }
-
-  .cv-select-ghost.cv-invalid,
-  .cv-external-ghost.cv-invalid,
-  .cv-preview.cv-invalid {
-    border-color: Mark;
-  }
-
-  .cv-drag-mirror[data-reason]::after,
-  .cv-event.cv-invalid[data-reason]::after,
-  .cv-select-ghost[data-reason]::after,
-  .cv-external-ghost[data-reason]::after,
-  .cv-preview[data-reason]::after {
-    background: Mark;
-    color: Canvas;
-  }
-}
-
 .cv-day-body {
   position: relative;
 }
@@ -486,7 +442,7 @@
 .cv-background {
   position: absolute;
   inset-inline: 0;
-  border-inline-start: 2px solid color-mix(in srgb, var(--calendar-accent) 40%, transparent);
+  border-inline-start: 2px solid rgb(37 99 235 / 0.4);
   background: var(--calendar-background-bg);
   pointer-events: none;
 }
@@ -572,7 +528,7 @@
    reads the range being drawn, and turns red like every other refusal. */
 .cv-select-ghost.cv-invalid {
   border-color: #dc2626;
-  background: color-mix(in srgb, #dc2626 12%, transparent);
+  background: rgb(220 38 38 / 0.12);
 }
 
 /* Preview of an external placement (app-owned drag source): shows the real
@@ -582,9 +538,9 @@
   position: absolute;
   inset-inline: 2px;
   z-index: 5;
-  border: 2px dashed color-mix(in srgb, var(--calendar-accent) 75%, transparent);
+  border: 2px dashed rgb(37 99 235 / 0.75);
   border-radius: 0.375rem;
-  background: color-mix(in srgb, var(--calendar-accent) 16%, transparent);
+  background: rgb(37 99 235 / 0.16);
   pointer-events: none;
 }
 
@@ -602,13 +558,13 @@
 
 .cv-external-ghost.cv-invalid {
   border-color: #dc2626;
-  background: color-mix(in srgb, #dc2626 12%, transparent);
+  background: rgb(220 38 38 / 0.12);
 }
 
 /* A refused application proposal reads exactly like a refused drop ghost. */
 .cv-preview.cv-invalid {
   border-color: #dc2626;
-  background: color-mix(in srgb, #dc2626 12%, transparent);
+  background: rgb(220 38 38 / 0.12);
 }
 
 .cv-external-ghost-lane {
@@ -625,9 +581,9 @@
   position: absolute;
   inset-inline: 2px;
   z-index: 4;
-  border: 2px solid color-mix(in srgb, var(--calendar-accent) 75%, transparent);
+  border: 2px solid rgb(37 99 235 / 0.75);
   border-radius: 0.375rem;
-  background: color-mix(in srgb, var(--calendar-accent) 16%, transparent);
+  background: rgb(37 99 235 / 0.16);
   pointer-events: none;
 }
 
@@ -651,7 +607,7 @@
   inline-size: 1.1rem;
   block-size: 0.25rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--calendar-text) 35%, transparent);
+  background: rgb(31 35 40 / 0.35);
   opacity: 0;
   transform: translate(-50%, -50%);
   transition: opacity 0.12s ease;
@@ -700,7 +656,7 @@
   inset-inline: 0;
   z-index: 3;
   border: 1px dashed var(--calendar-accent);
-  background: color-mix(in srgb, var(--calendar-accent) 12%, transparent);
+  background: rgb(37 99 235 / 0.12);
   pointer-events: none;
 }
 
@@ -722,3 +678,87 @@
 /* Selection/hover/drop overlays are implemented above; density policies
    per `data-view` (an all-day lane outside time grids, a slot-row policy)
    remain open design space rather than shipped behavior. */
+
+@supports (color: color-mix(in srgb, black, white)) {
+  .cv-background,
+  .cv-allday-background {
+    border-inline-start-color: color-mix(in srgb, var(--calendar-accent) 40%, transparent);
+  }
+
+  .cv-external-ghost,
+  .cv-preview {
+    border-color: color-mix(in srgb, var(--calendar-accent) 75%, transparent);
+    background: color-mix(in srgb, var(--calendar-accent) 16%, transparent);
+  }
+
+  .cv-resize-handle::before {
+    background: color-mix(in srgb, var(--calendar-text) 35%, transparent);
+  }
+
+  .cv-hover,
+  .cv-select-ghost {
+    background: color-mix(in srgb, var(--calendar-accent) 12%, transparent);
+  }
+
+  .cv-select-ghost.cv-invalid,
+  .cv-external-ghost.cv-invalid,
+  .cv-preview.cv-invalid {
+    border-color: #dc2626;
+    background: color-mix(in srgb, #dc2626 12%, transparent);
+  }
+}
+
+/* Forced colors: the UA already keeps text, borders and focus rings
+   legible, so only the information that would disappear outright is
+   restated in system colors — tinted fills, painted overlays, the now
+   indicator and refusal markings. No parallel theme. */
+@media (forced-colors: active) {
+  /* Background tints vanish; a dashed contour keeps the zone legible
+     without faking the fill. */
+  .cv-background,
+  .cv-allday-background {
+    border: 1px dashed CanvasText;
+    background: transparent;
+  }
+
+  /* Painted overlays lose both fill and tint: their outlines keep the
+     target readable as Highlight. */
+  .cv-hover,
+  .cv-select-ghost,
+  .cv-preview,
+  .cv-external-ghost {
+    border-color: Highlight;
+    background: transparent;
+  }
+
+  .cv-hover-chip,
+  .cv-select-chip {
+    color: Highlight;
+  }
+
+  .cv-now {
+    color: Highlight;
+  }
+
+  /* A refusal must not collapse into a plain overlay: Mark stays distinct
+     from Highlight where the deterministic red cannot render. */
+  .cv-drag-mirror.cv-invalid,
+  .cv-event.cv-invalid {
+    outline-color: Mark;
+  }
+
+  .cv-select-ghost.cv-invalid,
+  .cv-external-ghost.cv-invalid,
+  .cv-preview.cv-invalid {
+    border-color: Mark;
+  }
+
+  .cv-drag-mirror[data-reason]::after,
+  .cv-event.cv-invalid[data-reason]::after,
+  .cv-select-ghost[data-reason]::after,
+  .cv-external-ghost[data-reason]::after,
+  .cv-preview[data-reason]::after {
+    background: Mark;
+    color: Canvas;
+  }
+}

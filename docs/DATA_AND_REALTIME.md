@@ -97,3 +97,5 @@ Refetch should preserve viewport/date/scroll and application-owned selection sta
 It also preserves the collections it does not own. `refetchEvents()` drives
 both sources, but each one replaces only its own collection, and mutations
 applied while a request is in flight are not rolled back when it resolves.
+
+Changing or removing either source through `configure()` aborts and invalidates pending source work, even if the source ignores its signal. Refetching with no configured sources also invalidates pending work. Cancellation without a replacement settles `aria-busy` and emits `calendar:loading` with `loading: false`, while retaining current collections. Configuring a source does not itself fetch; call `refetchEvents()` to load it.

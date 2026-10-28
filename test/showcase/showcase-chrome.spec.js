@@ -4,6 +4,7 @@ import {
   anchorDate,
   closePanel,
   flushRender,
+  gotoDate,
   mini,
   miniVerdict,
   openDayFrom,
@@ -542,7 +543,8 @@ test("flagged bookings carry an icon cluster, hidden when short", async ({ page 
 test("a hovered event gets an application tooltip with the dropped detail", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();
-  const card = page.locator('.cv-event[data-kind="maintenance"]').first();
+  await gotoDate(page, openDayFrom((await anchorDate(page)).add({ days: 6 })));
+  const card = page.locator('.cv-event[data-event-id="seed-full-room-a"]').first();
   const title = await card.locator(".sc-card strong span").textContent();
   await card.hover();
   await expect(page.locator("#event-tip")).toBeVisible();
