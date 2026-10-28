@@ -461,7 +461,7 @@ function occupiedForMini(iso) {
 
 /**
  * `first-day` counts 0-6 with Sunday = 0 and takes ISO 7 as a Sunday alias
- * (date-picker 0.3.0), so the core's Temporal 1-7 goes straight through
+ * (date-picker), so the core's Temporal 1-7 goes straight through
  * and no pin at all reads as Monday on both sides.
  */
 function applyMiniFirstDay() {
@@ -940,12 +940,12 @@ function chromeInitShell() {
       }
     });
 
-    // `.dialog-close` is a plain button, so one listener replaces the
+    // `.close` is a plain button, so one listener replaces the
     // `<form method="dialog">` wrappers the sheets used to carry. A click on
     // the backdrop closes them too: the dialog's own box is the sheet body, so
     // the element itself is only ever the target from outside it.
     for (const dialog of document.querySelectorAll("dialog.sc-dialog")) {
-      dialog.querySelector(".dialog-close")?.addEventListener("click", () => dialog.close());
+      dialog.querySelector(".close")?.addEventListener("click", () => dialog.close());
       dialog.addEventListener("click", (event) => {
         if (event.target === dialog) dialog.close();
       });

@@ -10,11 +10,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Calendar × Actual CSS — application shell showcase</title>
   <meta name="description" content="@lekoala/calendar inside a full-viewport application shell skinned with Actual CSS: mini-month and filters, one-row agenda toolbar, popover menus, application booking rules that refuse a drop, hover tooltips and themes.">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/actual-css@0.9.0/dist/actual.full.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.9.0/site/assets/actual-themes.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.46.0/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.5.0/dist/combobox.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.3.0/dist/date-picker.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/actual-css@0.15.1/dist/actual.full.min.css">
+  <!-- Actual publishes the core bundle on npm, but the named presets live only
+       in the repository source (`src/css/themes/*.css`), so those are pinned
+       from the GitHub mirror at the same tag. Each file is a standalone
+       `[data-theme="…"]` island; only the five the account menu offers are
+       loaded. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.15.1/src/css/themes/indigo.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.15.1/src/css/themes/ocean.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.15.1/src/css/themes/forest.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.15.1/src/css/themes/sunset.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lekoala/actual-css@0.15.1/src/css/themes/brutalist.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.50.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.8.0/dist/combobox.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.6.0/dist/date-picker.min.css">
   <link rel="stylesheet" href="../dist/calendar.css">
   <link rel="stylesheet" href="./showcase.css">
   <!-- Application dependencies, pinned the way Actual CSS already is. The
@@ -27,12 +36,12 @@
   <script type="importmap">
     {
       "imports": {
-        "@lekoala/floating": "https://cdn.jsdelivr.net/npm/@lekoala/floating@0.2.0/src/floating.js",
-        "@lekoala/combobox": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.5.0/src/index.js",
-        "@lekoala/combobox/define": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.5.0/src/define.js",
-        "@lekoala/date-picker/calendar": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.3.0/src/date-calendar.js",
-        "@lekoala/date-picker/locales/fr": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.3.0/src/locales/fr.js",
-        "@lekoala/date-picker/locales/nl": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.3.0/src/locales/nl.js"
+        "@lekoala/floating": "https://cdn.jsdelivr.net/npm/@lekoala/floating@0.3.1/src/floating.js",
+        "@lekoala/combobox": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.8.0/src/index.js",
+        "@lekoala/combobox/define": "https://cdn.jsdelivr.net/npm/@lekoala/combobox@0.8.0/src/define.js",
+        "@lekoala/date-picker/calendar": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.6.0/src/date-calendar.js",
+        "@lekoala/date-picker/locales/fr": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.6.0/src/locales/fr.js",
+        "@lekoala/date-picker/locales/nl": "https://cdn.jsdelivr.net/npm/@lekoala/date-picker@0.6.0/src/locales/nl.js"
       }
     }
   </script>
@@ -448,7 +457,7 @@
           <input id="tools-search" list="search-catalogue" autocomplete="off"
                  placeholder="Booking title or room…" aria-label="Search loaded bookings">
         </combo-box>
-        <button type="button" class="dialog-close" aria-label="Close"></button>
+        <button type="button" class="close" aria-label="Close"></button>
       </div>
       <datalist id="search-catalogue"></datalist>
       <p class="sc-palette-hint">
@@ -465,7 +474,7 @@
 
   <!-- Creation sheet: calendar:select is an intention, the app decides. -->
   <dialog class="sc-dialog" id="create-dialog" aria-labelledby="create-title">
-    <button type="button" class="dialog-close" aria-label="Close"></button>
+    <button type="button" class="close" aria-label="Close"></button>
     <div class="sc-dialog-body stack">
       <h2 id="create-title" style="margin: 0;">What do you want to create?</h2>
       <p class="cluster" style="gap: var(--space-20); padding: 0;">
@@ -489,7 +498,7 @@
 
   <!-- Detail sheet: opened from calendar:eventclick. -->
   <dialog class="sc-dialog" id="detail-dialog" aria-labelledby="detail-title">
-    <button type="button" class="dialog-close" aria-label="Close"></button>
+    <button type="button" class="close" aria-label="Close"></button>
     <div class="sc-dialog-body stack">
       <h2 id="detail-title" style="margin: 0;">—</h2>
       <p class="muted" id="detail-meta" style="margin: 0;">—</p>
@@ -505,7 +514,7 @@
   </dialog>
 
   <dialog class="sc-dialog" id="shortcuts-dialog" aria-labelledby="shortcuts-title">
-    <button type="button" class="dialog-close" aria-label="Close"></button>
+    <button type="button" class="close" aria-label="Close"></button>
     <div class="sc-dialog-body stack">
       <h2 id="shortcuts-title" style="margin: 0;">
         <i class="ti ti-keyboard" aria-hidden="true"></i> Keyboard

@@ -103,7 +103,7 @@ test("the palette opens quiet, and closes without the keyboard", async ({ page }
   await page.fill("#tools-search", "road");
   await expect(page.locator(".cb-option").first()).toBeVisible();
 
-  await page.click("#search-dialog .dialog-close");
+  await page.click("#search-dialog .close");
   await expect(page.locator("#search-dialog")).toBeHidden();
   await expect(page.locator(".cb-popover")).toBeHidden();
 

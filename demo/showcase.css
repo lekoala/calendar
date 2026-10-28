@@ -259,12 +259,11 @@
        from `renderDay()`; `:has()` lifts it to the cell and to the row
        without naming a single component class.
 
-       One deliberate carve-out: the component hardcodes its header control
-       sizes (2.25rem nav buttons, pressed `margin-inline-start`) with no
-       `--dp-*` token and no header render hook, so the compact panel would
-       stretch wider than its day grid. The three rules under `#mini` below
-       are the only ones that name component classes, and they stop at the
-       header. */
+       One deliberate carve-out: the component exposes header sizing only as
+       `--dp-*` tokens since 0.6, so the compact panel tunes those instead of
+       poking at controls. The remaining `#mini .dp-*` rules below pin three
+       details the tokens do not reach (marker offset, cell radius, grid
+       width); they are the only rules here that name component classes. */
     .sc-mini {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -285,39 +284,20 @@
          without pushing a scrollbar into it. */
       --dp-day-size: 1.75rem;
       --dp-gap: var(--space-10);
-      /* Compact month: no vertical rhythm between week rows. */
+      /* Compact month: no vertical rhythm between week rows, and header
+         controls at day-cell scale instead of the component's 2.25rem. */
       --dp-row-gap: 0;
+      --dp-header-block-gap: 0;
+      --dp-header-control-size: 1.5rem;
+      --dp-year-inline-size: 3.8rem;
       font-size: var(--font-size-xs);
       /* The panel must not outgrow its day grid: the grid is 7×day cell
          plus the ISO-week gutter. */
       max-inline-size: 228px;
     }
 
-    /* D3 carve-out: shrink the header to day-cell scale. `#mini` keeps
-       specificity above the component's (0,2,0); `:where()` scores 0. */
-    #mini .dp-calendar-header {
-      margin-block-end: 0;
-    }
-
-    #mini .dp-calendar-header .dp-prev {
-      margin-inline-start: 0;
-    }
-
-    #mini .dp-nav {
-      inline-size: 1.5rem;
-      min-block-size: 1.5rem;
-    }
-
-    #mini .dp-calendar-header :where(button, select, input) {
-      min-block-size: 1.5rem;
-    }
-
     #mini .dp-day-extra {
       bottom: -1px;
-    }
-
-    #mini .dp-year-input {
-      inline-size: 3.8rem;
     }
 
     #mini .dp-day {
@@ -2120,14 +2100,30 @@
       background: var(--backdrop-fill);
     }
 
+    /* Actual's corner treatment only positions a `.close` inside
+       `dialog.modal` / `dialog.drawer`; these sheets are neither, so the X
+       would otherwise sit in the body flow. Restate the corner on the sheet
+       frame, keeping the shared `.close` glyph and its focus line. */
+    .sc-dialog > .close {
+      position: absolute;
+      z-index: 1;
+      inset-block-start: var(--space-20);
+      inset-inline-end: var(--space-20);
+      background: var(--surface-subtle);
+      color: var(--text-muted);
+    }
+
+    .sc-dialog > .close:hover {
+      color: var(--text);
+    }
+
     .sc-dialog-body {
       min-inline-size: min(26rem, 92vw);
       padding: var(--space-50);
     }
 
-    /* `.dialog-close` is absolutely positioned against the dialog and
-       brings its own masked icon, so the title has to make room for it -
-       the same allowance Actual makes for `dialog.drawer > header`. */
+    /* The X is absolutely positioned against the dialog and brings its own
+       masked icon, so the title has to make room for it. */
     .sc-dialog-body > h2 {
       padding-inline-end: calc(var(--control-size) + var(--space-20));
     }
@@ -2156,10 +2152,6 @@
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
       gap: var(--space-20);
-    }
-
-    .sc-palette-head .dialog-close {
-      position: static;
     }
 
     .sc-palette-hint {
@@ -2192,8 +2184,11 @@
 
     .actual-combobox :is(.cb-text-control, .cb-control):focus-within {
       --cb-border-color: var(--focus);
-      outline: 2px solid transparent;
-      box-shadow: var(--focus-ring-shadow);
+      /* Actual 0.10 replaced the halo with a solid focus line. The library's
+         own 3px tint would double it, so only the shared line is drawn. */
+      outline: var(--focus-ring-width) solid var(--focus);
+      outline-offset: var(--focus-outline-offset);
+      box-shadow: none;
     }
 
     /* The picker is in the top layer, outside the control's subtree, so its
