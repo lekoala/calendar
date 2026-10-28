@@ -271,7 +271,13 @@ Known structural debt, tracked in
 
 The contract and test matrix are documented in
 [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/TESTING.md](docs/TESTING.md).
-Upgrading from 0.2? See [docs/MIGRATION-0.3.md](docs/MIGRATION-0.3.md).
+
+## Migrating
+
+- Upgrading an existing integration from 0.2? See [docs/MIGRATION-0.3.md](docs/MIGRATION-0.3.md).
+- Coming from FullCalendar? See [docs/MIGRATING_FROM_FULLCALENDAR.md](docs/MIGRATING_FROM_FULLCALENDAR.md)
+  for the view/option mapping, the stricter event model, event-source and
+  callback replacements, and an explicit list of what has no equivalent.
 
 ## License
 
