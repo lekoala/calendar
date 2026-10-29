@@ -1,4 +1,14 @@
 import { Temporal } from "temporal-polyfill";
+/**
+ * Wall-clock marker position in a half-open visible slot range.
+ * The caller supplies `now` in the calendar zone, including on DST days.
+ * @param {Temporal.ZonedDateTime} now
+ * @param {Temporal.PlainDate} date
+ * @param {number} slotMin
+ * @param {number} slotMax
+ * @returns {number | null}
+ */
+export declare function nowIndicatorMinutes(now: Temporal.ZonedDateTime, date: Temporal.PlainDate, slotMin: number, slotMax: number): number | null;
 export type TemporalState = "past" | "current" | "future";
 /**
  * Temporal fact of an event relative to `now`: past, current or future.

@@ -62,6 +62,14 @@ before measuring the handle and destination. Mouse coordinates must remain
 inside the scroller on mobile; measuring an offscreen handle does not make
 it a reachable pointer target.
 
+`now-indicator.spec.js` advances a controlled browser clock across minutes
+and midnight in solo/resource grids, checks node identity, focus and scroll,
+and keeps pointer selection and event dragging active across a marker update.
+It also checks cleanup after disconnect. Month ordering tests cover custom
+comparators, fallback order, Tab order, chip limits, incremental mutations
+and the more-button payload without sorting canonical state. A dense cascade
+unit case documents column reuse and consistent transitive-group widths.
+
 #### Fixture readiness
 
 The element renders once on connect (neutral defaults) before the demo

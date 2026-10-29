@@ -4,7 +4,7 @@
 and no adapter package to install: use a ref, assign complex data as properties,
 attach DOM listeners, and clean them up.
 
-The examples below assume:
+The examples below assume browser-only execution:
 
 ```js
 import "@lekoala/calendar/calendar.css";
@@ -200,10 +200,33 @@ data. Do not clear the calendar from `calendar:render`.
 
 ## SSR and server rendering
 
-Import `@lekoala/calendar/define` only in the browser. The bare main entry is
-side-effect-free, so a server bundle can import `CalendarViewElement` without
-touching `customElements`. Render the tag on the server only as an empty
-host; the client attaches data after mount.
+Both `@lekoala/calendar` and `@lekoala/calendar/define` require a browser.
+The main entry does not register a custom element, but it imports
+`CalendarViewElement`, which extends `HTMLElement`. Importing it in a server
+runtime without `HTMLElement` throws before registration is involved.
+
+Keep the examples above in client-only modules when using SSR. In Next.js,
+load the calendar wrapper with
+[`next/dynamic`](https://nextjs.org/docs/app/guides/lazy-loading#skipping-ssr)
+and `{ ssr: false }` from a Client Component; a `"use client"` directive alone does not disable server
+prerendering. In Nuxt, use a `.client.vue` wrapper. In SvelteKit, remove the
+static registration import and load it inside
+[`onMount`](https://svelte.dev/docs/svelte/lifecycle-hooks#onMount).
+
+For mount-time loading, await registration before assigning properties or
+calling calendar methods:
+
+```js
+await import("@lekoala/calendar/define");
+await customElements.whenDefined("calendar-view");
+el.events = events;
+el.configure(options);
+if (options?.eventSource) await el.refetchEvents();
+```
+
+An empty `<calendar-view>` host may be rendered on the server; the client
+registers the element and attaches data after mount. Keep all runtime imports
+of the package out of server-executed modules.
 
 ## Further reading
 

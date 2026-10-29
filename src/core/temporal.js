@@ -1,5 +1,19 @@
 import { Temporal } from "temporal-polyfill";
-import { instantRangeOf } from "./slicing.js";
+import { instantRangeOf, wallMinutes } from "./slicing.js";
+
+/**
+ * Wall-clock marker position in a half-open visible slot range.
+ * The caller supplies `now` in the calendar zone, including on DST days.
+ * @param {Temporal.ZonedDateTime} now
+ * @param {Temporal.PlainDate} date
+ * @param {number} slotMin
+ * @param {number} slotMax
+ * @returns {number | null}
+ */
+export function nowIndicatorMinutes(now, date, slotMin, slotMax) {
+  const minutes = wallMinutes(now);
+  return now.toPlainDate().equals(date) && minutes >= slotMin && minutes < slotMax ? minutes : null;
+}
 
 /**
  * Temporal fact of an event relative to `now`: past, current or future.

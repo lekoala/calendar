@@ -24,6 +24,7 @@ import {
 import { describeEvent, eventOverlapsDate, sliceTimedEventForDay, toZonedDateTime } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
 import { createAutoscroller } from "./autoscroll.js";
+import { startNowIndicator } from "./now-indicator.js";
 
 /**
  * @typedef {object} ExternalDropTarget
@@ -38,6 +39,7 @@ import { createAutoscroller } from "./autoscroll.js";
  * state and helpers can stay truly private (`#field`).
  *
  * @typedef {object} TimeGridHost
+ * @property {(cleanup: () => void) => void} setNowIndicatorCleanup
  * @property {boolean} [editable]
  * @property {() => boolean} isConnected
  * @property {(message: string) => void} announce
@@ -876,8 +878,8 @@ export function renderTimeGrid({
       // --- All-day interactions (v1) ---------------------------------------
       // Native <button> activation covers pointer click and Enter/Space; a
       // single capture-phase handler both dispatches eventclick and drops the
-      // residual click after a drag or long-press. Day-edge resize, creation
-      // inside the lane and timed<->all-day conversion stay deferred.
+      // residual click after a drag, resize or long-press. Creation inside
+      // the lane and timed<->all-day conversion stay deferred.
       bar.addEventListener(
         "click",
         (nativeEvent) => {
@@ -1989,17 +1991,6 @@ export function renderTimeGrid({
       );
     }
 
-    const now = renderNow;
-    if (column.date.toString() === now.toPlainDate().toString()) {
-      const nowMinutes = now.hour * 60 + now.minute + now.second / 60;
-      if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {
-        const indicator = document.createElement("div");
-        indicator.className = "cv-now";
-        indicator.style.top = `${(nowMinutes - startMinutes) * pxPerMinute}px`;
-        indicator.setAttribute("aria-hidden", "true");
-        body.append(indicator);
-      }
-    }
     day.append(body);
     bodies.push({ column, body });
     root.append(day);
@@ -2358,6 +2349,15 @@ export function renderTimeGrid({
     },
   });
 
+  host.setNowIndicatorCleanup(
+    startNowIndicator({
+      bodies,
+      timeZone,
+      slotMin: startMinutes,
+      slotMax: endMinutes,
+      pxPerMinute,
+    }),
+  );
   fragment.append(root);
   return fragment;
 }

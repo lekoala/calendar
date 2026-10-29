@@ -4,6 +4,9 @@
 
 ### Added
 
+* `monthEventOrder(a, b)` customizes month chip order, Tab order and the
+  more-button payload before applying the chip limit. Ties use start instant
+  then source order; other views and canonical event order are unchanged.
 * All-day events resize by day edges: `resizeEvent()` now accepts civil
   ranges, the lane exposes horizontal start/end handles only on visible true
   edges, and `Alt`+arrows resize from the keyboard. Mutations keep the
@@ -14,6 +17,12 @@
   event segment is restored by event id, date and resource; focus outside the
   calendar is never stolen. A render that arrives during a pointer gesture
   cancels the gesture without committing.
+
+### Fixed
+
+* Current-time markers advance every minute and move to the correct civil
+  day after midnight without replacing event nodes, interrupting pointer
+  gestures or refetching sources. Timers stop on disconnect.
 
 ### Changed
 

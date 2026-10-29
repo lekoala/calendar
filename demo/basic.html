@@ -41,6 +41,12 @@
         <option value="nl">Nederlands</option>
       </select>
     </label>
+    <label>Month order
+      <select id="month-order">
+        <option value="">Start time</option>
+        <option value="title-desc">Title (Z-A)</option>
+      </select>
+    </label>
   </nav>
   <p>Custom day counts override the rolling presets via <code>configure({ dayCount })</code>; switching views resets them. A week stays civil whatever is configured.</p>
   <calendar-view view="threeDays" date="2026-09-03"></calendar-view>
@@ -81,6 +87,11 @@
       hiddenDays: event.target.dataset.hiddendays ? [Number(event.target.dataset.hiddendays)] : undefined,
     });
     calendar.setView(event.target.dataset.view ?? "day");
+  });
+  document.querySelector("#month-order").addEventListener("change", (event) => {
+    calendar.configure({
+      monthEventOrder: event.target.value ? (a, b) => (b.title ?? "").localeCompare(a.title ?? "") : undefined,
+    });
   });
   const strings = {
     fr: { more: "+{hidden} en plus", noEvents: "Aucun évènement", noResources: "Aucune ressource sélectionnée." },

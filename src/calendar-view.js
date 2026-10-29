@@ -50,6 +50,7 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {number} [pxPerMinute]
  * @property {Temporal.Duration | { minutes: number }} [snapDuration]
  * @property {Temporal.Duration | { minutes: number }} [defaultTimedEventDuration]
+ * @property {(a: import("./core/model.js").NormalizedEvent, b: import("./core/model.js").NormalizedEvent) => number} [monthEventOrder] month-only comparator; ties use start instant then source order
  * @property {number} [monthEventLimit] event chips per month day cell before `+n more`
  * @property {number} [firstDay] first weekday of a civil week, ISO 1-7 (default 1, Monday)
  * @property {number[]} [hiddenDays] weekdays never rendered, ISO 1-7
@@ -254,6 +255,8 @@ export class CalendarViewElement extends HTMLElement {
   #announceFrame = null;
   /** One-shot aging timer to the next visible event boundary. @type {number | null} */
   #agingTimer = null;
+  /** @type {(() => void) | null} */
+  #stopNowIndicator = null;
   /**
    * Single timer clearing the reveal highlight. The highlight itself lives
    * on the rendered node, so a re-render removes it for free; the timer only
@@ -280,6 +283,8 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.#stopNowIndicator?.();
+    this.#stopNowIndicator = null;
     this.#cancelExternalPointer?.();
     this.#clearExternalDrag();
     this.#externalDropTarget = null;
@@ -1465,11 +1470,14 @@ export class CalendarViewElement extends HTMLElement {
       snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
       defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
       monthEventLimit: this.#config.monthEventLimit ?? 3,
+      monthEventOrder: this.#config.monthEventOrder,
       allDaySlot: this.#config.allDaySlot ?? true,
     };
   }
 
   #render() {
+    this.#stopNowIndicator?.();
+    this.#stopNowIndicator = null;
     this.#externalDropTarget?.clear();
     this.#externalDropTarget = null;
     if (!isKnownView(this.view) && this.#warnedView !== this.view) {
@@ -1580,6 +1588,9 @@ export class CalendarViewElement extends HTMLElement {
               this.#externalDropTarget = target;
             },
             getPreview: () => this.#preview,
+            setNowIndicatorCleanup: (cleanup) => {
+              this.#stopNowIndicator = cleanup;
+            },
           },
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,

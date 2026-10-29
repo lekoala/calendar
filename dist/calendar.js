@@ -4345,6 +4345,10 @@
   }
 
   // src/core/temporal.js
+  function nowIndicatorMinutes(now, date, slotMin, slotMax) {
+    const minutes = wallMinutes(now);
+    return now.toPlainDate().equals(date) && minutes >= slotMin && minutes < slotMax ? minutes : null;
+  }
   function temporalState(start, end, now, timeZone = "UTC") {
     const { start: startInstant, end: endInstant } = instantRangeOf(start, end, timeZone);
     const nowMs = now.epochMilliseconds;
@@ -4443,6 +4447,12 @@
     return fragment;
   }
 
+  // src/core/event-order.js
+  function orderMonthEvents(events, timeZone, compare) {
+    const starts = new Map(events.map((event) => [event, instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds]));
+    return [...events].sort((a, b) => (compare?.(a, b) ?? 0) || starts.get(a) - starts.get(b));
+  }
+
   // src/render/month-grid.js
   function renderMonthGrid({
     weeks,
@@ -4474,7 +4484,6 @@
       head.append(cell);
     }
     root.append(head);
-    const startEpoch = (event) => instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds;
     for (const week of weeks) {
       const row = document.createElement("div");
       row.className = "cv-month-week";
@@ -4488,7 +4497,7 @@
         label.className = "cv-month-day-number";
         label.textContent = String(date.day);
         cell.append(label);
-        const dayEvents = events.filter((event) => eventOverlapsDate(event, date, timeZone)).sort((a, b) => startEpoch(a) - startEpoch(b));
+        const dayEvents = orderMonthEvents(events.filter((event) => eventOverlapsDate(event, date, timeZone)), timeZone, options.monthEventOrder);
         for (const event of dayEvents.slice(0, limit)) {
           const chip = document.createElement("button");
           chip.type = "button";
@@ -4787,6 +4796,40 @@
         deltaY = 0;
         cancel();
       }
+    };
+  }
+
+  // src/render/now-indicator.js
+  function startNowIndicator({ bodies, timeZone, slotMin, slotMax, pxPerMinute }) {
+    const indicators = new Map;
+    let timer = 0;
+    const update = () => {
+      const now = Temporal2.Now.zonedDateTimeISO(timeZone);
+      for (const { column, body } of bodies) {
+        const minutes = nowIndicatorMinutes(now, column.date, slotMin, slotMax);
+        let indicator = indicators.get(body);
+        if (minutes === null) {
+          indicator?.remove();
+          indicators.delete(body);
+          continue;
+        }
+        if (!indicator) {
+          indicator = document.createElement("div");
+          indicator.className = "cv-now";
+          indicator.setAttribute("aria-hidden", "true");
+          body.append(indicator);
+          indicators.set(body, indicator);
+        }
+        indicator.style.top = `${(minutes - slotMin) * pxPerMinute}px`;
+      }
+      timer = window.setTimeout(update, 60000 - now.epochMilliseconds % 60000);
+    };
+    update();
+    return () => {
+      clearTimeout(timer);
+      for (const indicator of indicators.values())
+        indicator.remove();
+      indicators.clear();
     };
   }
 
@@ -6263,17 +6306,6 @@
           }, press);
         }, (press) => press.target instanceof Element && press.target.closest(".cv-event") !== null);
       }
-      const now = renderNow;
-      if (column.date.toString() === now.toPlainDate().toString()) {
-        const nowMinutes = now.hour * 60 + now.minute + now.second / 60;
-        if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {
-          const indicator = document.createElement("div");
-          indicator.className = "cv-now";
-          indicator.style.top = `${(nowMinutes - startMinutes) * pxPerMinute}px`;
-          indicator.setAttribute("aria-hidden", "true");
-          body.append(indicator);
-        }
-      }
       day.append(body);
       bodies.push({ column, body });
       root.append(day);
@@ -6543,6 +6575,13 @@
         removeExternalGhost();
       }
     });
+    host.setNowIndicatorCleanup(startNowIndicator({
+      bodies,
+      timeZone,
+      slotMin: startMinutes,
+      slotMax: endMinutes,
+      pxPerMinute
+    }));
     fragment.append(root);
     return fragment;
   }
@@ -6601,6 +6640,7 @@
     #pendingScrollTop = null;
     #announceFrame = null;
     #agingTimer = null;
+    #stopNowIndicator = null;
     #revealTimer = null;
     connectedCallback() {
       this.classList.add("calendar-view");
@@ -6615,6 +6655,8 @@
       }
     }
     disconnectedCallback() {
+      this.#stopNowIndicator?.();
+      this.#stopNowIndicator = null;
       this.#cancelExternalPointer?.();
       this.#clearExternalDrag();
       this.#externalDropTarget = null;
@@ -7356,10 +7398,13 @@
         snapDuration: this.#config.snapDuration ?? DEFAULTS.snapDuration,
         defaultTimedEventDuration: this.#config.defaultTimedEventDuration ?? DEFAULTS.defaultTimedEventDuration,
         monthEventLimit: this.#config.monthEventLimit ?? 3,
+        monthEventOrder: this.#config.monthEventOrder,
         allDaySlot: this.#config.allDaySlot ?? true
       };
     }
     #render() {
+      this.#stopNowIndicator?.();
+      this.#stopNowIndicator = null;
       this.#externalDropTarget?.clear();
       this.#externalDropTarget = null;
       if (!isKnownView(this.view) && this.#warnedView !== this.view) {
@@ -7444,7 +7489,10 @@
             setExternalDropTarget: (target) => {
               this.#externalDropTarget = target;
             },
-            getPreview: () => this.#preview
+            getPreview: () => this.#preview,
+            setNowIndicatorCleanup: (cleanup) => {
+              this.#stopNowIndicator = cleanup;
+            }
           },
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,

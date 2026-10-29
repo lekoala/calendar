@@ -218,6 +218,25 @@ application concern.
 
 `snapDuration` controls pointer snapping. `defaultTimedEventDuration` controls the hover preview and single-click creation proposal. An explicit drag selection carries its own `start/end` and does not depend on it. `monthEventLimit` caps the event chips per month day cell before the `+n more` button.
 
+`monthEventOrder(a, b)` optionally compares normalized events for month
+presentation only. Return a negative number to place `a` first, a positive
+number to place `b` first, or zero to use the default start-instant order.
+Equal starts retain source order. The comparator must be synchronous and
+must not mutate events or calendar state. Setting it to `undefined` restores
+the default. It runs before `monthEventLimit`: visible chips, native Tab
+order and the full `calendar:moreclick` event array share the resulting
+order. It does not reorder `calendar.events`, interpret `extendedProps`,
+change time-grid layout or affect list order. Month combines events from
+all resources, so the comparator applies across resource assignments.
+Incremental mutations and source refetches use it on the next render.
+
+```js
+calendar.configure({
+  monthEventOrder: (a, b) => (a.title ?? "").localeCompare(b.title ?? ""),
+});
+```
+
+
 `firstDay` and `hiddenDays` use the ISO weekday numbering Temporal exposes, `1` = Monday through `7` = Sunday. `0` is accepted as an alias for Sunday, since that is what `Date.prototype.getDay` returns and the two conventions agree on every other day. `firstDay` sets where a civil week starts, for both week anchoring and month week derivation. `hiddenDays` lists weekdays that are never rendered; hiding all seven is ignored rather than rendering an empty calendar.
 
 `dayCount` overrides the visible-day count of rolling views (`day`, `threeDays`, `resourceDay`, `resourceThreeDays`, `list`): `view: "day"` plus `dayCount: 4` is a four-day rolling window, no new view name needed, and `threeDays`/`resourceThreeDays` stay convenient presets for `3`. It counts visible days, so hidden days stretch the civil span without shortening the count; a non-positive or non-integer value falls back to the view preset. `week` and `month` ignore it: a week stays the civil week containing the anchor, then drops hidden days. `prev()`/`next()` page rolling views by the effective visible count and week-anchored views by whole weeks.
@@ -764,3 +783,25 @@ eventContent({ event, element }) {
 ```
 
 Applications that need to decorate something no hook owns — a whole day column, for instance — listen for `calendar:render` instead.
+
+## Zero-duration timed events
+
+Timed events with equal start and end instants are accepted and retained in
+canonical state (`events`, `getEventById`, mutations and source results).
+Their half-open range is empty: time grids produce no segment and month/list
+do not render a chip or row. No artificial duration or minimum marker is
+added. Applications that need a visible event must supply a positive duration.
+All-day events must cover at least one civil day and reject empty ranges.
+
+## Live current-time marker
+
+Time grids update `.cv-now` on each minute boundary using the configured
+IANA time zone, including after midnight and DST changes. A marker exists
+only in today's rendered columns and inside the half-open visible slot range.
+Resource grids show it in every matching resource column. The update changes
+only marker nodes and geometry: event content hooks, source fetching, focus,
+scroll and active pointer gestures are preserved. This is presentation-only,
+including when the calendar is read-only. Timers are replaced on navigation
+or rendering and cancelled on disconnect; reconnecting starts a fresh timer.
+Background tabs may throttle timers; the next callback reads the current
+instant rather than accumulating missed ticks.

@@ -136,6 +136,12 @@ Narrow viewports change density, never semantics: below 640 px the default colum
 
 ## Month
 
+`monthEventOrder(a, b)` optionally orders chips before `monthEventLimit` is
+applied; ties fall back to the start instant and then source order. DOM/Tab
+order and the more-button payload use the same order. This is presentation
+across all resources, with no effect on time-grid geometry or list order.
+
+
 Month is a summary-oriented day grid over the anchor date's calendar month, not a time grid. It answers "what happens in September" without forcing a giant resource matrix.
 
 - Weeks run Monday → Sunday (ISO); the grid shows full weeks, so leading/trailing days of adjacent months are visible but dimmed (`cv-outside`).

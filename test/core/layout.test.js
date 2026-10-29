@@ -185,3 +185,27 @@ test("all-day row packing stays deterministic after reorder", () => {
     );
   assert.deepEqual(rowsById(forward), rowsById(reversed));
 });
+
+test("dense cascade reuses a released column while keeping transitive group widths", () => {
+  const items = lay([
+    [540, 780],
+    [550, 570],
+    [560, 600],
+    [570, 660],
+    [660, 840],
+  ]);
+  assert.deepEqual(
+    items.map((item) => [item.column, item.columns]),
+    [
+      [0, 3],
+      [1, 3],
+      [2, 3],
+      [1, 3],
+      [1, 3],
+    ],
+  );
+  for (const item of items) {
+    assert.equal(item.left, item.column / 3);
+    assert.equal(item.width, 1 / 3);
+  }
+});

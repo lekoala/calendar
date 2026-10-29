@@ -73,7 +73,7 @@ A refused destination paints before the drop ever happens: the mirror (and the s
 
 Dragging a slice of a multi-day event shifts the whole event: the day delta between source and target columns plus the wall-clock minute delta apply to both `start` and `end`, so the total duration is preserved (same contract as `Shift` + arrows). A single `click` handler in the capture phase both dispatches `calendar:eventclick` and drops the residual click after a drag, resize or long-press.
 
-All-day bars drag with the same state machine but day-snapped: the mirror rides the lane's column tracks within one resource block, and the commit shifts both `Temporal.PlainDate` boundaries by the difference in columns, preserving the civil span. Shift + arrows move a bar by one day; day-edge resizing and timed↔all-day conversion are deferred.
+All-day bars drag with the same state machine but day-snapped: the mirror rides the lane's column tracks within one resource block, and the commit shifts both `Temporal.PlainDate` boundaries by the difference in columns, preserving the civil span. Shift + arrows move a bar by one day. Visible true edges support day-snapped pointer resize and `Alt` + arrows: Up/Down adjust the start by one day, Left/Right adjust the exclusive end by one day. Resizing preserves the resource, keeps at least one civil day, and uses the same policy, cancellation and revert contract as timed resize. Edges clipped by the visible range or hidden days do not expose a handle. Creation inside the lane and timed-to-all-day conversion remain deferred.
 
 ## 4b. External placement (drag out of application chrome)
 

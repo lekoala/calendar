@@ -30,7 +30,7 @@ calendar.events = [
 
 Solo time grids use the same model: omit `resources` and switch to `view="week"` (or `day`, `threeDays`, `month`, `list`).
 
-See the [showcase](demo/showcase.html) for a full room-booking application shell built around the same element: resource columns, application booking rules, and a toolbar, search and dialogs composed around the calendar rather than shipped inside it.
+See the [live showcase](https://lekoala.github.io/calendar/demo/showcase.html) ([source](demo/showcase.html)) for a full room-booking application shell built around the same element: resource columns, application booking rules, and a toolbar, search and dialogs composed around the calendar rather than shipped inside it.
 
 ## Mission
 

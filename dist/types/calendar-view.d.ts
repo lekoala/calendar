@@ -24,6 +24,10 @@ export type CalendarConfig = {
         minutes: number;
     };
     /**
+     * month-only comparator; ties use start instant then source order
+     */
+    monthEventOrder?: (a: import("./core/model.js").NormalizedEvent, b: import("./core/model.js").NormalizedEvent) => number;
+    /**
      * event chips per month day cell before `+n more`
      */
     monthEventLimit?: number;

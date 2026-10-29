@@ -211,3 +211,67 @@ test("list events activate and switching preserves the anchor date", async ({ pa
   });
   expect(state).toEqual({ date: "2026-09-03", view: "week" });
 });
+
+test("month comparator controls visible chips, Tab order and more payload without sorting state", async ({
+  page,
+}) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = ["a", "b", "c"].map((id, index) => ({
+      id,
+      title: id,
+      resourceId: index === 1 ? "b" : "a",
+      editable: false,
+      start: `2026-09-03T${String(9 + index).padStart(2, "0")}:00:00+02:00[Europe/Brussels]`,
+      end: `2026-09-03T${String(9 + index).padStart(2, "0")}:30:00+02:00[Europe/Brussels]`,
+    }));
+    calendar.configure({
+      monthEventLimit: 2,
+      monthEventOrder: (/** @type {any} */ a, /** @type {any} */ b) => b.id.localeCompare(a.id),
+    });
+    calendar.addEventListener("calendar:moreclick", (/** @type {CustomEvent} */ event) => {
+      /** @type {any} */ (window).ordered = event.detail.events.map((/** @type {any} */ item) => item.id);
+    });
+    calendar.setView("month");
+  });
+  const cell = page.locator('.cv-month-day[data-date="2026-09-03"]');
+  await expect(cell.locator(".cv-month-event")).toHaveText(["c", "b"]);
+  await cell.locator(".cv-month-event").first().focus();
+  await page.keyboard.press("Tab");
+  await expect(cell.locator('[data-event-id="b"]')).toBeFocused();
+  await cell.locator(".cv-month-more").click();
+  expect(await page.evaluate(() => /** @type {any} */ (window).ordered)).toEqual(["c", "b", "a"]);
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (document.querySelector("calendar-view")).events.map(
+        (/** @type {any} */ event) => event.id,
+      ),
+    ),
+  ).toEqual(["a", "b", "c"]);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.removeEvent("c");
+    calendar.addEvent({
+      id: "d",
+      title: "d",
+      start: "2026-09-03T12:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T13:00:00+02:00[Europe/Brussels]",
+    });
+  });
+  await expect(cell.locator(".cv-month-event")).toHaveText(["d", "b"]);
+  await page.evaluate(() =>
+    /** @type {any} */ (document.querySelector("calendar-view")).configure({ monthEventOrder: undefined }),
+  );
+  await expect(cell.locator(".cv-month-event")).toHaveText(["a", "b"]);
+  await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const events = calendar.events;
+    calendar.configure({
+      monthEventOrder: (/** @type {any} */ a, /** @type {any} */ b) => b.id.localeCompare(a.id),
+      eventSource: async () => events,
+    });
+    await calendar.refetchEvents();
+  });
+  await expect(cell.locator(".cv-month-event")).toHaveText(["d", "b"]);
+});

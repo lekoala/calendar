@@ -5,6 +5,7 @@ export type ExternalDropTarget = {
     clear: () => void;
 };
 export type TimeGridHost = {
+    setNowIndicatorCleanup: (cleanup: () => void) => void;
     editable?: boolean;
     isConnected: () => boolean;
     announce: (message: string) => void;
@@ -132,6 +133,7 @@ export type ActiveSelection = {
  * state and helpers can stay truly private (`#field`).
  *
  * @typedef {object} TimeGridHost
+ * @property {(cleanup: () => void) => void} setNowIndicatorCleanup
  * @property {boolean} [editable]
  * @property {() => boolean} isConnected
  * @property {(message: string) => void} announce

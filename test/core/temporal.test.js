@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Temporal } from "temporal-polyfill";
 import { normalizeEvent } from "../../src/core/model.js";
-import { nextStateChangeMs, temporalState } from "../../src/core/temporal.js";
+import { nextStateChangeMs, nowIndicatorMinutes, temporalState } from "../../src/core/temporal.js";
 
 const ZONE = "Europe/Brussels";
 /** @param {string} clock */
@@ -124,4 +124,22 @@ test("nextStateChangeMs scopes to the visible range", () => {
     Temporal.ZonedDateTime.from(at("11:00")).epochMilliseconds,
   );
   assert.equal(nextStateChangeMs(list, nowAt("13:00").epochMilliseconds, ZONE, visible), null);
+});
+
+test("clock markers use the zoned civil day and half-open slot boundaries", () => {
+  const now = nowAt("10:00");
+  const date = now.toPlainDate();
+  assert.equal(nowIndicatorMinutes(now, date, 600, 660), 600);
+  assert.equal(nowIndicatorMinutes(now, date, 540, 600), null);
+  assert.equal(nowIndicatorMinutes(now, date.add({ days: 1 }), 0, 1440), null);
+  const midnight = nowAt("23:59").add({ minutes: 2 });
+  assert.equal(nowIndicatorMinutes(midnight, date, 0, 1440), null);
+  assert.equal(nowIndicatorMinutes(midnight, date.add({ days: 1 }), 0, 1440), 1);
+  for (const input of [
+    "2026-10-25T02:30:00+02:00[Europe/Brussels]",
+    "2026-10-25T02:30:00+01:00[Europe/Brussels]",
+  ]) {
+    const repeated = Temporal.ZonedDateTime.from(input);
+    assert.equal(nowIndicatorMinutes(repeated, repeated.toPlainDate(), 0, 1440), 150);
+  }
 });

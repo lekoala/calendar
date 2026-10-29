@@ -1,6 +1,7 @@
 import { Temporal } from "temporal-polyfill";
+import { orderMonthEvents } from "../core/event-order.js";
 import { DEFAULT_LABELS, formatLabel } from "../core/labels.js";
-import { describeEvent, eventOverlapsDate, instantRangeOf } from "../core/slicing.js";
+import { describeEvent, eventOverlapsDate } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
 
 /**
@@ -21,6 +22,7 @@ import { temporalState } from "../core/temporal.js";
  * @param {string} [input.options.timeZone]
  * @param {string} [input.options.locale] BCP 47 tag for the weekday row; hooks stay authoritative
  * @param {import("../core/labels.js").CalendarLabels} [input.options.labels] fixed UI strings, defaulting to English
+ * @param {(a: import("../core/model.js").NormalizedEvent, b: import("../core/model.js").NormalizedEvent) => number} [input.options.monthEventOrder]
  * @param {number} [input.options.monthEventLimit]
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.moreLinkContent]
@@ -70,14 +72,6 @@ export function renderMonthGrid({
   }
   root.append(head);
 
-  /**
-   * Timeline key so timed and all-day chips interleave by their real start.
-   *
-   * @param {import("../core/model.js").NormalizedEvent} event
-   * @returns {number}
-   */
-  const startEpoch = (event) => instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds;
-
   for (const week of weeks) {
     const row = document.createElement("div");
     row.className = "cv-month-week";
@@ -92,9 +86,11 @@ export function renderMonthGrid({
       label.textContent = String(date.day);
       cell.append(label);
 
-      const dayEvents = events
-        .filter((event) => eventOverlapsDate(event, date, timeZone))
-        .sort((a, b) => startEpoch(a) - startEpoch(b));
+      const dayEvents = orderMonthEvents(
+        events.filter((event) => eventOverlapsDate(event, date, timeZone)),
+        timeZone,
+        options.monthEventOrder,
+      );
 
       for (const event of dayEvents.slice(0, limit)) {
         const chip = document.createElement("button");
