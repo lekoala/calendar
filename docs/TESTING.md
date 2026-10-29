@@ -51,6 +51,12 @@ resize policy in solo/resource views, and CSS fallbacks without `color-mix()`.
 The showcase menu/tooltip tests navigate to a deterministic seeded event
 instead of requiring a randomly generated kind in the initial visible range.
 
+`temporal.spec.js` fixes the browser clock at midday and near midnight on
+month/year boundaries. Relative event ranges share that clock, and full-day
+grids end at `24:00` so a slice starting after `23:59` remains visible.
+Aging checks advance the fixed clock while leaving real timers active to
+verify that the scheduled timeout renders the new state without refetch.
+
 #### Fixture readiness
 
 The element renders once on connect (neutral defaults) before the demo
