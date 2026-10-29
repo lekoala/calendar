@@ -57,6 +57,11 @@ grids end at `24:00` so a slice starting after `23:59` remains visible.
 Aging checks advance the fixed clock while leaving real timers active to
 verify that the scheduled timeout renders the new state without refetch.
 
+The all-day pointer resize tests scroll overflowing week columns into view
+before measuring the handle and destination. Mouse coordinates must remain
+inside the scroller on mobile; measuring an offscreen handle does not make
+it a reachable pointer target.
+
 #### Fixture readiness
 
 The element renders once on connect (neutral defaults) before the demo

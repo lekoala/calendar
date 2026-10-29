@@ -194,7 +194,7 @@ test("all-day pointer resize moves the visible start and the exclusive end", asy
   });
   await flushRender(page);
 
-  // Move the start edge from Thursday back to Wednesday.
+  // Move the start edge from Friday back to Thursday.
   let bar = page.locator('.cv-allday-event[data-event-id="ad"]');
   const startHandle = page.locator('.cv-allday-event[data-event-id="ad"] .cv-resize-w');
   const firstDay = await page.locator(".cv-day").first().boundingBox();
@@ -230,7 +230,7 @@ test("all-day pointer resize moves the visible start and the exclusive end", asy
   });
   expect(range).toEqual(["2026-09-03", "2026-09-06"]);
 
-  // A hidden Sunday still becomes an exclusive Monday end.
+  // With Sunday hidden, resizing through Saturday still stores Sunday as the exclusive end.
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
     calendar.configure({ hiddenDays: [7] });
@@ -238,8 +238,18 @@ test("all-day pointer resize moves the visible start and the exclusive end", asy
     calendar.events = [{ id: "ad", title: "Offsite", allDay: true, start: "2026-09-03", end: "2026-09-05" }];
   });
   await flushRender(page);
-  const saturday = await page.locator('.cv-day[data-date="2026-09-05"]').boundingBox();
+  const saturdayColumn = page.locator('.cv-day[data-date="2026-09-05"]');
+  // The week overflows on narrow screens. Scroll before measuring the
+  // gesture so both the end handle and its target are inside the scroller.
+  await saturdayColumn.evaluate((column) => {
+    const scroller = column.closest(".cv-scroller");
+    if (!scroller) throw new Error("expected calendar scroller");
+    const overflow = column.getBoundingClientRect().right - scroller.getBoundingClientRect().right;
+    if (overflow > 0) scroller.scrollLeft += overflow;
+  });
+  const saturday = await saturdayColumn.boundingBox();
   const hiddenEndHandle = page.locator('.cv-allday-event[data-event-id="ad"] .cv-resize-e');
+  await expect(hiddenEndHandle).toBeInViewport();
   const hiddenBarBox = await page.locator('.cv-allday-event[data-event-id="ad"]').boundingBox();
   const hiddenEndBox = await hiddenEndHandle.boundingBox();
   if (!saturday || !hiddenBarBox || !hiddenEndBox) throw new Error("expected hidden-day resize geometry");
