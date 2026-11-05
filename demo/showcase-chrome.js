@@ -1,7 +1,6 @@
 // showcase-chrome.js — activity log, views, toolbar and live strip, mini month, room and kind filters, boot and shell chrome.
 // Classic script (file:// compatible): shares scope with the other showcase-*.js
 // files, so top-level bindings stay bare and cross-file calls need no imports.
-// Extracted verbatim from demo/showcase.html; see .temp/split-showcase.mjs.
 "use strict";
 
 const shell = document.getElementById("shell");
@@ -170,7 +169,6 @@ function renderViewMenu() {
     button.dataset.view = view.id;
     const active = calendar.view === view.id;
     button.setAttribute("aria-checked", String(active));
-    button.setAttribute("aria-pressed", String(active));
     const iconSlot = document.createElement("span");
     iconSlot.className = "menu-item-icon";
     iconSlot.append(icon(view.icon));

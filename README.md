@@ -285,7 +285,7 @@ The contract and test matrix are documented in
 
 ## Guides
 
-- Transforming API payloads (UTC instants, multiple feeds, RRULE/ICS)? See [docs/RECIPES.md](docs/RECIPES.md).
+- Transforming API payloads (UTC instants, multiple feeds, RRULE/ICS, one endpoint for events and backgrounds) or wiring a toolbar or mini month? See [docs/RECIPES.md](docs/RECIPES.md).
 - Using React, Vue or Svelte? See [docs/FRAMEWORKS.md](docs/FRAMEWORKS.md) for
   property assignment, lifecycle, event cleanup and loading behavior.
 

@@ -274,6 +274,13 @@ source leaves the other collection alone, so `addEvent()`, `updateEvent()`,
 flight survive its resolution. Obsolete requests abort, and a stale
 completion never overwrites newer state.
 
+During a single `refetchEvents()`, `eventSource` and `backgroundSource`
+receive the same `AbortSignal` and the same query parameters (`start`, `end`,
+`resourceIds`). A new refetch creates a new signal and aborts the previous
+one. The query object itself is not guaranteed to be shared: key per-request
+state by `signal`. If either source rejects, the refetch publishes neither
+collection.
+
 ## Navigation
 
 Without a `date` attribute, the element anchors on today's date (`Temporal.Now.plainDateISO`) in the configured time zone.

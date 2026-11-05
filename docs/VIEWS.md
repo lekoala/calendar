@@ -153,7 +153,7 @@ Month is a summary-oriented day grid over the anchor date's calendar month, not 
 
 ## List
 
-List is a minimal generic renderer over the same visible event state: 7 consecutive civil days from the anchor date, each a day group with its events in chronological order. Rich operational lists belong to the consumer.
+List is a minimal generic renderer over the same visible event state: a rolling window of visible days from the anchor date (7 by default, `dayCount` to change it, hidden days skipped like every rolling view), each a day group with its events in chronological order. Rich operational lists belong to the consumer.
 
 - Day groups use `dayHeaderContent` (falling back to the localized day header, as in time grids); days without events show a muted `No events` row (`labels.noEvents`).
 - A multi-day event repeats under every civil day it overlaps, same rule as month.

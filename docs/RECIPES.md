@@ -1,8 +1,9 @@
 # Integration recipes
 
-Short, copyable adapters for data shapes the core deliberately does not parse.
-The calendar consumes canonical `Temporal` values and concrete event
-occurrences; everything below belongs to the application or its server.
+Short, copyable adapters for data shapes the core deliberately does not parse,
+and for application chrome it deliberately does not own. The calendar
+consumes canonical `Temporal` values and concrete event occurrences;
+everything below belongs to the application or its server.
 
 These recipes are examples, not a general date parser. If your backend already
 returns canonical named-zone strings and explicit ranges, keep them unchanged.
@@ -158,6 +159,156 @@ Contract points:
 - Apply cancellations, overrides and timezone rules before the calendar sees
   the occurrence.
 - `end` stays exclusive. An all-day occurrence still needs at least one day.
+
+## 4. One endpoint for events and backgrounds
+
+Some backends return both collections in one response
+(`{ events, backgrounds }`). Keep the two sources and let them share one
+request. Key it by `signal`: during one `refetchEvents()` both sources receive
+the same `AbortSignal`, and every refetch creates a new one.
+
+```js
+const requests = new WeakMap();
+
+function loadSchedule({ start, end, resourceIds, signal }) {
+  let request = requests.get(signal);
+  if (!request) {
+    request = fetchSchedule({ start, end, resourceIds, signal });
+    requests.set(signal, request);
+  }
+  return request;
+}
+
+async function fetchSchedule({ start, end, resourceIds, signal }) {
+  const query = new URLSearchParams({ start: String(start), end: String(end) });
+  for (const id of resourceIds) query.append("resourceId", id);
+  const response = await fetch(`/api/schedule?${query}`, { signal });
+  if (!response.ok) throw new Error(`schedule: ${response.status}`);
+  return response.json();
+}
+
+calendar.configure({
+  eventSource: async (query) => (await loadSchedule(query)).events.map(mapEvent),
+  backgroundSource: async (query) => (await loadSchedule(query)).backgrounds.map(mapBackground),
+});
+
+await calendar.refetchEvents();
+```
+
+Contract points:
+
+- Key by `signal`, not by the query object or a `start|end` string. The
+  query object is not guaranteed to be shared, and a string key would join a
+  new refetch to an aborted request for the same range.
+- The `WeakMap` needs no cleanup: the entry goes away with its signal.
+- Aborting the shared request is safe because both sources are aborted
+  together.
+- Each collection is still replaced only by its own source. If the shared
+  request fails, both sources reject, the refetch publishes neither
+  collection, and one `calendar:loaderror` is dispatched.
+
+## 5. Wire an external toolbar
+
+Toolbars are application chrome. The calendar exposes what one needs:
+`prev()`, `next()`, `today()`, `setView()`, `view`, `getVisibleRange()` and
+the `calendar:render` event.
+
+```html
+<nav class="toolbar">
+  <button type="button" data-nav="prev" aria-label="Previous">‹</button>
+  <button type="button" data-nav="today">Today</button>
+  <button type="button" data-nav="next" aria-label="Next">›</button>
+  <span class="toolbar-label" aria-live="polite"></span>
+  <button type="button" data-view="week">Week</button>
+  <button type="button" data-view="list">List</button>
+</nav>
+```
+
+```js
+const toolbar = document.querySelector(".toolbar");
+const label = toolbar.querySelector(".toolbar-label");
+
+toolbar.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  if (button.dataset.nav) calendar[button.dataset.nav]();
+  if (button.dataset.view) calendar.setView(button.dataset.view);
+});
+
+// Civil dates formatted at UTC midnight with a UTC formatter. This UTC is a
+// formatting convention that keeps the civil day, not the events' time zone.
+const toDate = (date) => new Date(`${date}T00:00:00Z`);
+const formatter = new Intl.DateTimeFormat(locale, {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+calendar.addEventListener("calendar:render", () => {
+  const { start, end } = calendar.getVisibleRange();
+  label.textContent = formatter.formatRange(toDate(start), toDate(end.subtract({ days: 1 })));
+  for (const button of toolbar.querySelectorAll("[data-view]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.view === calendar.view));
+  }
+});
+```
+
+Contract points:
+
+- `getVisibleRange().end` is exclusive: subtract one day for the label.
+- Sync on `calendar:render`, not on the click. It also covers navigation and
+  view changes made from code, and option changes (`dayCount`, `hiddenDays`)
+  that change the range without moving the anchor.
+- `formatRange()` merges the shared month and year the way the locale
+  expects (in `en-GB`: `3–9 Nov 2026`, `28 Oct – 3 Nov 2026`), and collapses to one date
+  when both ends are the same day.
+- `aria-pressed` suits plain toggle buttons. Inside a `role="menu"`, use
+  `role="menuitemradio"` with `aria-checked` instead, not both.
+- To keep `?date=&view=` in the URL, write it with `history.replaceState()`
+  on `calendar:datechange` and `calendar:viewchange`.
+
+## 6. Drive the calendar from a `<date-calendar>`
+
+A mini month (for example `<date-calendar>` from `@lekoala/date-picker`) is a
+composition peer: it owns its grid and keyboard focus, the calendar owns the
+agenda, and the application connects them.
+
+```html
+<date-calendar id="mini" selection="none" first-day="1"></date-calendar>
+```
+
+```js
+const FIRST_DAY = 1; // Monday, the same value for both components
+calendar.configure({ firstDay: FIRST_DAY });
+
+// A click on a day is navigation, not a selection.
+mini.addEventListener("dateactivate", (event) => {
+  calendar.gotoDate(event.detail.date);
+});
+
+let lastAnchor = "";
+calendar.addEventListener("calendar:render", () => {
+  const anchor = calendar.date.toString();
+  // Only follow the anchor when it actually moved: the user can browse the
+  // mini month freely, and an unrelated render must not pull it back.
+  if (anchor === lastAnchor) return;
+  lastAnchor = anchor;
+  mini.focusedDate = anchor;
+});
+```
+
+Contract points:
+
+- `selection="none"`: activating a day moves the agenda and the mini month
+  never holds a value.
+- Assigning `focusedDate` does not steal focus from the agenda.
+- Derive `first-day` and `firstDay` from one application setting. The
+  calendar does not push its options to other components. It numbers
+  weekdays ISO-style (`1` = Monday … `7` = Sunday, `0` accepted for Sunday);
+  check the numbering the mini month documents before sharing a raw value.
+- `calendar:render` with the anchor guard covers every way the anchor moves,
+  including `gotoDate()` from code and `prev()`/`next()`.
 
 ## Further reading
 

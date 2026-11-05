@@ -17,6 +17,11 @@
   event segment is restored by event id, date and resource; focus outside the
   calendar is never stolen. A render that arrives during a pointer gesture
   cancels the gesture without committing.
+* Documented source contract: within one `refetchEvents()`, `eventSource`
+  and `backgroundSource` share the same `AbortSignal` and query parameters
+  (the query object itself is not guaranteed to be shared). New recipes: one
+  endpoint for both sources, an external toolbar, and a `<date-calendar>`
+  mini month.
 
 ### Fixed
 

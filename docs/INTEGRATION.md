@@ -55,7 +55,8 @@ Working windows and blocked periods map to generic background ranges with classe
 ## Event source
 
 ```js
-calendar.eventSource = loadEvents;
+calendar.configure({ eventSource: loadEvents });
+await calendar.refetchEvents();
 
 async function loadEvents({ start, end, resourceIds, signal }) {
   return store.loadOccurrences({ start, end, resourceIds, signal });
@@ -201,5 +202,5 @@ These are application UX policies, not hard core restrictions. The core never in
 
 ## Recipes and framework examples
 
-- [RECIPES.md](RECIPES.md): UTC instants, multiple feeds, RRULE/ICS occurrences.
+- [RECIPES.md](RECIPES.md): UTC instants, multiple feeds, RRULE/ICS occurrences, one shared endpoint for both sources, external toolbar, mini month.
 - [FRAMEWORKS.md](FRAMEWORKS.md): React, Vue and Svelte lifecycle, properties and event cleanup.

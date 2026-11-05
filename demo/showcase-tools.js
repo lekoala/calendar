@@ -1,7 +1,6 @@
 // showcase-tools.js — tools menu and shelf, account (theme, skin, locale), search palette and realtime stand-ins.
 // Classic script (file:// compatible): shares scope with the other showcase-*.js
 // files, so top-level bindings stay bare and cross-file calls need no imports.
-// Extracted verbatim from demo/showcase.html; see .temp/split-showcase.mjs.
 "use strict";
 
 // --- Tools menu ----------------------------------------------------------
