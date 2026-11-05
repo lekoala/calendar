@@ -602,6 +602,17 @@ function placementConfigureCalendar() {
       // Tools, which is where the precedence rule becomes visible.
       firstDay: 1,
       hiddenDays: [7],
+      // The list view lists only what a reader must not miss: blocked
+      // ranges. Opening hours and the closed wash stay grid paint, which is
+      // why the shared `backgrounds` collection is not filtered for it.
+      listBackgrounds: (background) => background.classNames.includes("sc-blocked"),
+      // The core gives a background no meaning; the shell names it, and the
+      // hook hands over this day's portion so the time needs no clipping.
+      backgroundContent({ background, start, end }) {
+        const minutes = (zoned) => zoned.hour * 60 + zoned.minute;
+        const span = start && end ? `${clock(minutes(start))}–${clock(minutes(end))} · ` : "";
+        return `${span}Blocked · ${background.extendedProps.label ?? background.title ?? "unavailable"}`;
+      },
       // Prevention, not correction. `violation()` used to run only once the
       // gesture had already committed: the booking was accepted, snapped
       // back and explained by a toast. As an interaction policy the very

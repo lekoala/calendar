@@ -186,6 +186,23 @@ test("eventOverlapsDate rejects empty ranges", () => {
   assert.equal(eventOverlapsDate(empty, "2026-09-07", ZONE), false);
 });
 
+test("civil overlap excludes the first instant of a day when midnight is skipped", () => {
+  const range = {
+    start: "2026-09-05T22:00:00-04:00[America/Santiago]",
+    end: "2026-09-06T01:00:00-03:00[America/Santiago]",
+  };
+  assert.equal(eventOverlapsDate(range, "2026-09-05", "America/Santiago"), true);
+  assert.equal(eventOverlapsDate(range, "2026-09-06", "America/Santiago"), false);
+  assert.equal(
+    eventOverlapsDate(
+      { ...range, end: "2026-09-06T01:01:00-03:00[America/Santiago]" },
+      "2026-09-06",
+      "America/Santiago",
+    ),
+    true,
+  );
+});
+
 test("instantRangeOf projects civil dates onto their local midnights", () => {
   const { start, end } = instantRangeOf("2026-09-03", "2026-09-04", ZONE);
   assert.equal(start.toString(), "2026-09-03T00:00:00+02:00[Europe/Brussels]");

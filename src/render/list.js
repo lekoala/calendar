@@ -1,30 +1,47 @@
 import { Temporal } from "temporal-polyfill";
 import { formatClock, formatDayHeader } from "../core/dates.js";
 import { DEFAULT_LABELS } from "../core/labels.js";
-import { describeEvent, eventOverlapsDate, instantRangeOf, wallMinutes } from "../core/slicing.js";
+import { listDayRows } from "../core/list-rows.js";
+import { describeEvent, instantRangeOf, wallMinutes } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
 
 /**
  * Minimal chronological list over the visible dates. Each day is a group
- * with its overlapped events sorted by start; empty days show a muted row.
- * No drag/resize/select: events are buttons sharing `eventContent` and the
- * `describeEvent` accessible name, Enter/Space fires `calendar:eventclick`.
+ * with its overlapped rows in `listDayRows` order; days without events show
+ * a muted row. No drag/resize/select: events are buttons sharing
+ * `eventContent` and the `describeEvent` accessible name, Enter/Space fires
+ * `calendar:eventclick`.
  *
- * List is solo: events from all resources appear, no resource columns.
+ * When `backgrounds` are passed, each overlapping range becomes an inert row
+ * (`cv-list-background`): not focusable, no listener, no `calendar:*` event.
+ *
+ * List is solo: events and backgrounds from all resources appear, no
+ * resource columns and no resource filtering.
  *
  * @param {object} input
  * @param {Temporal.PlainDate[]} input.dates
  * @param {import("../core/model.js").NormalizedEvent[]} input.events
+ * @param {import("../core/model.js").NormalizedBackground[]} [input.backgrounds] rendered as inert rows; omit to list events only
  * @param {object} input.options
  * @param {string} [input.options.timeZone]
  * @param {string} [input.options.locale] BCP 47 tag for default day headers; hooks stay authoritative
  * @param {import("../core/labels.js").CalendarLabels} [input.options.labels] fixed UI strings, defaulting to English
  * @param {(info: object) => unknown} [input.eventContent]
  * @param {(info: object) => unknown} [input.dayHeaderContent]
+ * @param {(info: object) => unknown} [input.backgroundContent]
  * @param {Temporal.ZonedDateTime} [input.now] render instant, cached by the element; falls back to `Temporal.Now`
  * @returns {DocumentFragment}
  */
-export function renderList({ dates, events, options, now, eventContent, dayHeaderContent }) {
+export function renderList({
+  dates,
+  events,
+  backgrounds,
+  options,
+  now,
+  eventContent,
+  dayHeaderContent,
+  backgroundContent,
+}) {
   const timeZone = options.timeZone ?? "UTC";
   const renderNow = now ?? Temporal.Now.zonedDateTimeISO(timeZone);
   const locale = options.locale;
@@ -32,14 +49,6 @@ export function renderList({ dates, events, options, now, eventContent, dayHeade
   const fragment = document.createDocumentFragment();
   const root = document.createElement("div");
   root.className = "cv-list";
-
-  /**
-   * Timeline key so timed and all-day rows interleave by their actual start.
-   *
-   * @param {import("../core/model.js").NormalizedEvent} event
-   * @returns {number}
-   */
-  const startEpoch = (event) => instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds;
 
   for (const date of dates) {
     const group = document.createElement("section");
@@ -54,18 +63,14 @@ export function renderList({ dates, events, options, now, eventContent, dayHeade
     else header.textContent = formatDayHeader(date, locale);
     group.append(header);
 
-    const dayEvents = events
-      .filter((event) => eventOverlapsDate(event, date, timeZone))
-      .sort((a, b) => startEpoch(a) - startEpoch(b));
+    const rows = listDayRows({ date, events, backgrounds, timeZone });
 
-    if (dayEvents.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "cv-list-empty";
-      empty.textContent = labels.noEvents;
-      group.append(empty);
-    }
-
-    for (const event of dayEvents) {
+    for (const row of rows) {
+      if (row.kind === "background") {
+        group.append(renderBackgroundRow(row, date, labels, backgroundContent));
+        continue;
+      }
+      const event = row.item;
       const item = document.createElement("button");
       item.type = "button";
       item.className = ["cv-list-event", ...(event.classNames ?? [])].join(" ");
@@ -98,9 +103,64 @@ export function renderList({ dates, events, options, now, eventContent, dayHeade
       group.append(item);
     }
 
+    if (!rows.some((row) => row.kind === "event")) {
+      const empty = document.createElement("p");
+      empty.className = "cv-list-empty";
+      empty.textContent = labels.noEvents;
+      group.append(empty);
+    }
+
     root.append(group);
   }
 
   fragment.append(root);
   return fragment;
+}
+
+/**
+ * Inert row for a background range. A plain element in reading order: no
+ * role, no tabindex, no listener, so it never takes focus or emits intent.
+ * Without `backgroundContent` it reads its time span on that day, because
+ * the core attaches no meaning to a background.
+ *
+ * @param {import("../core/list-rows.js").ListRow & { kind: "background" }} row
+ * @param {Temporal.PlainDate} date
+ * @param {import("../core/labels.js").CalendarLabels} labels
+ * @param {((info: object) => unknown) | undefined} backgroundContent
+ * @returns {HTMLElement}
+ */
+function renderBackgroundRow(row, date, labels, backgroundContent) {
+  const background = row.item;
+  const element = document.createElement("div");
+  element.className = ["cv-list-background", ...(background.classNames ?? [])].join(" ");
+  element.dataset.backgroundId = background.id;
+  // `start`/`end` are this day's portion (null when all-day), so a hook never
+  // re-derives the clipping the row already did.
+  const content = backgroundContent?.({
+    background,
+    date,
+    start: row.start,
+    end: row.end,
+    allDay: row.allDay,
+    element,
+  });
+  if (content instanceof Node) element.append(content);
+  else if (content != null) element.textContent = String(content);
+  else element.textContent = backgroundSpanText(row, labels);
+  return element;
+}
+
+/**
+ * Default text of a background row: the all-day label, or the clipped
+ * wall-clock span on that day. A span reaching the next midnight ends at
+ * `24:00`. Repeated-hour spans use the same projection as grid geometry;
+ * the hook still receives the canonical clipped instants.
+ *
+ * @param {import("../core/list-rows.js").ListRow} row
+ * @param {import("../core/labels.js").CalendarLabels} labels
+ * @returns {string}
+ */
+function backgroundSpanText(row, labels) {
+  if (row.coversDay || !row.span) return labels.allDaySlotLabel;
+  return `${formatClock(row.span.start)}–${formatClock(row.span.end)}`;
 }

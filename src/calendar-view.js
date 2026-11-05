@@ -13,6 +13,7 @@ import {
   toPlainDate,
 } from "./core/dates.js";
 import { resolveLabels } from "./core/labels.js";
+import { listedBackgrounds } from "./core/list-rows.js";
 import {
   isInvalidCivilRange,
   isInvertedRange,
@@ -58,6 +59,7 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {number} [slotLabelInterval] minutes between time axis labels (default 60)
  * @property {boolean} [editable]
  * @property {boolean} [allDaySlot] show the all-day lane in time grids when it has content (default true)
+ * @property {boolean | ((background: import("./core/model.js").NormalizedBackground) => boolean)} [listBackgrounds] render backgrounds as inert rows in the list view: `true` for all, a predicate to choose (default false)
  * @property {(query: EventSourceQuery) => Promise<unknown[]>} [eventSource]
  * @property {(query: EventSourceQuery) => Promise<unknown[]>} [backgroundSource]
  * @property {(info: object) => unknown} [eventContent]
@@ -66,6 +68,7 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {(info: object) => unknown} [resourceGroupContent]
  * @property {(info: object) => unknown} [slotLabelContent]
  * @property {(info: object) => unknown} [moreLinkContent]
+ * @property {(info: object) => unknown} [backgroundContent] content of a list background row (`listBackgrounds`)
  * @property {(decision: InteractionPolicyInput) => boolean | string | null | undefined} [interactionPolicy] synchronous gate for user-originated interactions (pointer, keyboard, external drop, selection); programmatic mutations never consult it
  */
 
@@ -1551,10 +1554,12 @@ export class CalendarViewElement extends HTMLElement {
         renderList({
           dates,
           events: this.#events,
+          backgrounds: listedBackgrounds(this.#backgrounds, this.#config.listBackgrounds),
           options,
           now,
           eventContent: this.#config.eventContent,
           dayHeaderContent: this.#config.dayHeaderContent,
+          backgroundContent: this.#config.backgroundContent,
         }),
       );
     } else {

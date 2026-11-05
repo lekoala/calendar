@@ -345,7 +345,7 @@ Resource grouping is **one visual level**, not a tree. Each event belongs to one
 
 ### Backgrounds
 
-FullCalendar background events (`display: "background"`, `businessHours`, blocking windows) should be mapped explicitly to `calendar.backgrounds` or `configure({ backgroundSource })`. Calendar 0.3 treats backgrounds as **visual geometry**, not built-in business rules. Month/list do not render background ranges. Check them in `interactionPolicy` or in your server if they should constrain interaction.
+FullCalendar background events (`display: "background"`, `businessHours`, blocking windows) should be mapped explicitly to `calendar.backgrounds` or `configure({ backgroundSource })`. Calendar 0.3 treats backgrounds as **visual geometry**, not built-in business rules. Month does not render background ranges; list renders inert background rows when `listBackgrounds` opts in, with optional `backgroundContent`. Check them in `interactionPolicy` or in your server if they should constrain interaction.
 
 ### Custom content and styling
 

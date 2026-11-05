@@ -174,7 +174,8 @@ export function describeEvent(event, timeZone, untitled = "Event") {
 /**
  * Civil-day overlap for summary representations (month cells, list groups).
  * True when any part of [start, end) falls on `date` in `timeZone`. An event
- * ending exactly at midnight does not overlap the next day.
+ * ending at the first instant of a civil day does not overlap that day,
+ * including when a clock change skips midnight.
  *
  * All-day ranges compare at the civil level over the same half-open span, so
  * a day ending `[D, D+1)` covers exactly one date.
@@ -196,10 +197,11 @@ export function eventOverlapsDate(range, date, timeZone) {
   const startZoned = toZonedDateTime(range.start, timeZone);
   const endZoned = toZonedDateTime(range.end, timeZone);
   if (Temporal.ZonedDateTime.compare(endZoned, startZoned) <= 0) return false;
-  const startDay = startZoned.toPlainDate();
-  const endDay = endZoned.toPlainDate();
-  if (Temporal.PlainDate.compare(day, startDay) < 0) return false;
-  if (Temporal.PlainDate.compare(day, endDay) > 0) return false;
-  if (Temporal.PlainDate.compare(day, endDay) === 0 && wallMinutes(endZoned) <= 0) return false;
-  return true;
+  const dayStart = day.toZonedDateTime(timeZone);
+  const dayEnd = day.add({ days: 1 }).toZonedDateTime(timeZone);
+  return (
+    Temporal.ZonedDateTime.compare(dayEnd, dayStart) > 0 &&
+    Temporal.ZonedDateTime.compare(startZoned, dayEnd) < 0 &&
+    Temporal.ZonedDateTime.compare(endZoned, dayStart) > 0
+  );
 }

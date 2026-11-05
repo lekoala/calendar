@@ -2003,6 +2003,19 @@ test("a building-wide closure is drawn in a combined view, and refuses there", a
   await expect(page.locator("#toast")).toContainText("in every room");
 });
 
+test("the list view lists blocked ranges only, named by the shell", async ({ page }) => {
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await setView(page, "list");
+  // Seven visible days always include a Tuesday, the building-wide safety
+  // round; opening hours and the closed wash never become rows.
+  const rows = page.locator(".cv-list-background");
+  await expect(rows.first()).toHaveText("08:00–09:00 · Blocked · Safety round");
+  const classes = await rows.evaluateAll((nodes) => nodes.map((node) => node.className));
+  expect(classes.length).toBeGreaterThan(0);
+  for (const className of classes) expect(className).toContain("sc-blocked");
+});
+
 /**
  * Shell-side room grouping: one level. The core derives the
  * sections and owns the column spans; the shell only declares the groups,

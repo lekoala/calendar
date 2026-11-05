@@ -868,7 +868,9 @@ function addExtraBackground(range) {
 
 function refreshBackgrounds() {
   const view = calendar.view;
-  if (view === "month" || view === "list") {
+  // Month never draws backgrounds; list does, as rows chosen by the
+  // `listBackgrounds` predicate, so it keeps the same ranges as the grids.
+  if (view === "month") {
     if (backgroundKey !== "none") {
       backgroundKey = "none";
       calendar.backgrounds = [];

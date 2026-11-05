@@ -212,6 +212,178 @@ test("list events activate and switching preserves the anchor date", async ({ pa
   expect(state).toEqual({ date: "2026-09-03", view: "week" });
 });
 
+test("list backgrounds are opt-in inert rows in chronological order", async ({ page }) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).setView("list");
+  });
+  await flushRender(page);
+  // Off by default: the fixture background stays grid-only.
+  await expect(page.locator(".cv-list-background")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const hooks = /** @type {any} */ (window);
+    hooks.__intents = [];
+    for (const name of [
+      "calendar:eventclick",
+      "calendar:select",
+      "calendar:datechange",
+      "calendar:viewchange",
+    ]) {
+      calendar.addEventListener(name, () => hooks.__intents.push(name));
+    }
+    calendar.backgrounds = [
+      {
+        id: "bg",
+        start: "2026-09-03T08:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T12:00:00+02:00[Europe/Brussels]",
+      },
+      {
+        id: "room",
+        resourceId: "resource-a",
+        start: "2026-09-05T22:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-06T02:00:00+02:00[Europe/Brussels]",
+      },
+      { id: "closed", allDay: true, start: "2026-09-04", end: "2026-09-05" },
+    ];
+    calendar.configure({ listBackgrounds: true });
+  });
+  await flushRender(page);
+
+  const day3 = page.locator('[data-date="2026-09-03"]');
+  await expect(day3.locator(".cv-list-background, .cv-list-event")).toHaveCount(3);
+  await expect(day3.locator(".cv-list-background, .cv-list-event").first()).toHaveAttribute(
+    "data-background-id",
+    "bg",
+  );
+  await expect(day3.locator('[data-background-id="bg"]')).toHaveText("08:00–12:00");
+  // The all-day background leads its day, ahead of the timed event.
+  const day4 = page.locator('[data-date="2026-09-04"]');
+  await expect(day4.locator(".cv-list-background, .cv-list-event").first()).toHaveAttribute(
+    "data-background-id",
+    "closed",
+  );
+  await expect(day4.locator('[data-background-id="closed"]')).toHaveText("All day");
+  // A resource-scoped range is not filtered, and an overnight range splits at midnight.
+  await expect(page.locator('[data-date="2026-09-05"] [data-background-id="room"]')).toHaveText(
+    "22:00–24:00",
+  );
+  await expect(page.locator('[data-date="2026-09-06"] [data-background-id="room"]')).toHaveText(
+    "00:00–02:00",
+  );
+  // A day holding only backgrounds still has no events.
+  await expect(page.locator('[data-date="2026-09-05"] .cv-list-empty')).toHaveCount(1);
+  await expect(page.locator('[data-date="2026-09-05"] > :last-child')).toHaveClass("cv-list-empty");
+
+  // Inert: not focusable, and a click emits no intent.
+  const row = day3.locator('[data-background-id="bg"]');
+  expect(await row.evaluate((element) => element.tagName)).toBe("DIV");
+  expect(await row.getAttribute("tabindex")).toBeNull();
+  await row.click();
+  await day3.locator('[data-event-id="a"]').focus();
+  await page.keyboard.press("Shift+Tab");
+  expect(await page.evaluate(() => document.activeElement?.classList.contains("cv-list-background"))).toBe(
+    false,
+  );
+  expect(await page.evaluate(() => /** @type {any} */ (window).__intents)).toEqual([]);
+});
+
+test("backgroundContent fills list background rows with text or nodes", async ({ page }) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.configure({
+      listBackgrounds: true,
+      backgroundContent: (/** @type {any} */ { background, date, element }) => {
+        element.dataset.seenDate = String(date);
+        if (background.id !== "bg") return null;
+        const label = document.createElement("strong");
+        label.textContent = `Blocked (${background.extendedProps.note})`;
+        return label;
+      },
+    });
+    calendar.backgrounds = [
+      {
+        id: "bg",
+        extendedProps: { note: "maintenance" },
+        start: "2026-09-03T08:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T12:00:00+02:00[Europe/Brussels]",
+      },
+      {
+        id: "plain",
+        start: "2026-09-04T08:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-04T09:00:00+02:00[Europe/Brussels]",
+      },
+    ];
+    calendar.setView("list");
+  });
+  await flushRender(page);
+  const row = page.locator('[data-background-id="bg"]');
+  await expect(row.locator("strong")).toHaveText("Blocked (maintenance)");
+  await expect(row).toHaveAttribute("data-seen-date", "2026-09-03");
+  // A null return keeps the default span text.
+  await expect(page.locator('[data-background-id="plain"]')).toHaveText("08:00–09:00");
+});
+
+test("list repeated-hour text uses grid projection and hooks retain real instants", async ({ page }) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = [];
+    calendar.backgrounds = [
+      {
+        id: "repeat",
+        start: "2026-10-25T02:30:00+02:00[Europe/Brussels]",
+        end: "2026-10-25T02:15:00+01:00[Europe/Brussels]",
+      },
+    ];
+    calendar.configure({
+      listBackgrounds: true,
+      backgroundContent: (/** @type {any} */ { start, end, element }) => {
+        element.dataset.elapsed = String(start.until(end).total({ unit: "minutes" }));
+        element.dataset.endOffset = end.offset;
+        return null;
+      },
+    });
+    calendar.gotoDate("2026-10-25");
+    calendar.setView("list");
+  });
+  await flushRender(page);
+  const row = page.locator('[data-background-id="repeat"]');
+  await expect(row).toHaveText("02:30–03:15");
+  await expect(row).toHaveAttribute("data-elapsed", "45");
+  await expect(row).toHaveAttribute("data-end-offset", "+01:00");
+});
+
+test("skipped midnight creates neither an empty list background nor a next-day month chip", async ({
+  page,
+}) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const range = {
+      id: "evening",
+      start: "2026-09-05T22:00:00-04:00[America/Santiago]",
+      end: "2026-09-06T01:00:00-03:00[America/Santiago]",
+    };
+    calendar.configure({ timeZone: "America/Santiago", listBackgrounds: true });
+    calendar.events = [{ ...range, title: "Evening" }];
+    calendar.backgrounds = [range];
+    calendar.gotoDate("2026-09-05");
+    calendar.setView("list");
+  });
+  await flushRender(page);
+  await expect(page.locator('[data-date="2026-09-05"] .cv-list-background')).toHaveText("22:00–24:00");
+  await expect(
+    page.locator('[data-date="2026-09-06"] .cv-list-background, [data-date="2026-09-06"] .cv-list-event'),
+  ).toHaveCount(0);
+  await page.evaluate(() => /** @type {any} */ (document.querySelector("calendar-view")).setView("month"));
+  await flushRender(page);
+  await expect(page.locator('[data-date="2026-09-05"] [data-event-id="evening"]')).toHaveCount(1);
+  await expect(page.locator('[data-date="2026-09-06"] [data-event-id="evening"]')).toHaveCount(0);
+});
+
 test("month comparator controls visible chips, Tab order and more payload without sorting state", async ({
   page,
 }) => {

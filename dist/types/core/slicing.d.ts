@@ -130,7 +130,8 @@ export declare function describeEvent(event: {
 /**
  * Civil-day overlap for summary representations (month cells, list groups).
  * True when any part of [start, end) falls on `date` in `timeZone`. An event
- * ending exactly at midnight does not overlap the next day.
+ * ending at the first instant of a civil day does not overlap that day,
+ * including when a clock change skips midnight.
  *
  * All-day ranges compare at the civil level over the same half-open span, so
  * a day ending `[D, D+1)` covers exactly one date.

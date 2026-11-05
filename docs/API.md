@@ -162,7 +162,7 @@ calendar.resourceGroups = [
 }
 ```
 
-No built-in semantic type. A background without `resourceId` is global and applies to every resource column; an event without `resourceId` is hidden in resource views (see view policy). An `allDay` background ("the room is closed this week") uses the same civil boundary types as all-day events, paints the full-height lane tint in time grids, and must cover at least one civil day.
+No built-in semantic type. A background without `resourceId` is global and applies to every resource column; an event without `resourceId` is hidden in resource views (see view policy). An `allDay` background ("the room is closed this week") uses the same civil boundary types as all-day events, paints the full-height lane tint in time grids, and must cover at least one civil day. Month never renders backgrounds; list renders them as rows only when `listBackgrounds` opts in (see below).
 
 ## Configuration
 
@@ -179,6 +179,7 @@ calendar.configure({
   dayCount: 4,
   slotLabelInterval: 60,
   allDaySlot: true,
+  listBackgrounds: false,
   eventSource,
   backgroundSource,
   eventContent,
@@ -186,6 +187,7 @@ calendar.configure({
   resourceHeaderContent,
   slotLabelContent,
   moreLinkContent,
+  backgroundContent,
   interactionPolicy,
 });
 ```
@@ -774,11 +776,17 @@ eventContent({ event, date, resource, temporalState, element }) {
 }
 ```
 
-Hooks: `eventContent`, `dayHeaderContent`, `resourceHeaderContent`, `resourceGroupContent`, `slotLabelContent`, `moreLinkContent`. Do not add further hooks before a use case requires them. Do not add `innerHTML`/`allowHtml` configuration.
+Hooks: `eventContent`, `dayHeaderContent`, `resourceHeaderContent`, `resourceGroupContent`, `slotLabelContent`, `moreLinkContent`, `backgroundContent`. Do not add further hooks before a use case requires them. Do not add `innerHTML`/`allowHtml` configuration.
 
 Every rendered event node carries `data-temporal-state="past|current|future"`, derived from its canonical range against the render's `now` (`end <= now` is past, `start <= now < end` is current). `eventContent` receives the same value as `info.temporalState`. The fact ages live without refetch: the render arms a single one-shot timer to the next visible start/end boundary, which triggers the next render. The core never derives `editable`/`movable`/`resizable` from it; policy stays application-side. Style the fact from the application with plain attribute selectors (`[data-temporal-state="past"]`); the core ships no temporal styling.
 
 `slotLabelContent({ time, minutes, element })` renders one time axis label; `time` is a `Temporal.PlainTime` and `minutes` its offset from midnight. `moreLinkContent({ date, events, hidden, element })` renders the month `+n more` button, where `events` is the day's full list and `hidden` the count that did not fit.
+
+`listBackgrounds` is `false` by default. `true` lists every background as an inert list row; a predicate `(background) => boolean` lists only the ranges it returns `true` for, without touching the shared `backgrounds` collection the grids paint (opening hours can stay paint while blocked ranges become rows).
+
+`backgroundContent({ background, date, start, end, allDay, element })` renders one list background row, once per civil day the range overlaps. `start`/`end` are that day's portion as `ZonedDateTime` (clipped to the day, `end` at the next midnight when the range continues), `null` for all-day ranges. A background carries no title and no meaning in the core, so the default text is only its span on that day (`08:00–12:00`, `22:00–24:00`, or `labels.allDaySlotLabel` when it fills the day); return a Node or a string to say what the range means, read from `classNames` or `extendedProps`.
+
+During the repeated autumn hour, default background text uses the same start-anchor plus elapsed-duration fallback as grid geometry when wall-clock bounds do not increase (`02:30+02:00 → 02:15+01:00` displays `02:30–03:15`). Hook `start`/`end` retain their real offsets and instant order. This list-only hook receives neither `temporalState` nor a resolved `resource`; applications can use the canonical `background.start`/`background.end` and `background.resourceId` for those concerns. Grid backgrounds have no content hook.
 
 Every hook receives the `element` it fills, which is how an application attaches its own attributes, classes or listeners without a separate `didMount` hook and without a post-render pass:
 

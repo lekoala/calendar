@@ -204,6 +204,11 @@ Manual stress only: 12 resources × 3 days, 6 resources × 7 days. Columns keep 
 - `prev`/`next` step whole months;
 - month sources receive the week-aligned range;
 - list renders 7 chronological day groups with empty states;
+- list backgrounds are opt-in (`true` or a predicate), inert to pointer and keyboard, and not implicitly filtered by resource;
+- background rows sort with events, split per civil day, and precede the empty state on a day without events;
+- `backgroundContent` supports text, DOM nodes and null fallback;
+- repeated-hour background text matches grid projection while hooks retain canonical instants;
+- a range ending at a day's first instant does not create a list row or month chip, including skipped midnights;
 - switching `timeGrid ↔ month ↔ list` preserves the anchor date.
 
 ### Async sources

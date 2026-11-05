@@ -17,6 +17,14 @@
   event segment is restored by event id, date and resource; focus outside the
   calendar is never stolen. A render that arrives during a pointer gesture
   cancels the gesture without committing.
+* `listBackgrounds` renders background ranges as inert rows in the list
+  view (`cv-list-background`, `data-background-id`): not focusable, no
+  listener, no `calendar:*` event, clipped per civil day, not filtered by
+  resource by the core. `true` lists every range; a predicate picks some
+  without changing what the grids paint. The new
+  `backgroundContent({ background, date, start, end, allDay, element })`
+  hook gives them meaning; the default text is the range's span on that
+  day. Off by default.
 * Documented source contract: within one `refetchEvents()`, `eventSource`
   and `backgroundSource` share the same `AbortSignal` and query parameters
   (the query object itself is not guaranteed to be shared). New recipes: one
@@ -25,12 +33,20 @@
 
 ### Fixed
 
+* List background text uses grid geometry's repeated-hour projection while
+  content hooks retain canonical instants. Summary overlap excludes a day
+  touched only at its first instant, including when midnight is skipped.
+  On days without events, the empty state follows any background rows.
+
 * Current-time markers advance every minute and move to the correct civil
   day after midnight without replacing event nodes, interrupting pointer
   gestures or refetching sources. Timers stop on disconnect.
 
 ### Changed
 
+* List day groups order all-day rows first, then timed rows by the start of
+  their portion of that day: an event that began the day before now sorts at
+  midnight instead of ahead of the day's all-day rows.
 * All-day events and backgrounds must cover at least one civil day
   (`end > start`). Normalization rejects empty ranges and `resizeEvent()`
   returns `null`; timed zero-length ranges keep their existing contract.

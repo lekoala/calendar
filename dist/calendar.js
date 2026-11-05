@@ -4009,6 +4009,149 @@
     return { ...DEFAULT_LABELS, ...input };
   }
 
+  // src/core/slicing.js
+  function toZonedDateTime(value, timeZone) {
+    if (value instanceof Temporal2.ZonedDateTime) {
+      return value.withTimeZone(timeZone);
+    }
+    if (typeof value === "string") {
+      return Temporal2.ZonedDateTime.from(value).withTimeZone(timeZone);
+    }
+    throw new TypeError("Event boundaries must be Temporal.ZonedDateTime or ISO strings");
+  }
+  function instantRangeOf(start, end, timeZone) {
+    const project = (value) => {
+      if (value instanceof Temporal2.PlainDate) {
+        return value.toZonedDateTime({ timeZone, plainTime: "00:00" });
+      }
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return Temporal2.PlainDate.from(value).toZonedDateTime({ timeZone, plainTime: "00:00" });
+      }
+      return toZonedDateTime(value, timeZone);
+    };
+    return { start: project(start), end: project(end) };
+  }
+  function wallMinutes(zoned) {
+    const time = zoned.toPlainTime();
+    return time.hour * 60 + time.minute + time.second / 60 + time.millisecond / 60000;
+  }
+  function sliceRangeForDay({ start, end, date, timeZone, slotMin, slotMax }) {
+    const day = toPlainDate(date);
+    const startZoned = toZonedDateTime(start, timeZone);
+    const endZoned = toZonedDateTime(end, timeZone);
+    if (Temporal2.ZonedDateTime.compare(endZoned, startZoned) <= 0)
+      return null;
+    const startDay = startZoned.toPlainDate();
+    const endDay = endZoned.toPlainDate();
+    if (Temporal2.PlainDate.compare(day, startDay) < 0 || Temporal2.PlainDate.compare(day, endDay) > 0) {
+      return null;
+    }
+    const startWall = Temporal2.PlainDate.compare(day, startDay) === 0 ? wallMinutes(startZoned) : slotMin;
+    let endWall = Temporal2.PlainDate.compare(day, endDay) === 0 ? wallMinutes(endZoned) : slotMax;
+    if (endWall <= startWall && startDay.equals(day) && endDay.equals(day)) {
+      endWall = startWall + startZoned.until(endZoned).total({ unit: "minutes" });
+    }
+    const clippedStart = Math.max(slotMin, startWall);
+    const clippedEnd = Math.min(slotMax, endWall);
+    if (clippedEnd <= clippedStart)
+      return null;
+    return { start: clippedStart, end: clippedEnd };
+  }
+  function sliceTimedEventForDay(event, date, options) {
+    return sliceRangeForDay({
+      start: event.start,
+      end: event.end,
+      date,
+      timeZone: options.timeZone,
+      slotMin: options.slotMin,
+      slotMax: options.slotMax
+    });
+  }
+  function describeEvent(event, timeZone, untitled = "Event") {
+    const title = event.title ?? untitled;
+    if (event.start instanceof Temporal2.PlainDate) {
+      const endPlain = event.end;
+      const span = endPlain.since(event.start).days;
+      if (span <= 1)
+        return `${title}, ${event.start.toString()}, all day`;
+      return `${title}, ${event.start.toString()} to ${endPlain.subtract({ days: 1 }).toString()}, all day`;
+    }
+    const start = toZonedDateTime(event.start, timeZone);
+    const end = toZonedDateTime(event.end, timeZone);
+    const startDay = start.toPlainDate().toString();
+    const endDay = end.toPlainDate().toString();
+    const startText = `${startDay}, ${formatClock(wallMinutes(start))}`;
+    const endText = startDay === endDay ? formatClock(wallMinutes(end)) : `${endDay}, ${formatClock(wallMinutes(end))}`;
+    return `${title}, ${startText} to ${endText}`;
+  }
+  function eventOverlapsDate(range, date, timeZone) {
+    const day = toPlainDate(date);
+    if (range.start instanceof Temporal2.PlainDate) {
+      const startDay = range.start;
+      const endDay = range.end;
+      if (Temporal2.PlainDate.compare(day, startDay) < 0)
+        return false;
+      if (Temporal2.PlainDate.compare(day, endDay) >= 0)
+        return false;
+      return true;
+    }
+    const startZoned = toZonedDateTime(range.start, timeZone);
+    const endZoned = toZonedDateTime(range.end, timeZone);
+    if (Temporal2.ZonedDateTime.compare(endZoned, startZoned) <= 0)
+      return false;
+    const dayStart = day.toZonedDateTime(timeZone);
+    const dayEnd = day.add({ days: 1 }).toZonedDateTime(timeZone);
+    return Temporal2.ZonedDateTime.compare(dayEnd, dayStart) > 0 && Temporal2.ZonedDateTime.compare(startZoned, dayEnd) < 0 && Temporal2.ZonedDateTime.compare(endZoned, dayStart) > 0;
+  }
+
+  // src/core/list-rows.js
+  function listDayRows({ date, events, backgrounds = [], timeZone }) {
+    const dayStart = date.toZonedDateTime(timeZone);
+    const dayEnd = date.add({ days: 1 }).toZonedDateTime(timeZone);
+    const rows = [];
+    const collect = (entries) => {
+      for (const entry of entries) {
+        const { item } = entry;
+        if (!eventOverlapsDate(item, date, timeZone))
+          continue;
+        if (item.start instanceof Temporal2.PlainDate) {
+          rows.push({ ...entry, allDay: true, start: null, end: null, coversDay: true, span: null });
+          continue;
+        }
+        const range = instantRangeOf(item.start, item.end, timeZone);
+        const start = Temporal2.ZonedDateTime.compare(range.start, dayStart) < 0 ? dayStart : range.start;
+        const end = Temporal2.ZonedDateTime.compare(range.end, dayEnd) > 0 ? dayEnd : range.end;
+        if (Temporal2.ZonedDateTime.compare(end, start) <= 0)
+          continue;
+        const coversDay = start.equals(dayStart) && end.equals(dayEnd);
+        const span = sliceRangeForDay({ start, end, date, timeZone, slotMin: 0, slotMax: 1440 });
+        rows.push({ ...entry, allDay: false, start, end, coversDay, span });
+      }
+    };
+    collect(events.map((item) => ({ kind: "event", item })));
+    collect(backgrounds.map((item) => ({ kind: "background", item })));
+    rows.sort((a, b) => {
+      if (a.allDay !== b.allDay)
+        return a.allDay ? -1 : 1;
+      if (!a.allDay && a.start && b.start) {
+        const byStart = Temporal2.ZonedDateTime.compare(a.start, b.start);
+        if (byStart !== 0)
+          return byStart;
+      }
+      if (a.kind !== b.kind)
+        return a.kind === "background" ? -1 : 1;
+      return 0;
+    });
+    return rows;
+  }
+  function listedBackgrounds(backgrounds, option) {
+    if (typeof option === "function")
+      return backgrounds.filter((background) => option(background) === true);
+    if (option === true)
+      return [...backgrounds];
+    return;
+  }
+
   // src/core/model.js
   function normalizeRangeBound(value, allDay) {
     if (allDay) {
@@ -4134,107 +4277,6 @@
       classNames: Array.from(classNames ?? []),
       extendedProps: { ...extendedProps ?? {} }
     };
-  }
-
-  // src/core/slicing.js
-  function toZonedDateTime(value, timeZone) {
-    if (value instanceof Temporal2.ZonedDateTime) {
-      return value.withTimeZone(timeZone);
-    }
-    if (typeof value === "string") {
-      return Temporal2.ZonedDateTime.from(value).withTimeZone(timeZone);
-    }
-    throw new TypeError("Event boundaries must be Temporal.ZonedDateTime or ISO strings");
-  }
-  function instantRangeOf(start, end, timeZone) {
-    const project = (value) => {
-      if (value instanceof Temporal2.PlainDate) {
-        return value.toZonedDateTime({ timeZone, plainTime: "00:00" });
-      }
-      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return Temporal2.PlainDate.from(value).toZonedDateTime({ timeZone, plainTime: "00:00" });
-      }
-      return toZonedDateTime(value, timeZone);
-    };
-    return { start: project(start), end: project(end) };
-  }
-  function wallMinutes(zoned) {
-    const time = zoned.toPlainTime();
-    return time.hour * 60 + time.minute + time.second / 60 + time.millisecond / 60000;
-  }
-  function sliceRangeForDay({ start, end, date, timeZone, slotMin, slotMax }) {
-    const day = toPlainDate(date);
-    const startZoned = toZonedDateTime(start, timeZone);
-    const endZoned = toZonedDateTime(end, timeZone);
-    if (Temporal2.ZonedDateTime.compare(endZoned, startZoned) <= 0)
-      return null;
-    const startDay = startZoned.toPlainDate();
-    const endDay = endZoned.toPlainDate();
-    if (Temporal2.PlainDate.compare(day, startDay) < 0 || Temporal2.PlainDate.compare(day, endDay) > 0) {
-      return null;
-    }
-    const startWall = Temporal2.PlainDate.compare(day, startDay) === 0 ? wallMinutes(startZoned) : slotMin;
-    let endWall = Temporal2.PlainDate.compare(day, endDay) === 0 ? wallMinutes(endZoned) : slotMax;
-    if (endWall <= startWall && startDay.equals(day) && endDay.equals(day)) {
-      endWall = startWall + startZoned.until(endZoned).total({ unit: "minutes" });
-    }
-    const clippedStart = Math.max(slotMin, startWall);
-    const clippedEnd = Math.min(slotMax, endWall);
-    if (clippedEnd <= clippedStart)
-      return null;
-    return { start: clippedStart, end: clippedEnd };
-  }
-  function sliceTimedEventForDay(event, date, options) {
-    return sliceRangeForDay({
-      start: event.start,
-      end: event.end,
-      date,
-      timeZone: options.timeZone,
-      slotMin: options.slotMin,
-      slotMax: options.slotMax
-    });
-  }
-  function describeEvent(event, timeZone, untitled = "Event") {
-    const title = event.title ?? untitled;
-    if (event.start instanceof Temporal2.PlainDate) {
-      const endPlain = event.end;
-      const span = endPlain.since(event.start).days;
-      if (span <= 1)
-        return `${title}, ${event.start.toString()}, all day`;
-      return `${title}, ${event.start.toString()} to ${endPlain.subtract({ days: 1 }).toString()}, all day`;
-    }
-    const start = toZonedDateTime(event.start, timeZone);
-    const end = toZonedDateTime(event.end, timeZone);
-    const startDay = start.toPlainDate().toString();
-    const endDay = end.toPlainDate().toString();
-    const startText = `${startDay}, ${formatClock(wallMinutes(start))}`;
-    const endText = startDay === endDay ? formatClock(wallMinutes(end)) : `${endDay}, ${formatClock(wallMinutes(end))}`;
-    return `${title}, ${startText} to ${endText}`;
-  }
-  function eventOverlapsDate(range, date, timeZone) {
-    const day = toPlainDate(date);
-    if (range.start instanceof Temporal2.PlainDate) {
-      const startDay = range.start;
-      const endDay = range.end;
-      if (Temporal2.PlainDate.compare(day, startDay) < 0)
-        return false;
-      if (Temporal2.PlainDate.compare(day, endDay) >= 0)
-        return false;
-      return true;
-    }
-    const startZoned = toZonedDateTime(range.start, timeZone);
-    const endZoned = toZonedDateTime(range.end, timeZone);
-    if (Temporal2.ZonedDateTime.compare(endZoned, startZoned) <= 0)
-      return false;
-    const startDay = startZoned.toPlainDate();
-    const endDay = endZoned.toPlainDate();
-    if (Temporal2.PlainDate.compare(day, startDay) < 0)
-      return false;
-    if (Temporal2.PlainDate.compare(day, endDay) > 0)
-      return false;
-    if (Temporal2.PlainDate.compare(day, endDay) === 0 && wallMinutes(endZoned) <= 0)
-      return false;
-    return true;
   }
 
   // src/core/overlaps.js
@@ -4382,7 +4424,16 @@
   }
 
   // src/render/list.js
-  function renderList({ dates, events, options, now, eventContent, dayHeaderContent }) {
+  function renderList({
+    dates,
+    events,
+    backgrounds,
+    options,
+    now,
+    eventContent,
+    dayHeaderContent,
+    backgroundContent
+  }) {
     const timeZone = options.timeZone ?? "UTC";
     const renderNow = now ?? Temporal2.Now.zonedDateTimeISO(timeZone);
     const locale = options.locale;
@@ -4390,7 +4441,6 @@
     const fragment = document.createDocumentFragment();
     const root = document.createElement("div");
     root.className = "cv-list";
-    const startEpoch = (event) => instantRangeOf(event.start, event.end, timeZone).start.epochMilliseconds;
     for (const date of dates) {
       const group = document.createElement("section");
       group.className = "cv-list-day";
@@ -4405,14 +4455,13 @@
       else
         header.textContent = formatDayHeader(date, locale);
       group.append(header);
-      const dayEvents = events.filter((event) => eventOverlapsDate(event, date, timeZone)).sort((a, b) => startEpoch(a) - startEpoch(b));
-      if (dayEvents.length === 0) {
-        const empty = document.createElement("p");
-        empty.className = "cv-list-empty";
-        empty.textContent = labels.noEvents;
-        group.append(empty);
-      }
-      for (const event of dayEvents) {
+      const rows = listDayRows({ date, events, backgrounds, timeZone });
+      for (const row of rows) {
+        if (row.kind === "background") {
+          group.append(renderBackgroundRow(row, date, labels, backgroundContent));
+          continue;
+        }
+        const event = row.item;
         const item = document.createElement("button");
         item.type = "button";
         item.className = ["cv-list-event", ...event.classNames ?? []].join(" ");
@@ -4441,10 +4490,42 @@
         });
         group.append(item);
       }
+      if (!rows.some((row) => row.kind === "event")) {
+        const empty = document.createElement("p");
+        empty.className = "cv-list-empty";
+        empty.textContent = labels.noEvents;
+        group.append(empty);
+      }
       root.append(group);
     }
     fragment.append(root);
     return fragment;
+  }
+  function renderBackgroundRow(row, date, labels, backgroundContent) {
+    const background = row.item;
+    const element = document.createElement("div");
+    element.className = ["cv-list-background", ...background.classNames ?? []].join(" ");
+    element.dataset.backgroundId = background.id;
+    const content = backgroundContent?.({
+      background,
+      date,
+      start: row.start,
+      end: row.end,
+      allDay: row.allDay,
+      element
+    });
+    if (content instanceof Node)
+      element.append(content);
+    else if (content != null)
+      element.textContent = String(content);
+    else
+      element.textContent = backgroundSpanText(row, labels);
+    return element;
+  }
+  function backgroundSpanText(row, labels) {
+    if (row.coversDay || !row.span)
+      return labels.allDaySlotLabel;
+    return `${formatClock(row.span.start)}–${formatClock(row.span.end)}`;
   }
 
   // src/core/event-order.js
@@ -7456,10 +7537,12 @@
         scroller.append(renderList({
           dates: dates2,
           events: this.#events,
+          backgrounds: listedBackgrounds(this.#backgrounds, this.#config.listBackgrounds),
           options,
           now,
           eventContent: this.#config.eventContent,
-          dayHeaderContent: this.#config.dayHeaderContent
+          dayHeaderContent: this.#config.dayHeaderContent,
+          backgroundContent: this.#config.backgroundContent
         }));
       } else {
         if (dates2.length > 0) {

@@ -879,7 +879,8 @@
       background: color-mix(in oklab, var(--surface), var(--text) 3%);
     }
 
-    .actual-calendar .cv-background.sc-blocked {
+    .actual-calendar .cv-background.sc-blocked,
+    .actual-calendar .cv-list-background.sc-blocked {
       border-inline-start: 0;
       background:
         repeating-linear-gradient(
@@ -920,9 +921,9 @@
        would be noise rather than information.
 
        The label is a `::after` keyed off the class, which is as far as CSS
-       can go: the core builds backgrounds as bare `<div>`s carrying only
-       `classNames` (there is no `backgroundContent` to match the five
-       content hooks the rest of the render has), so the text is per policy
+       can go: the core builds grid backgrounds as bare `<div>`s carrying
+       `classNames` (`backgroundContent` fills list rows only; grid backgrounds
+       have no content hook), so the text is per policy
        and not per range. A closure the desk creates for a named reason
        ("Deep clean") still cannot say so on the grid - that one needs the
        hook.

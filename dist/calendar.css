@@ -369,6 +369,16 @@
   color: var(--calendar-muted);
 }
 
+/* Background rows are context, not targets: same tint and edge as the
+   grid backgrounds, muted text, default cursor. */
+.cv-list-background {
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--calendar-line);
+  border-inline-start: 2px solid rgb(37 99 235 / 0.4);
+  background: var(--calendar-background-bg);
+  color: var(--calendar-muted);
+}
+
 /* The focus ring stays outside the card rather than inset: consumers may
    fill an event with the accent colour itself, where an inner ring in the
    same hue would disappear. One pixel of bleed onto a neighbour is the
@@ -710,7 +720,8 @@
 
 @supports (color: color-mix(in srgb, black, white)) {
   .cv-background,
-  .cv-allday-background {
+  .cv-allday-background,
+  .cv-list-background {
     border-inline-start-color: color-mix(in srgb, var(--calendar-accent) 40%, transparent);
   }
 
@@ -745,7 +756,8 @@
   /* Background tints vanish; a dashed contour keeps the zone legible
      without faking the fill. */
   .cv-background,
-  .cv-allday-background {
+  .cv-allday-background,
+  .cv-list-background {
     border: 1px dashed CanvasText;
     background: transparent;
   }

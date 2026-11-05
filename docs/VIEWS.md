@@ -155,10 +155,14 @@ Month is a summary-oriented day grid over the anchor date's calendar month, not 
 
 List is a minimal generic renderer over the same visible event state: a rolling window of visible days from the anchor date (7 by default, `dayCount` to change it, hidden days skipped like every rolling view), each a day group with its events in chronological order. Rich operational lists belong to the consumer.
 
-- Day groups use `dayHeaderContent` (falling back to the localized day header, as in time grids); days without events show a muted `No events` row (`labels.noEvents`).
+- Row order within a day: all-day rows first, then timed rows by the start of their portion of that day (a range that began the day before sorts at midnight, not at its original start), backgrounds before events on an equal start, then input order.
+
+- Day groups use `dayHeaderContent` (falling back to the localized day header, as in time grids); days without events show a muted `No events` row (`labels.noEvents`) after any background rows.
 - A multi-day event repeats under every civil day it overlaps, same rule as month.
 - Events are buttons sharing the `eventContent` hook and the `describeEvent` accessible name; Enter/Space fires `calendar:eventclick`. No drag/resize/select.
 - Like month, list is solo: it never builds resource columns. The hook receives `resource: null`; applications resolve `event.resourceId` against their own data.
+- `listBackgrounds` (default `false`; `true`, or a predicate choosing which ranges) adds background ranges as inert rows (`cv-list-background`, `data-background-id`, plus the range's `classNames`) in the same order. They are plain elements, not buttons: no tabindex, no listener, no `calendar:*` event. A range repeats under every civil day it overlaps, clipped to that day. Like events, backgrounds are not filtered by resource here: list shows what it is given, and scoping is the source's job (`resourceIds`) or the predicate's. A day holding only backgrounds still shows `No events`. Content comes from `backgroundContent` (see API).
+- Default background spans use the grid's repeated-hour projection: `02:30+02:00 → 02:15+01:00` reads `02:30–03:15`, while hooks retain the canonical clipped instants. A range ending at the first instant of a civil day does not create a row on that day, even when midnight is skipped. Default event text retains the original event start time, independently of the clipped start used for row ordering.
 
 ## View switching
 

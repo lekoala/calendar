@@ -52,6 +52,10 @@ export type CalendarConfig = {
      * show the all-day lane in time grids when it has content (default true)
      */
     allDaySlot?: boolean;
+    /**
+     * render backgrounds as inert rows in the list view: `true` for all, a predicate to choose (default false)
+     */
+    listBackgrounds?: boolean | ((background: import("./core/model.js").NormalizedBackground) => boolean);
     eventSource?: (query: EventSourceQuery) => Promise<unknown[]>;
     backgroundSource?: (query: EventSourceQuery) => Promise<unknown[]>;
     eventContent?: (info: object) => unknown;
@@ -60,6 +64,10 @@ export type CalendarConfig = {
     resourceGroupContent?: (info: object) => unknown;
     slotLabelContent?: (info: object) => unknown;
     moreLinkContent?: (info: object) => unknown;
+    /**
+     * content of a list background row (`listBackgrounds`)
+     */
+    backgroundContent?: (info: object) => unknown;
     /**
      * synchronous gate for user-originated interactions (pointer, keyboard, external drop, selection); programmatic mutations never consult it
      */
