@@ -558,6 +558,83 @@ test("a hovered event gets an application tooltip with the dropped detail", asyn
   await page.locator(".sc-toolbar").hover();
   await expect(page.locator("#event-tip")).toBeHidden();
 });
+
+test("narrow tall cards wrap titles below icons in both skins", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await gotoDate(page, openDayFrom((await anchorDate(page)).add({ days: 6 })));
+  await setView(page, "week");
+  await page.evaluate(() =>
+    /** @type {any} */ (document.querySelector("calendar-view")).updateEvent({
+      id: "seed-full-room-a",
+      title: "Fully booked for equipment maintenance",
+    }),
+  );
+  await flushRender(page);
+  const card = page.locator('.cv-event[data-event-id="seed-full-room-a"]').first();
+  for (const skin of ["soft", "solid"]) {
+    await page.evaluate((skin) => {
+      document.documentElement.dataset.skin = skin;
+    }, skin);
+    const layout = await card.evaluate((node) => {
+      const label = /** @type {HTMLElement} */ (node.querySelector(".sc-card strong span"));
+      const glyph = /** @type {HTMLElement} */ (node.querySelector(".sc-card strong > .ti"));
+      const content = /** @type {HTMLElement} */ (node.querySelector(".sc-card"));
+      return {
+        width: node.getBoundingClientRect().width,
+        labelTop: label.getBoundingClientRect().top,
+        glyphBottom: glyph.getBoundingClientRect().bottom,
+        labelHeight: label.getBoundingClientRect().height,
+        lineHeight: Number.parseFloat(getComputedStyle(label).lineHeight),
+        contentOffset: content.getBoundingClientRect().top - node.getBoundingClientRect().top,
+        whiteSpace: getComputedStyle(label).whiteSpace,
+      };
+    });
+    expect(layout.width).toBeLessThan(136);
+    expect(layout.whiteSpace).toBe("normal");
+    expect(layout.labelTop).toBeGreaterThanOrEqual(layout.glyphBottom);
+    expect(layout.labelHeight).toBeGreaterThan(layout.lineHeight * 1.5);
+    expect(layout.contentOffset).toBeLessThan(10);
+  }
+});
+
+test("tall card tooltip arrow follows the hovered band and stays clear of corners", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/demo/showcase.html");
+  await expect(page.locator(".cv-event").first()).toBeVisible();
+  await gotoDate(page, openDayFrom((await anchorDate(page)).add({ days: 6 })));
+  await setView(page, "week");
+  await page.evaluate(() =>
+    /** @type {any} */ (document.querySelector("calendar-view")).scrollToTime("08:00"),
+  );
+  await flushRender(page);
+  const card = page.locator('.cv-event[data-event-id="seed-full-room-a"]').first();
+  for (const nearBottom of [false, true]) {
+    await page.locator(".sc-toolbar").hover();
+    await expect(page.locator("#event-tip")).toBeHidden();
+    const box = await card.boundingBox();
+    expect(box).not.toBeNull();
+    if (!box) return;
+    const y = nearBottom ? Math.min(box.y + box.height - 30, 920) : box.y + 40;
+    await page.mouse.move(box.x + box.width / 2, y);
+    await expect(page.locator("#event-tip")).toBeVisible();
+    const arrow = await page.locator("#event-tip").evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const offset = Number.parseFloat(getComputedStyle(node, "::before").top);
+      return {
+        offset,
+        height: rect.height,
+        y: rect.y + offset,
+        side: /** @type {HTMLElement} */ (node).dataset.placement,
+      };
+    });
+    expect(arrow.side).toMatch(/^(right|left)/);
+    expect(arrow.offset).toBeGreaterThanOrEqual(11);
+    expect(arrow.offset).toBeLessThanOrEqual(arrow.height - 11);
+    expect(Math.abs(arrow.y - y)).toBeLessThan(15);
+  }
+});
 test("the tools shelf filters the catalog and pins rows without breaking them", async ({ page }) => {
   await page.goto("/demo/showcase.html");
   await expect(page.locator(".cv-event").first()).toBeVisible();

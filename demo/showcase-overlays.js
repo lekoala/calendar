@@ -294,8 +294,9 @@ function hideTip() {
 /**
  * @param {HTMLElement} node
  * @param {any} item
+ * @param {number} [pointerY] hovered viewport coordinate
  */
-function showTip(node, item) {
+function showTip(node, item, pointerY = node.getBoundingClientRect().top + 12) {
   const kind = item.extendedProps?.kind ?? "review";
   const start = String(item.start);
   const end = String(item.end);
@@ -340,7 +341,20 @@ function showTip(node, item) {
   }
 
   tip.showPopover();
-  const place = () => reposition(node, tip, { placement: "right-start", distance: 8 });
+  // A full-day card can be much taller than the tooltip. Anchor a small
+  // band at the hovered point, retaining its offset as the scroller moves.
+  const offsetY = pointerY - node.getBoundingClientRect().top;
+  const reference = {
+    ownerDocument: node.ownerDocument,
+    dir: getComputedStyle(node).direction,
+    getClientRects() {
+      const rect = node.getBoundingClientRect();
+      const height = Math.min(24, rect.height);
+      const top = rect.top + Math.max(0, Math.min(offsetY - height / 2, rect.height - height));
+      return [new DOMRect(rect.x, top, rect.width, height)];
+    },
+  };
+  const place = () => reposition(reference, tip, { placement: "right-start", distance: 8 });
   place();
   // The calendar scroller moves independently of the page, so an overlay
   // anchored to an event has to follow the scroller, not the document.
@@ -699,7 +713,7 @@ function overlaysInit() {
       if (!item) return;
       hideTip();
       tipId = id;
-      tipTimer = window.setTimeout(() => showTip(node, item), 140);
+      tipTimer = window.setTimeout(() => showTip(node, item, event.clientY), 140);
     });
 
     calendar.addEventListener("pointerout", (event) => {

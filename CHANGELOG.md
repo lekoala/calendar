@@ -33,6 +33,10 @@
 
 ### Fixed
 
+* Showcase narrow tall cards wrap titles below their icons and keep content
+  at the top. Tall-card tooltips anchor to the hovered band and keep their
+  arrows clear of rounded corners.
+
 * Timed events with equal starts keep input order in overlap layout, so
   extending or shortening an end edge does not swap them horizontally in
   solo or resource time grids.

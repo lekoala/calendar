@@ -1110,6 +1110,10 @@
        contract is stated once. */
     .actual-calendar .cv-event {
       container-type: size;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: stretch;
       padding: 3px 6px;
       border: 0;
     }
@@ -1405,6 +1409,7 @@
       gap: 1px;
       overflow: hidden;
       line-height: 1.25;
+      flex-shrink: 0;
     }
 
     .sc-card strong {
@@ -1678,6 +1683,23 @@
     @container (max-width: 5.5rem) {
       .sc-card .sc-kind {
         display: none;
+      }
+    }
+
+    /* A narrow, tall card has vertical space for its title. Put the label
+       below the glyphs instead of spending its width on lock/kind icons. */
+    @container (max-width: 8.5rem) and (min-height: 64px) {
+      .sc-card strong {
+        flex-wrap: wrap;
+      }
+
+      .sc-card strong span {
+        flex-basis: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
       }
     }
 
@@ -2056,6 +2078,16 @@
 
     .sc-tip:not(:popover-open) {
       display: none;
+    }
+
+    .sc-tip[data-placement^="left"]::before,
+    .sc-tip[data-placement^="right"]::before {
+      top: clamp(12px, var(--arrow-y, 50%), calc(100% - 12px));
+    }
+
+    .sc-tip[data-placement^="top"]::before,
+    .sc-tip[data-placement^="bottom"]::before {
+      left: clamp(12px, var(--arrow-x, 50%), calc(100% - 12px));
     }
 
     .sc-tip dl {

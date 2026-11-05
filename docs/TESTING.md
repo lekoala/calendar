@@ -50,6 +50,9 @@ midnight selection, keyboard moves from continuation slices, full-range
 resize policy in solo/resource views, and CSS fallbacks without `color-mix()`.
 The showcase menu/tooltip tests navigate to a deterministic seeded event
 instead of requiring a randomly generated kind in the initial visible range.
+Dense-week showcase cases check multiline titles below lock/kind icons in
+both skins, top-aligned content on tall cards, and tooltip arrows anchored
+to the hovered band with corner clearance, including near the viewport edge.
 
 `temporal.spec.js` fixes the browser clock at midday and near midnight on
 month/year boundaries. Relative event ranges share that clock, and full-day
