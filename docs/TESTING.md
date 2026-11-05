@@ -132,6 +132,9 @@ Manual stress only: 12 resources × 3 days, 6 resources × 7 days. Columns keep 
 - event spanning entire group;
 - deterministic placement after input reorder;
 - same start/end ties.
+- equal-start events retain input order when an end edge grows and shrinks;
+  browser coverage checks both directions in solo and resource grids, with
+  the date, start and resource unchanged.
 
 ### Temporal
 

@@ -13,8 +13,8 @@
  * - events are grouped transitively: A overlaps B and B overlaps C puts
  *   all three in one group even when A never meets C;
  * - adjacent events (`end === start`) never overlap;
- * - columns are assigned greedily in start order, so placement is
- *   deterministic regardless of input order;
+ * - columns are assigned greedily in start order, with input order breaking
+ *   equal-start ties so resizing an end edge does not swap those events;
  * - `left`/`width` are fractions of the column width.
  *
  * @template T

@@ -114,6 +114,20 @@ test("same start and end ties split deterministically", () => {
   assert.equal(first.columns, 2);
 });
 
+test("equal-start events keep input order when an end edge grows and shrinks", () => {
+  for (const end of [735, 900, 735]) {
+    const items = lay([
+      [690, 730],
+      [705, end],
+      [705, 765],
+    ]);
+    assert.deepEqual(
+      items.map((item) => item.column),
+      [0, 1, 2],
+    );
+  }
+});
+
 /**
  * @param {Array<{ startDay: number, endDay: number, resourceId?: string | null }>} segs
  */

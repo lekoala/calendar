@@ -33,6 +33,10 @@
 
 ### Fixed
 
+* Timed events with equal starts keep input order in overlap layout, so
+  extending or shortening an end edge does not swap them horizontally in
+  solo or resource time grids.
+
 * List background text uses grid geometry's repeated-hour projection while
   content hooks retain canonical instants. Summary overlap excludes a day
   touched only at its first instant, including when midnight is skipped.

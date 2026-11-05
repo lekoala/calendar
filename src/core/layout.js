@@ -13,8 +13,8 @@
  * - events are grouped transitively: A overlaps B and B overlaps C puts
  *   all three in one group even when A never meets C;
  * - adjacent events (`end === start`) never overlap;
- * - columns are assigned greedily in start order, so placement is
- *   deterministic regardless of input order;
+ * - columns are assigned greedily in start order, with input order breaking
+ *   equal-start ties so resizing an end edge does not swap those events;
  * - `left`/`width` are fractions of the column width.
  *
  * @template T
@@ -24,7 +24,7 @@
 export function layoutEvents(items) {
   const sorted = items
     .map((item, index) => ({ ...item, index }))
-    .sort((a, b) => a.start - b.start || a.end - b.end || a.index - b.index);
+    .sort((a, b) => a.start - b.start || a.index - b.index);
 
   /** @type {Array<{ end: number, items: Array<{ event: T, start: number, end: number, index: number }> }>} */
   const groups = [];

@@ -493,6 +493,64 @@ test("resizing an event dispatches eventresize", async ({ page }) => {
   expect(resize.hasRevert).toBe(true);
 });
 
+for (const view of ["day", "resourceDay"]) {
+  test(`end resize preserves equal-start order, date and resource in ${view}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await openDemo(page, "basic");
+    await page.evaluate((view) => {
+      const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+      calendar.resources = [{ id: "resource-a", title: "Resource A" }];
+      calendar.events = [
+        { id: "earlier", start: "11:30", end: "12:00" },
+        { id: "resized", start: "11:45", end: "12:15" },
+        { id: "peer", start: "11:45", end: "12:45" },
+      ].map(({ id, start, end }) => ({
+        id,
+        title: id,
+        resourceId: "resource-a",
+        editable: true,
+        start: `2026-09-03T${start}:00+02:00[Europe/Brussels]`,
+        end: `2026-09-03T${end}:00+02:00[Europe/Brussels]`,
+      }));
+      calendar.setView(view);
+    }, view);
+    await flushRender(page);
+    await page.evaluate(() =>
+      /** @type {any} */ (document.querySelector("calendar-view")).scrollToTime("11:00"),
+    );
+    await flushRender(page);
+    await trackMoves(page);
+    const resized = page.locator('[data-event-id="resized"]');
+    const peer = page.locator('[data-event-id="peer"]');
+    const initialLeft = await resized.evaluate((node) => /** @type {HTMLElement} */ (node).style.left);
+
+    for (const delta of [162, -162]) {
+      const box = await resizeHandleBox(page, "resized", "s");
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + delta, { steps: 8 });
+      await page.mouse.up();
+      await flushRender(page);
+      expect(await resized.evaluate((node) => /** @type {HTMLElement} */ (node).style.left)).toBe(
+        initialLeft,
+      );
+      const resizedBox = await resized.boundingBox();
+      const peerBox = await peer.boundingBox();
+      expect(resizedBox && peerBox && resizedBox.x < peerBox.x).toBe(true);
+      await expect(page.locator('.cv-day[data-date="2026-09-03"] [data-event-id="resized"]')).toHaveCount(1);
+    }
+    const resizes = await readResizes(page);
+    expect(resizes).toHaveLength(2);
+    expect(resizes[0].end).toContain("T13:45:00+02:00");
+    expect(resizes[1].end).toContain("T12:15:00+02:00");
+    const state = await page.evaluate(() => {
+      const event = /** @type {any} */ (document.querySelector("calendar-view")).getEventById("resized");
+      return { start: String(event.start), resourceId: event.resourceId };
+    });
+    expect(state).toEqual({ start: "2026-09-03T11:45:00+02:00[Europe/Brussels]", resourceId: "resource-a" });
+  });
+}
+
 test("resizing from the top moves the start", async ({ page }) => {
   await openDemo(page, "basic");
   await trackMoves(page);

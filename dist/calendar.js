@@ -4720,7 +4720,7 @@
 
   // src/core/layout.js
   function layoutEvents(items) {
-    const sorted = items.map((item, index) => ({ ...item, index })).sort((a, b) => a.start - b.start || a.end - b.end || a.index - b.index);
+    const sorted = items.map((item, index) => ({ ...item, index })).sort((a, b) => a.start - b.start || a.index - b.index);
     const groups = [];
     let current = null;
     for (const item of sorted) {

@@ -94,6 +94,8 @@ The two predicates are intentionally asymmetric — do not unify them:
 
 Multi-day ranges are sliced and clipped per visible day (`sliceTimedEventForDay`), so `Mon 22:00 → Tue 02:00` renders as `Mon 22:00 → slotMax` and `slotMin → Tue 02:00` where the slot range overlaps. Slices with no positive visible duration render nothing. Geometry uses wall-clock minutes in `calendar.timeZone`, including across DST transitions.
 
+Overlapping timed events share horizontal space within their day/resource column. Placement follows start time, then input order for equal starts. Changing only an event's end does not reorder equal-start peers; changing the overlap group can still change their widths or placement. This rule applies to both solo and resource time grids.
+
 During the repeated autumn hour, a positive instant range whose wall-clock end is at or before its start stays visible: its slice starts at the local start time and extends by its elapsed duration, then clips to the visible slots. For example, `02:45+02:00 → 02:15+01:00` paints `02:45 → 03:15`, and `02:30+02:00 → 02:30+01:00` paints `02:30 → 03:30`. This fallback applies equally to events and backgrounds; canonical boundaries and overlap queries retain the original instants. Other slices retain wall-clock geometry.
 
 ### The all-day lane
