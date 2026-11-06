@@ -331,7 +331,7 @@ sync adapter contract: echo deduplication (`shouldIgnoreEcho`) and the
 `409` decision (`decideOnConflict`, converged → reload, diverged → choose)
 in `test/sync/sync-adapter.test.js`. Use case §19.
 
-## 0.4 - unreleased
+## 0.4
 
 Adoption and interaction completeness, not new views:
 
@@ -345,8 +345,14 @@ Adoption and interaction completeness, not new views:
 - external renders preserve event focus (event id + segment date + resource)
   and scroll, without stealing application focus; a render during a gesture
   cancels it without committing;
+- `monthEventOrder` customizes month chip, Tab and more-button payload order;
+- `listBackgrounds` opts into inert list background rows, with optional
+  `backgroundContent`; list groups put all-day rows before timed day slices;
+- current-time markers advance every minute and cross civil midnight without
+  replacing event nodes, cancelling gestures or reloading sources;
 - adoption material: `docs/RECIPES.md`, `docs/FRAMEWORKS.md`, showcase
-  prominence, and the existing migration guide as the comparison entry point.
+  prominence, the updated FullCalendar comparison guide and
+  `docs/MIGRATION-0.4.md` for existing consumers.
 
 Deferred again, with no version commitment: empty all-day lane selection,
 month multi-day spanning bars, timed↔all-day conversion, framework packages,

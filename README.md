@@ -193,6 +193,9 @@ npm run verify
 npm run check:all
 npm run test:browser:all
     include Firefox and WebKit
+
+bun run test:package
+    install the tarball into an independent consumer and smoke-test its ESM/CSS exports
 ```
 
 Generated distribution files are committed so the demo, package contents and published artifacts can be checked directly.
@@ -279,6 +282,7 @@ The contract and test matrix are documented in
 ## Migrating
 
 - Upgrading an existing integration from 0.2? See [docs/MIGRATION-0.3.md](docs/MIGRATION-0.3.md).
+- Upgrading from 0.3? See [docs/MIGRATION-0.4.md](docs/MIGRATION-0.4.md).
 - Coming from FullCalendar? See [docs/MIGRATING_FROM_FULLCALENDAR.md](docs/MIGRATING_FROM_FULLCALENDAR.md)
   for the view/option mapping, the stricter event model, event-source and
   callback replacements, and an explicit list of what has no equivalent.

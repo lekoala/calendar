@@ -28,6 +28,11 @@ or for registering a custom tag name.
 - **Configuring a source does not fetch it.** `configure({ eventSource })`
   only installs the source; call `await el.refetchEvents()` (or navigate) to
   load it.
+- **Configuration is merged.** Omitting `eventSource` keeps the installed
+  source; pass `eventSource: null` to remove it. The same applies to
+  `backgroundSource`. The examples reload when the event source identity
+  changes; call `refetchEvents()` explicitly when application-owned query
+  parameters change without replacing that function.
 - **Listen to DOM events.** Use `addEventListener("calendar:select", ...)`
   and remove it on unmount. The events bubble and are composed.
 - **Do not recreate the element on every render.** Keep the same node and
@@ -49,11 +54,16 @@ export function Calendar({ events, resources, options, onSelect }) {
 
     el.events = events;
     el.resources = resources;
-    el.configure(options ?? {});
+  }, [events, resources]);
 
-    // Installing a source does not load it.
-    if (options?.eventSource) void el.refetchEvents();
-  }, [events, resources, options]);
+  useEffect(() => {
+    ref.current?.configure(options ?? {});
+  }, [options]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el && options?.eventSource) void el.refetchEvents();
+  }, [options?.eventSource]);
 
   useEffect(() => {
     const el = ref.current;
@@ -128,7 +138,13 @@ watch(
   (options) => {
     if (!el.value) return;
     el.value.configure(options);
-    if (options.eventSource) void el.value.refetchEvents();
+  },
+);
+
+watch(
+  () => props.options.eventSource,
+  (source) => {
+    if (el.value && source) void el.value.refetchEvents();
   },
 );
 </script>
@@ -160,12 +176,17 @@ Notes:
   const dispatch = createEventDispatcher();
   let el;
   let off = null;
+  let loadedSource;
+
+  function applyOptions(element, nextOptions) {
+    element.configure(nextOptions);
+    if (nextOptions.eventSource !== loadedSource) {
+      loadedSource = nextOptions.eventSource;
+      if (loadedSource) void element.refetchEvents();
+    }
+  }
 
   onMount(() => {
-    el.events = events;
-    el.resources = resources;
-    el.configure(options);
-    if (options.eventSource) void el.refetchEvents();
     const handler = (event) => dispatch("select", event.detail);
     el.addEventListener("calendar:select", handler);
     off = () => el.removeEventListener("calendar:select", handler);
@@ -175,6 +196,7 @@ Notes:
 
   $: if (el) el.events = events;
   $: if (el) el.resources = resources;
+  $: if (el) applyOptions(el, options);
 </script>
 
 <calendar-view bind:this={el} view="week" />

@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-11-06
+
+See [docs/MIGRATION-0.4.md](docs/MIGRATION-0.4.md) for the consumer-facing
+changes and opt-in features.
 
 ### Added
 

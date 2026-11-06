@@ -1,6 +1,6 @@
 # Migrating from FullCalendar to `@lekoala/calendar`
 
-This guide targets **`@lekoala/calendar` 0.3.x** and applications using **FullCalendar v6 or v7**. Examples use vanilla JavaScript; the same `<calendar-view>` element can be mounted from a framework, but this package does not provide a React/Vue/Angular adapter.
+This guide targets **`@lekoala/calendar` 0.4.x** and applications using **FullCalendar v6 or v7**. Examples use vanilla JavaScript; the same `<calendar-view>` element can be mounted from a framework, but this package does not provide a React/Vue/Angular adapter.
 
 **This is not a drop-in replacement.** FullCalendar is a broad calendar platform with plugins and built-in application UI. `@lekoala/calendar` is a smaller, framework-agnostic Web Component focused on time grids, resource scheduling, and explicit integration seams. Migrate if its supported views and application-owned UI model fit your use case; keep FullCalendar if you depend on timeline, built-in recurrence, or other features listed below.
 
@@ -37,7 +37,7 @@ fc.render();
 
 For **FullCalendar v6**, the equivalent imports are from `@fullcalendar/core`, `@fullcalendar/timegrid`, etc. The initialization pattern (`new Calendar(...)`, `render()`) is similar, but its CSS setup differs from v7. See the [official v6 → v7 guide](https://fullcalendar.io/docs/upgrading-from-v6-js) rather than mixing package generations.
 
-### `@lekoala/calendar` 0.3
+### `@lekoala/calendar` 0.4
 
 ```bash
 npm install @lekoala/calendar temporal-polyfill
@@ -87,7 +87,7 @@ The `week` and `month` views ignore `dayCount`. For rolling views (`day`, `three
 
 ### Configuration
 
-| FullCalendar option / API | `@lekoala/calendar` 0.3 |
+| FullCalendar option / API | `@lekoala/calendar` 0.4 |
 | --- | --- |
 | `initialView` / `changeView()` | `view` attribute / `setView(name)` |
 | `initialDate` / `gotoDate()` | `date` attribute / `gotoDate(date)` |
@@ -115,7 +115,7 @@ Be careful about naming: FullCalendar's `slotDuration` is a duration input (for 
 
 FullCalendar accepts forgiving event input: it can infer `allDay`, accept an event without `end`, and parse date-time strings without an explicit named zone. `@lekoala/calendar` intentionally does **not**: every event must have `id`, `start`, and `end`, with a matching canonical type.
 
-| FullCalendar input | Calendar 0.3 input |
+| FullCalendar input | Calendar 0.4 input |
 | --- | --- |
 | `start`/`end` as JS `Date` or a permissive ISO string | Timed: `Temporal.ZonedDateTime` or ISO **with offset and named IANA zone** |
 | Date-only event, optionally inferred `allDay` | Explicit `allDay: true`, `YYYY-MM-DD`/`Temporal.PlainDate` bounds |
@@ -146,6 +146,9 @@ const allDay = {
 ```
 
 **Both libraries use an exclusive `end`** (`[start, end)`); do not subtract one day during migration. However, an all-day date is *not* a 24-hour zoned appointment: DST days can last 23 or 25 hours.
+
+All-day events and backgrounds must cover at least one civil day (`end > start`).
+For changes from a previous Calendar integration, see [Migrating 0.3 → 0.4](MIGRATION-0.4.md).
 
 ### Adapter for a typical FullCalendar-style JSON feed
 
@@ -192,7 +195,7 @@ function mapEvent(raw) {
 }
 ```
 
-This is **an example adapter**, not a general date parser. Offset-less local datetimes require an explicit resolution policy (including DST ambiguity); never silently append `Z` or guess the browser zone. If your backend already provides canonical named-zone strings, keep them unchanged. If an event uses `resourceIds: [...]` or a recurring group, define application semantics before flattening it into the single `resourceId` of Calendar 0.3.
+This is **an example adapter**, not a general date parser. Offset-less local datetimes require an explicit resolution policy (including DST ambiguity); never silently append `Z` or guess the browser zone. If your backend already provides canonical named-zone strings, keep them unchanged. If an event uses `resourceIds: [...]` or a recurring group, define application semantics before flattening it into the single `resourceId` of Calendar 0.4.
 
 ## 4. Replace FullCalendar event sources
 
@@ -258,7 +261,7 @@ calendar.addEventListener("calendar:viewchange", ({ detail }) => {
 
 ## 6. Replace callbacks with DOM events
 
-| FullCalendar | Calendar 0.3 |
+| FullCalendar | Calendar 0.4 |
 | --- | --- |
 | `eventClick(info)` | `calendar:eventclick` — `event.detail.event` |
 | `select(info)` / some `dateClick` flows | `calendar:select` — `detail.{ start, end, resourceId, allDay }` |
@@ -311,7 +314,7 @@ For `calendar:select`, there is no changed event and no `revert()`. **Time-grid 
 
 ## 7. Map constraints and event overlap rules
 
-FullCalendar offers `eventAllow`, `selectAllow`, `eventOverlap`, `selectOverlap`, `businessHours` and several constraints. Calendar 0.3 provides a single **synchronous** `interactionPolicy({ action, event, target, context, now })` gate for user-initiated select/move/resize/external interactions.
+FullCalendar offers `eventAllow`, `selectAllow`, `eventOverlap`, `selectOverlap`, `businessHours` and several constraints. Calendar 0.4 provides a single **synchronous** `interactionPolicy({ action, event, target, context, now })` gate for user-initiated select/move/resize/external interactions.
 
 ```js
 calendar.configure({
@@ -326,7 +329,7 @@ calendar.configure({
 
 `context.events.overlapping` contains the canonical events intersecting the **whole proposed range**, filtered to the target resource when one is selected. `context.backgrounds.overlapping` and `.covering` can support availability windows. The policy returns `true`, `false`, or a refusal reason string. It is called during pointer/keyboard gestures, including on release, but **not** by `addEvent()`, `updateEvent()`, `moveEvent()` or `resizeEvent()` invoked programmatically. Recheck authoritative rules on the server.
 
-**Do not copy FullCalendar `eventOverlap: false` into a blanket assumption that the new core prevents collisions.** Calendar 0.3 renders overlaps; the application chooses which overlap rules to enforce.
+**Do not copy FullCalendar `eventOverlap: false` into a blanket assumption that the new core prevents collisions.** Calendar 0.4 renders overlaps; the application chooses which overlap rules to enforce.
 
 ## 8. Resources, backgrounds, and rendering
 
@@ -345,7 +348,7 @@ Resource grouping is **one visual level**, not a tree. Each event belongs to one
 
 ### Backgrounds
 
-FullCalendar background events (`display: "background"`, `businessHours`, blocking windows) should be mapped explicitly to `calendar.backgrounds` or `configure({ backgroundSource })`. Calendar 0.3 treats backgrounds as **visual geometry**, not built-in business rules. Month does not render background ranges; list renders inert background rows when `listBackgrounds` opts in, with optional `backgroundContent`. Check them in `interactionPolicy` or in your server if they should constrain interaction.
+FullCalendar background events (`display: "background"`, `businessHours`, blocking windows) should be mapped explicitly to `calendar.backgrounds` or `configure({ backgroundSource })`. Calendar 0.4 treats backgrounds as **visual geometry**, not built-in business rules. Month does not render background ranges; list renders inert background rows when `listBackgrounds` opts in, with optional `backgroundContent`. Check them in `interactionPolicy` or in your server if they should constrain interaction.
 
 ### Custom content and styling
 
@@ -365,14 +368,14 @@ This is a **Light DOM** component. Use your own CSS against `.calendar-view`, `.
 ## 9. What does *not* migrate one-for-one
 
 - **Recurring events / RRule / series editing:** expand occurrences in a service or adapter before passing them to the calendar; keep series metadata in `extendedProps`.
-- **Timeline, Gantt, multi-month, custom view plugins, virtualized resource trees:** no equivalent in 0.3.
+- **Timeline, Gantt, multi-month, custom view plugins, virtualized resource trees:** no equivalent in 0.4.
 - **Built-in toolbar, date picker, popovers, event editor, week-number UI:** compose in the host application. `calendar:moreclick`, `calendar:eventclick`, and other intents help, but they do not instantiate application UI.
 - **FullCalendar resource hierarchies, multi-resource event assignment and group-coupled dragging:** not supported as equivalent core behaviors. One-level `resourceGroups` are just headers.
-- **All-day day-edge resize and timed ↔ all-day dragging:** day-edge resize is available from 0.4 (API, handles, keyboard); 0.3 returned `null`. Timed ↔ all-day dragging remains unimplemented. All-day drag and keyboard day moves **are** implemented.
+- **Timed ↔ all-day dragging:** remains unimplemented. All-day drag, keyboard day moves and day-edge resize (API, handles, keyboard) **are** implemented.
 - **Month/list dragging or selecting arbitrary multi-day spans:** no equivalent; month supports a single civil day selection and list is read-only.
 - **Multiple event feeds and URL-based feed machinery:** aggregate in `eventSource` or application state.
 - **View- and event-specific plugin callbacks, automatic calendar `eventChange` notifications:** use documented intents for user gestures and explicit mutation APIs for app/server updates. `updateEvent()` does not emit a FullCalendar-style `eventChange` event.
-- **Automatic responsive view switching:** the host chooses views. Calendar 0.3 scrolls dense grids horizontally; it does not automatically hide columns/resources.
+- **Automatic responsive view switching:** the host chooses views. Calendar 0.4 scrolls dense grids horizontally; it does not automatically hide columns/resources.
 
 ## 10. Migration checklist
 

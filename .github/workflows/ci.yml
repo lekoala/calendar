@@ -41,6 +41,9 @@ jobs:
       - name: Dist smoke
         if: matrix.shard == 1
         run: bun run test:dist
+      - name: Installed package smoke
+        if: matrix.shard == 1
+        run: bun run test:package
 
   # The showcase drives the example application shell end to end (application
   # UI plus the classic-script build over `file://`). It is Chromium-only and
