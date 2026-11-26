@@ -211,38 +211,89 @@ test("reveal navigates, loads once, then highlights the event", async ({ page })
   expect(outcome).toEqual({ revealed: true, date: "2026-09-20", calls: 1, highlighted: true });
 });
 
-test("reveal resolves false when a concurrent navigation wins", async ({ page }) => {
+test("reveal resolves false when navigation supersedes a source that ignores abort", async ({ page }) => {
   await openDemo(page, "basic");
   await expect(page.locator('[data-event-id="a"]')).toBeVisible();
   const outcome = await page.evaluate(async () => {
-    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      document.querySelector("calendar-view")
+    );
     calendar.configure({
-      eventSource: async (/** @type {any} */ query) => {
-        const { signal } = query;
-        await new Promise((resolve, reject) => {
-          const timer = setTimeout(resolve, 300);
-          signal.addEventListener("abort", () => {
-            clearTimeout(timer);
-            reject(new DOMException("aborted", "AbortError"));
-          });
-        });
-        return [
-          {
-            id: "far",
-            title: "Far away",
-            start: "2026-09-20T10:00:00+02:00[Europe/Brussels]",
-            end: "2026-09-20T10:30:00+02:00[Europe/Brussels]",
-          },
-        ];
-      },
+      eventSource: ({ start }) =>
+        start.toString() === "2026-09-20" ? new Promise(() => {}) : Promise.resolve([]),
     });
     const pending = calendar.reveal({ eventId: "far", date: "2026-09-20" });
-    calendar.gotoDate("2026-09-10");
-    const revealed = await pending;
+    await calendar.gotoDate("2026-09-10");
+    const revealed = await Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(resolve, 1000, "pending")),
+    ]);
     return {
       revealed,
       date: calendar.getAttribute("date"),
       highlighted: document.querySelectorAll(".cv-reveal").length,
+    };
+  });
+  expect(outcome).toEqual({ revealed: false, date: "2026-09-10", highlighted: 0 });
+});
+
+test("navigation settles on disconnect before a canceled source rejects", async ({ page }) => {
+  await openDemo(page, "basic");
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      document.querySelector("calendar-view")
+    );
+    /** @type {AbortSignal | undefined} */
+    let signal;
+    /** @type {(error: Error) => void} */
+    let rejectSource = () => {};
+    /** @type {unknown[]} */
+    const errors = [];
+    window.addEventListener("unhandledrejection", (event) => errors.push(event.reason));
+    calendar.addEventListener("calendar:loaderror", (event) => errors.push(event.type));
+    calendar.configure({
+      eventSource: (query) => {
+        signal = query.signal;
+        return new Promise((_, reject) => {
+          rejectSource = reject;
+        });
+      },
+    });
+    const pending = calendar.gotoDate("2026-09-20");
+    calendar.remove();
+    const result = await Promise.race([
+      pending.then(() => "settled"),
+      new Promise((resolve) => setTimeout(resolve, 1000, "pending")),
+    ]);
+    rejectSource(new Error("Late source failure"));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return { result, aborted: signal?.aborted, busy: calendar.hasAttribute("aria-busy"), errors };
+  });
+  expect(outcome).toEqual({ result: "settled", aborted: true, busy: false, errors: [] });
+});
+
+test("reveal resolves false when a render listener changes the requested date", async ({ page }) => {
+  await openDemo(page, "basic");
+  await expect(page.locator('[data-event-id="a"]')).toBeVisible();
+  const outcome = await page.evaluate(async () => {
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      document.querySelector("calendar-view")
+    );
+    calendar.configure({
+      eventSource: async () => [{ id: "far", allDay: true, start: "2026-09-20", end: "2026-09-21" }],
+    });
+    calendar.addEventListener(
+      "calendar:render",
+      () => {
+        void calendar.gotoDate("2026-09-10");
+      },
+      { once: true },
+    );
+    const revealed = await calendar.reveal({ eventId: "far", date: "2026-09-20" });
+    return {
+      revealed,
+      date: String(calendar.date),
+      highlighted: calendar.querySelectorAll(".cv-reveal").length,
     };
   });
   expect(outcome).toEqual({ revealed: false, date: "2026-09-10", highlighted: 0 });

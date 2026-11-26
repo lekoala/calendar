@@ -5169,8 +5169,10 @@
     root.addEventListener("drop", dropExternal);
     let externalAutoscroll = null;
     function pointerOverGrid(x, y) {
-      const element = document.elementFromPoint(x, y);
-      return element !== null && root.contains(element);
+      const tree = root.getRootNode();
+      const hitRoot = tree instanceof ShadowRoot ? tree : root.ownerDocument;
+      const element = hitRoot.elementFromPoint(x, y);
+      return element != null && root.contains(element);
     }
     return {
       move(x, y) {
@@ -7023,13 +7025,13 @@
         this.#afterRender(() => {
           const zone = this.#config.timeZone ?? DEFAULTS.timeZone;
           const event = this.getEventById(key);
-          if (!this.isConnected || !event) {
+          if (!this.isConnected || this.date.toString() !== requested || !event) {
             resolve(false);
             return;
           }
           this.#announce(describeEvent(event, zone, this.#options().labels.untitledEvent));
           this.#afterRender(() => {
-            if (!this.isConnected) {
+            if (!this.isConnected || this.date.toString() !== requested) {
               resolve(false);
               return;
             }
@@ -7451,13 +7453,18 @@
       this.#announceLoading(true);
       if (this.#sourceRequest !== request)
         return;
+      let cancel = () => {};
+      const canceled = new Promise((resolve) => {
+        cancel = () => resolve(null);
+      });
+      controller.signal.addEventListener("abort", cancel, { once: true });
+      const load = async (source) => source?.(context) ?? null;
       try {
-        const [events, backgrounds] = await Promise.all([
-          eventSource ? eventSource(context) : null,
-          backgroundSource ? backgroundSource(context) : null
-        ]);
-        if (this.#sourceRequest !== request || !sameSourceScope(scope, this.#sourceScope()))
+        const result = await Promise.race([canceled, Promise.all([load(eventSource), load(backgroundSource)])]);
+        if (result === null || this.#sourceRequest !== request || !sameSourceScope(scope, this.#sourceScope())) {
           return;
+        }
+        const [events, backgrounds] = result;
         const nextEvents = eventSource ? Array.from(events ?? [], normalizeEvent) : null;
         const nextBackgrounds = backgroundSource ? Array.from(backgrounds ?? [], normalizeBackground) : null;
         if (nextEvents) {
@@ -7472,6 +7479,7 @@
           return;
         emitCalendarEvent(this, "calendar:loaderror", { error });
       } finally {
+        controller.signal.removeEventListener("abort", cancel);
         if (this.#sourceRequest === request) {
           this.#sourceRequest = null;
           this.removeAttribute("aria-busy");
@@ -7577,7 +7585,9 @@
       const dates2 = getVisibleDates(this.date, this.view, dateOptions);
       const resources = isResourceView(this.view) ? this.#resources : [];
       const now = Temporal2.Now.zonedDateTimeISO(options.timeZone);
-      const active = document.activeElement;
+      const root = this.getRootNode();
+      const focusRoot = root instanceof ShadowRoot ? root : this.ownerDocument;
+      const active = focusRoot.activeElement;
       const focusOwner = active instanceof Element && this.contains(active) ? active.closest("[data-focus-key]") : null;
       const focusKey = focusOwner instanceof HTMLElement ? focusOwner.dataset.focusKey ?? null : null;
       const updateMonth = !replace && renderer === "month" ? this.#updateMonth : null;
@@ -7666,7 +7676,7 @@
         scroller.scrollLeft = scrollLeft;
         this.append(status);
       }
-      if (focusKey && document.activeElement !== active) {
+      if (focusKey && focusRoot.activeElement !== active) {
         const target = [...this.querySelectorAll("[data-focus-key]")].find((node) => node.dataset.focusKey === focusKey);
         target?.focus({ preventScroll: true });
       }

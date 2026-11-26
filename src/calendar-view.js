@@ -701,13 +701,13 @@ export class CalendarViewElement extends HTMLElement {
       this.#afterRender(() => {
         const zone = this.#config.timeZone ?? DEFAULTS.timeZone;
         const event = this.getEventById(key);
-        if (!this.isConnected || !event) {
+        if (!this.isConnected || this.date.toString() !== requested || !event) {
           resolve(false);
           return;
         }
         this.#announce(describeEvent(event, zone, this.#options().labels.untitledEvent));
         this.#afterRender(() => {
-          if (!this.isConnected) {
+          if (!this.isConnected || this.date.toString() !== requested) {
             resolve(false);
             return;
           }
@@ -1349,12 +1349,28 @@ export class CalendarViewElement extends HTMLElement {
     this.setAttribute("aria-busy", "true");
     this.#announceLoading(true);
     if (this.#sourceRequest !== request) return;
+
+    // A source can ignore its signal. Settle the caller on abort and keep
+    // observing the source promises so any later rejection is handled.
+    let cancel = () => {};
+    /** @type {Promise<null>} */
+    const canceled = new Promise((resolve) => {
+      cancel = () => resolve(null);
+    });
+    controller.signal.addEventListener("abort", cancel, { once: true });
+    /** @param {CalendarConfig["eventSource"]} source */
+    const load = async (source) => source?.(context) ?? null;
+
     try {
-      const [events, backgrounds] = await Promise.all([
-        eventSource ? eventSource(context) : null,
-        backgroundSource ? backgroundSource(context) : null,
-      ]);
-      if (this.#sourceRequest !== request || !sameSourceScope(scope, this.#sourceScope())) return;
+      const result = await Promise.race([canceled, Promise.all([load(eventSource), load(backgroundSource)])]);
+      if (
+        result === null ||
+        this.#sourceRequest !== request ||
+        !sameSourceScope(scope, this.#sourceScope())
+      ) {
+        return;
+      }
+      const [events, backgrounds] = result;
       // Normalize both collections before touching state: a malformed payload
       // must leave the previous events *and* backgrounds intact, so a rejected
       // refetch never publishes a half-updated calendar.
@@ -1382,6 +1398,7 @@ export class CalendarViewElement extends HTMLElement {
       if (this.#sourceRequest !== request || !sameSourceScope(scope, this.#sourceScope())) return;
       emitCalendarEvent(this, "calendar:loaderror", { error });
     } finally {
+      controller.signal.removeEventListener("abort", cancel);
       // Only the newest request settles busy state. Explicit cancellation
       // settles it itself when no replacement request is started.
       if (this.#sourceRequest === request) {
@@ -1555,7 +1572,9 @@ export class CalendarViewElement extends HTMLElement {
     const now = Temporal.Now.zonedDateTimeISO(options.timeZone);
 
     // A rebuilt view can restore focus on the same rendered segment.
-    const active = document.activeElement;
+    const root = this.getRootNode();
+    const focusRoot = root instanceof ShadowRoot ? root : this.ownerDocument;
+    const active = focusRoot.activeElement;
     const focusOwner =
       active instanceof Element && this.contains(active) ? active.closest("[data-focus-key]") : null;
     const focusKey = focusOwner instanceof HTMLElement ? (focusOwner.dataset.focusKey ?? null) : null;
@@ -1658,7 +1677,7 @@ export class CalendarViewElement extends HTMLElement {
       this.append(status);
     }
 
-    if (focusKey && document.activeElement !== active) {
+    if (focusKey && focusRoot.activeElement !== active) {
       const target = /** @type {HTMLElement | undefined} */ (
         [...this.querySelectorAll("[data-focus-key]")].find(
           (node) => /** @type {HTMLElement} */ (node).dataset.focusKey === focusKey,

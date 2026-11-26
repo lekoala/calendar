@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openDemo, slotPoint } from "./fixture.js";
+import { moveCalendarIntoShadow, openDemo, slotPoint } from "./fixture.js";
 
 /**
  * External placement: an application source registers
@@ -357,6 +357,39 @@ for (const demo of ["basic", "resources"]) {
     expect(await page.evaluate(() => /** @type {any} */ (globalThis).__pointerExternal.clicks)).toBe(1);
   });
 }
+
+test("pointer placement previews and drops inside a shadow host", async ({ page }) => {
+  await openDemo(page, "basic");
+  await injectSource(page, { id: "external" }, { title: "External event" });
+  await moveCalendarIntoShadow(page);
+  await flushRender(page);
+  await page.evaluate(() => {
+    const source = /** @type {HTMLElement} */ (document.getElementById("ext-src"));
+    source.style.cssText = "position:fixed;top:4px;right:4px;z-index:100";
+    const host = /** @type {HTMLElement} */ (document.getElementById("shadow-calendar"));
+    host.addEventListener("calendar:externaldrop", (event) => {
+      const { nativeEvent, payload } = /** @type {CustomEvent} */ (event).detail;
+      if (nativeEvent instanceof PointerEvent) host.dataset.dropped = payload.id;
+    });
+  });
+  const source = await page.locator("#ext-src").boundingBox();
+  const body = await page.locator("#shadow-calendar .cv-day-body").first().boundingBox();
+  if (!source || !body) throw new Error("Expected a source and a day column");
+  const sourcePoint = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
+  const slot = { x: body.x + body.width / 2, y: body.y + 100 };
+  const ghost = page.locator("#shadow-calendar .cv-external-ghost");
+  await page.mouse.move(sourcePoint.x, sourcePoint.y);
+  await page.mouse.down();
+  await page.mouse.move(slot.x, slot.y);
+  await expect(ghost).toHaveText("External event");
+  await page.mouse.move(sourcePoint.x, sourcePoint.y);
+  await expect(ghost).toHaveCount(0);
+  await page.mouse.move(slot.x, slot.y);
+  await expect(ghost).toHaveText("External event");
+  await page.mouse.up();
+  await expect(page.locator("#shadow-calendar")).toHaveAttribute("data-dropped", "external");
+  await expect(ghost).toHaveCount(0);
+});
 
 for (const end of ["escape", "pointercancel", "lostpointercapture", "remove", "disconnect"]) {
   test(`pointer external placement cancels on ${end} and releases keyboard handling`, async ({ page }) => {

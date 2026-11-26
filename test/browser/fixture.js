@@ -30,6 +30,27 @@ export async function openDemo(page, name) {
   await expect(page.locator("html")).toHaveAttribute("data-calendar-ready", "");
 }
 
+/** @param {import("@playwright/test").Page} page */
+export async function moveCalendarIntoShadow(page) {
+  await page.evaluate(async () => {
+    const calendar = document.querySelector("calendar-view");
+    if (!calendar) throw new Error("Expected a calendar");
+    const host = document.createElement("div");
+    host.id = "shadow-calendar";
+    calendar.before(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    const style = document.createElement("link");
+    style.rel = "stylesheet";
+    style.href = "/dist/calendar.css";
+    const loaded = new Promise((resolve, reject) => {
+      style.addEventListener("load", resolve, { once: true });
+      style.addEventListener("error", reject, { once: true });
+    });
+    shadow.append(style, calendar);
+    await loaded;
+  });
+}
+
 /**
  * Client points for civil wall times inside day columns. Every point is
  * measured in one atomic evaluate — one layout state, at most one scroll —

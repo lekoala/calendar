@@ -310,6 +310,8 @@ act on the loaded state can await a single load instead of firing a second
 one. Ignoring the return keeps the previous fire-and-forget behavior.
 `prev()`, `next()` and `today()` return the same promise, so every navigator
 can be awaited uniformly.
+An aborted load settles its public promise as soon as it is canceled.
+A source that ignores cancellation can finish later without publishing its data.
 
 A malformed `date` attribute (`date="nope"`) does not throw inside the
 render frame: the anchor falls back to today in the configured zone and the

@@ -16,6 +16,10 @@
   bubble and cross shadow boundaries.
 * Sticky resource, group, and day headers stack using the rendered row
   heights, including when custom header content grows after render.
+* Canceled source requests settle pending refetch and navigation promises
+  even when the source ignores its abort signal.
+* Focus restoration and external pointer placement work when the calendar
+  is embedded inside a shadow root.
 
 ### Changed
 

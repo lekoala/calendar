@@ -330,8 +330,10 @@ export function bindExternalPlacement({
   let externalAutoscroll = null;
   /** @param {number} x @param {number} y */
   function pointerOverGrid(x, y) {
-    const element = document.elementFromPoint(x, y);
-    return element !== null && root.contains(element);
+    const tree = root.getRootNode();
+    const hitRoot = tree instanceof ShadowRoot ? tree : root.ownerDocument;
+    const element = hitRoot.elementFromPoint(x, y);
+    return element != null && root.contains(element);
   }
   return {
     move(x, y) {

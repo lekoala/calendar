@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openDemo } from "./fixture.js";
+import { moveCalendarIntoShadow, openDemo } from "./fixture.js";
 
 for (const resourceAware of [false, true]) {
   for (const allDay of [false, true]) {
@@ -102,6 +102,21 @@ test("an external update keeps focus on the same rendered segment", async ({ pag
     };
   });
   expect(focused).toEqual({ id: "a", date: "2026-09-03", text: "Renamed externally" });
+});
+
+test("a rendered event keeps focus inside the calendar's shadow host", async ({ page }) => {
+  await openDemo(page, "basic");
+  await moveCalendarIntoShadow(page);
+  const chip = page.locator('#shadow-calendar .cv-day[data-date="2026-09-03"] [data-event-id="a"]');
+  await chip.focus();
+  await page.evaluate(() => {
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      document.querySelector("#shadow-calendar")?.shadowRoot?.querySelector("calendar-view")
+    );
+    calendar.updateEvent({ id: "a", title: "Updated inside shadow" });
+  });
+  await expect(chip).toHaveText("Updated inside shadow");
+  await expect(chip).toBeFocused();
 });
 
 test("a multi-day slice keeps its own date focused, not the first slice", async ({ page }) => {

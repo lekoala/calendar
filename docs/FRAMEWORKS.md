@@ -37,6 +37,9 @@ or for registering a custom tag name.
   and remove it on unmount. The events bubble and are composed.
 - **Do not recreate the element on every render.** Keep the same node and
   update properties/configuration, or selection, scroll and focus are lost.
+- **Embedding in a shadow root.** Load the calendar stylesheet in that
+  root. Focus restoration and external pointer placement use the calendar's
+  enclosing DOM tree.
 
 ## React
 

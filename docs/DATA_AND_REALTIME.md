@@ -105,3 +105,7 @@ the source ignores its signal. Cancellation without a replacement settles
 retaining current collections. Navigation via `setView()` or `gotoDate()`
 reloads as before. After configuring the calendar, assigning resources or
 editing attributes directly, call `refetchEvents()` to load the new scope.
+
+Awaiting `refetchEvents()` or a navigation method finishes on cancellation,
+even if the source promise keeps running. Late results and errors from that
+request are discarded.
