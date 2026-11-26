@@ -5471,6 +5471,10 @@
       }
       return -1;
     };
+    function allDayColumnAtPoint(x, y) {
+      const hit = elementAtPoint(lane, x, y);
+      return hit && lane.contains(hit) ? columnIndexAtX(x) : -1;
+    }
     const commitAllDayMove = (evt, days, resourceId, nativeEvent) => {
       if (!(evt.start instanceof Temporal2.PlainDate))
         return null;
@@ -5506,7 +5510,6 @@
       const downY = nativeEvent.clientY;
       let moved = false;
       let mirror = null;
-      let pending = null;
       const grabbedColumn = columnIndexAtX(downX);
       const origin = columns[grabbedColumn < 0 ? startDay : grabbedColumn];
       let laneKey = grabbedColumn;
@@ -5518,19 +5521,21 @@
           moved = true;
         if (!moved)
           return;
+        const index = allDayColumnAtPoint(moveEvent.clientX, moveEvent.clientY);
+        if (index < 0) {
+          mirror?.remove();
+          return;
+        }
         if (!mirror) {
           mirror = bar.cloneNode(true);
           mirror.classList.add("cv-drag-mirror");
           mirror.tabIndex = -1;
           mirror.setAttribute("aria-hidden", "true");
           bar.classList.add("cv-drag-source");
-          lane.append(mirror);
         }
-        const index = columnIndexAtX(moveEvent.clientX);
-        if (index < 0)
-          return;
+        if (!mirror.isConnected)
+          lane.append(mirror);
         const droppable = columns[index].resource?.droppable !== false;
-        pending = { index, droppable };
         const days = columns[index].date.since(origin.date).days;
         const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
         const spans = daySpans({
@@ -5573,20 +5578,15 @@
         bar.classList.remove("cv-drag-source");
       };
       const onUp = (upEvent) => {
-        const wasMoved = moved;
-        const range = pending;
         cleanup();
-        if (longPressConsumed)
+        if (longPressConsumed || !moved)
           return;
-        if (!wasMoved)
-          return;
-        if (!range?.droppable) {
-          suppressClick = true;
-          return;
-        }
         suppressClick = true;
-        const dayDelta = columns[range.index].date.since(origin.date).days;
-        const resourceId = columns[range.index].resource?.id ?? event.resourceId ?? null;
+        const index = allDayColumnAtPoint(upEvent.clientX, upEvent.clientY);
+        if (index < 0 || columns[index].resource?.droppable === false)
+          return;
+        const dayDelta = columns[index].date.since(origin.date).days;
+        const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
         const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
         if (next) {
           host.announce(describeEvent(next, timeZone, labels.untitledEvent));
@@ -5627,9 +5627,7 @@
       const downX = nativeEvent.clientX;
       const downY = nativeEvent.clientY;
       let moved = false;
-      let pending = null;
       let resizeKey = null;
-      let resizeOk = true;
       const spanFor = (start, end) => {
         let first = -1;
         let last = -1;
@@ -5656,18 +5654,12 @@
         }
         return found;
       };
-      const onMove = (moveEvent) => {
-        if (longPressConsumed)
-          return;
-        if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
-          moved = true;
-        if (!moved)
-          return;
-        const index = columnIndexAtX(moveEvent.clientX);
+      const resizeTarget = (pointer) => {
+        const index = allDayColumnAtPoint(pointer.clientX, pointer.clientY);
         if (index < 0)
-          return;
+          return null;
         if (!belongsToEventBlock(columns[index]))
-          return;
+          return null;
         const pointerDate = columns[index].date;
         let nextStart = startDate;
         let nextEnd = endDate;
@@ -5675,7 +5667,7 @@
           if (Temporal2.PlainDate.compare(pointerDate, endDate) >= 0) {
             const last = lastVisibleBefore(endDate);
             if (!last)
-              return;
+              return null;
             nextStart = last;
           } else {
             nextStart = pointerDate;
@@ -5686,19 +5678,38 @@
         }
         const span = spanFor(nextStart, nextEnd);
         if (!span)
+          return null;
+        return { span, range: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null } };
+      };
+      const resetPreview = () => {
+        bar.style.gridColumn = savedGridColumn;
+        bar.classList.remove("cv-invalid");
+        delete bar.dataset.reason;
+        resizeKey = null;
+      };
+      const onMove = (moveEvent) => {
+        if (longPressConsumed)
           return;
-        pending = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
+        if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
+          moved = true;
+        if (!moved)
+          return;
+        const target = resizeTarget(moveEvent);
+        if (!target) {
+          resetPreview();
+          return;
+        }
+        const { span, range } = target;
         bar.style.gridColumn = span;
-        const key = `${nextStart}:${nextEnd}`;
+        const key = `${range.start}:${range.end}`;
         if (key !== resizeKey) {
           resizeKey = key;
           const decision = host.checkInteraction({
             action: "resize",
             event,
-            ...pending,
+            ...range,
             allDay: true
           });
-          resizeOk = decision.ok;
           bar.classList.toggle("cv-invalid", !decision.ok);
           if (decision.reason)
             bar.dataset.reason = decision.reason;
@@ -5708,29 +5719,29 @@
       };
       const onUp = (upEvent) => {
         cleanup();
-        if (longPressConsumed || !moved || !pending)
-          return;
-        suppressClick = true;
-        if (!resizeOk) {
-          bar.style.gridColumn = savedGridColumn;
+        if (longPressConsumed || !moved) {
+          resetPreview();
           return;
         }
+        suppressClick = true;
+        const target = resizeTarget(upEvent);
+        resetPreview();
+        if (!target)
+          return;
         const result = host.commitEventResize({
           event,
           previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-          current: pending,
+          current: target.range,
           nativeEvent: upEvent
         });
-        if (!result) {
-          bar.style.gridColumn = savedGridColumn;
+        if (!result)
           return;
-        }
         host.announce(describeEvent(result, timeZone, labels.untitledEvent));
         host.refocusEvent(event.id);
       };
       const onCancel = (_cancelEvent) => {
         cleanup();
-        bar.style.gridColumn = savedGridColumn;
+        resetPreview();
         longPressConsumed = false;
         suppressClick = false;
       };
@@ -5739,8 +5750,6 @@
         bar.removeEventListener("pointerup", onUp);
         bar.removeEventListener("pointercancel", onCancel);
         bar.removeEventListener("lostpointercapture", onCancel);
-        bar.classList.remove("cv-invalid");
-        delete bar.dataset.reason;
       };
       bar.addEventListener("pointermove", onMove);
       bar.addEventListener("pointerup", onUp);

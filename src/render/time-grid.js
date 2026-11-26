@@ -483,6 +483,12 @@ export function renderTimeGrid({
     return -1;
   };
 
+  /** @param {number} x @param {number} y */
+  function allDayColumnAtPoint(x, y) {
+    const hit = elementAtPoint(lane, x, y);
+    return hit && lane.contains(hit) ? columnIndexAtX(x) : -1;
+  }
+
   /**
    * Day-preserving move of one all-day bar, shared by pointer drag and
    * Shift+arrows. Boundaries stay `Temporal.PlainDate`, so both commute
@@ -540,8 +546,6 @@ export function renderTimeGrid({
     let moved = false;
     /** @type {HTMLButtonElement | null} */
     let mirror = null;
-    /** @type {{ index: number, droppable: boolean } | null} */
-    let pending = null;
     // Last evaluated destination (day index) and its policy decision.
     // Seeded with the entry day so the first identical snap skips.
     const grabbedColumn = columnIndexAtX(downX);
@@ -554,18 +558,20 @@ export function renderTimeGrid({
       if (longPressConsumed) return;
       if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
       if (!moved) return;
+      const index = allDayColumnAtPoint(moveEvent.clientX, moveEvent.clientY);
+      if (index < 0) {
+        mirror?.remove();
+        return;
+      }
       if (!mirror) {
         mirror = /** @type {HTMLButtonElement} */ (bar.cloneNode(true));
         mirror.classList.add("cv-drag-mirror");
         mirror.tabIndex = -1;
         mirror.setAttribute("aria-hidden", "true");
         bar.classList.add("cv-drag-source");
-        lane.append(mirror);
       }
-      const index = columnIndexAtX(moveEvent.clientX);
-      if (index < 0) return;
+      if (!mirror.isConnected) lane.append(mirror);
       const droppable = columns[index].resource?.droppable !== false;
-      pending = { index, droppable };
       const days = columns[index].date.since(origin.date).days;
       const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
       const spans = daySpans(
@@ -613,21 +619,15 @@ export function renderTimeGrid({
 
     /** @param {PointerEvent} upEvent @returns {void} */
     const onUp = (upEvent) => {
-      const wasMoved = moved;
-      const range = pending;
       cleanup();
-      if (longPressConsumed) return;
-      if (!wasMoved) return;
-      // A moved press never leaks a click, even on a refused target.
-      if (!range?.droppable) {
-        suppressClick = true;
-        return;
-      }
+      if (longPressConsumed || !moved) return;
       suppressClick = true;
-      const dayDelta = columns[range.index].date.since(origin.date).days;
+      const index = allDayColumnAtPoint(upEvent.clientX, upEvent.clientY);
+      if (index < 0 || columns[index].resource?.droppable === false) return;
+      const dayDelta = columns[index].date.since(origin.date).days;
       // A column with no resource carries no new assignment: the bar keeps
       // its current resource instead of being silently unassigned.
-      const resourceId = columns[range.index].resource?.id ?? event.resourceId ?? null;
+      const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
       const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
       if (next) {
         host.announce(describeEvent(next, timeZone, labels.untitledEvent));
@@ -681,11 +681,8 @@ export function renderTimeGrid({
     const downX = nativeEvent.clientX;
     const downY = nativeEvent.clientY;
     let moved = false;
-    /** @type {{ start: Temporal.PlainDate, end: Temporal.PlainDate, resourceId: string | null } | null} */
-    let pending = null;
     /** @type {string | null} */
     let resizeKey = null;
-    let resizeOk = true;
 
     /**
      * Grid span for a civil range, clamped to the visible columns. All-day
@@ -731,23 +728,20 @@ export function renderTimeGrid({
       return found;
     };
 
-    /** @param {PointerEvent} moveEvent @returns {void} */
-    const onMove = (moveEvent) => {
-      if (longPressConsumed) return;
-      if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
-      if (!moved) return;
-      const index = columnIndexAtX(moveEvent.clientX);
-      if (index < 0) return;
+    /** @param {PointerEvent} pointer */
+    const resizeTarget = (pointer) => {
+      const index = allDayColumnAtPoint(pointer.clientX, pointer.clientY);
+      if (index < 0) return null;
       // A resize never changes resources. Ignore columns outside the
       // event's own resource block instead of silently reassigning it.
-      if (!belongsToEventBlock(columns[index])) return;
+      if (!belongsToEventBlock(columns[index])) return null;
       const pointerDate = columns[index].date;
       let nextStart = startDate;
       let nextEnd = endDate;
       if (edge === "start") {
         if (Temporal.PlainDate.compare(pointerDate, endDate) >= 0) {
           const last = lastVisibleBefore(endDate);
-          if (!last) return;
+          if (!last) return null;
           nextStart = last;
         } else {
           nextStart = pointerDate;
@@ -760,19 +754,38 @@ export function renderTimeGrid({
             : endFromDay;
       }
       const span = spanFor(nextStart, nextEnd);
-      if (!span) return;
-      pending = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
+      if (!span) return null;
+      return { span, range: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null } };
+    };
+
+    const resetPreview = () => {
+      bar.style.gridColumn = savedGridColumn;
+      bar.classList.remove("cv-invalid");
+      delete bar.dataset.reason;
+      resizeKey = null;
+    };
+
+    /** @param {PointerEvent} moveEvent @returns {void} */
+    const onMove = (moveEvent) => {
+      if (longPressConsumed) return;
+      if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
+      if (!moved) return;
+      const target = resizeTarget(moveEvent);
+      if (!target) {
+        resetPreview();
+        return;
+      }
+      const { span, range } = target;
       bar.style.gridColumn = span;
-      const key = `${nextStart}:${nextEnd}`;
+      const key = `${range.start}:${range.end}`;
       if (key !== resizeKey) {
         resizeKey = key;
         const decision = host.checkInteraction({
           action: "resize",
           event,
-          ...pending,
+          ...range,
           allDay: true,
         });
-        resizeOk = decision.ok;
         bar.classList.toggle("cv-invalid", !decision.ok);
         if (decision.reason) bar.dataset.reason = decision.reason;
         else delete bar.dataset.reason;
@@ -782,22 +795,21 @@ export function renderTimeGrid({
     /** @param {PointerEvent} upEvent @returns {void} */
     const onUp = (upEvent) => {
       cleanup();
-      if (longPressConsumed || !moved || !pending) return;
-      suppressClick = true;
-      if (!resizeOk) {
-        bar.style.gridColumn = savedGridColumn;
+      if (longPressConsumed || !moved) {
+        resetPreview();
         return;
       }
+      suppressClick = true;
+      const target = resizeTarget(upEvent);
+      resetPreview();
+      if (!target) return;
       const result = host.commitEventResize({
         event,
         previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-        current: pending,
+        current: target.range,
         nativeEvent: upEvent,
       });
-      if (!result) {
-        bar.style.gridColumn = savedGridColumn;
-        return;
-      }
+      if (!result) return;
       host.announce(describeEvent(result, timeZone, labels.untitledEvent));
       host.refocusEvent(event.id);
     };
@@ -805,7 +817,7 @@ export function renderTimeGrid({
     /** @param {PointerEvent} _cancelEvent @returns {void} */
     const onCancel = (_cancelEvent) => {
       cleanup();
-      bar.style.gridColumn = savedGridColumn;
+      resetPreview();
       longPressConsumed = false;
       suppressClick = false;
     };
@@ -815,8 +827,6 @@ export function renderTimeGrid({
       bar.removeEventListener("pointerup", onUp);
       bar.removeEventListener("pointercancel", onCancel);
       bar.removeEventListener("lostpointercapture", onCancel);
-      bar.classList.remove("cv-invalid");
-      delete bar.dataset.reason;
     };
 
     bar.addEventListener("pointermove", onMove);

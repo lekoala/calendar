@@ -25,6 +25,8 @@
 * Timed drops use the visible grid. Releasing beyond its scroller or over a
   sticky header produces the outside-drop intent instead of moving an event
   into a clipped column.
+* All-day moves and resizes cancel on release outside the visible all-day
+  lane. Resizes validate the current target and policy at release.
 
 ### Changed
 

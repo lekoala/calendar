@@ -188,9 +188,9 @@ test("all-day resize handles appear only on visible true edges", async ({ page }
 test("all-day pointer resize moves the visible start and the exclusive end", async ({ page }) => {
   await openDemo(page, "basic");
   await page.evaluate(() => {
-    /** @type {any} */ (document.querySelector("calendar-view")).events = [
-      { id: "ad", title: "Offsite", allDay: true, start: "2026-09-04", end: "2026-09-05" },
-    ];
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.style.setProperty("--calendar-column-min", "5rem");
+    calendar.events = [{ id: "ad", title: "Offsite", allDay: true, start: "2026-09-04", end: "2026-09-05" }];
   });
   await flushRender(page);
 
@@ -270,9 +270,9 @@ test("all-day pointer resize moves the visible start and the exclusive end", asy
 test("all-day pointer resize clamps at one day and keeps the resource", async ({ page }) => {
   await openDemo(page, "basic");
   await page.evaluate(() => {
-    /** @type {any} */ (document.querySelector("calendar-view")).events = [
-      { id: "ad", title: "Offsite", allDay: true, start: "2026-09-04", end: "2026-09-05" },
-    ];
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.style.setProperty("--calendar-column-min", "5rem");
+    calendar.events = [{ id: "ad", title: "Offsite", allDay: true, start: "2026-09-04", end: "2026-09-05" }];
   });
   await flushRender(page);
   const startHandle = page.locator('.cv-allday-event[data-event-id="ad"] .cv-resize-w');
@@ -294,7 +294,9 @@ test("all-day pointer resize clamps at one day and keeps the resource", async ({
 
   await openDemo(page, "resources");
   await page.evaluate(() => {
-    /** @type {any} */ (document.querySelector("calendar-view")).events = [
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.style.setProperty("--calendar-column-min", "5rem");
+    calendar.events = [
       {
         id: "room-ad",
         title: "Room closure",
@@ -326,6 +328,62 @@ test("all-day pointer resize clamps at one day and keeps the resource", async ({
     }),
   ).toEqual(["2026-09-03", "2026-09-06", "room-a"]);
 });
+
+for (const gesture of ["move", "resize"]) {
+  test(`an all-day ${gesture} cancels when released over the timed grid`, async ({ page }) => {
+    await openDemo(page, "basic");
+    await page.evaluate(() => {
+      const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+        document.querySelector("calendar-view")
+      );
+      calendar.style.setProperty("--calendar-column-min", "5rem");
+      calendar.events = [{ id: "ad", allDay: true, start: "2026-09-03", end: "2026-09-04" }];
+      for (const name of ["calendar:eventmove", "calendar:eventresize", "calendar:eventclick"]) {
+        calendar.addEventListener(name, () => {
+          calendar.dataset.gestureIntent = name;
+        });
+      }
+    });
+    await flushRender(page);
+    const bar = page.locator('.cv-allday-event[data-event-id="ad"]');
+    const handle = gesture === "resize" ? bar.locator(".cv-resize-e") : bar;
+    await handle.scrollIntoViewIfNeeded();
+    const points = await page.evaluate((gesture) => {
+      const bar = /** @type {HTMLElement} */ (document.querySelector('.cv-allday-event[data-event-id="ad"]'));
+      const handle = gesture === "resize" ? bar.querySelector(".cv-resize-e") : bar;
+      const source = handle?.getBoundingClientRect();
+      const target = document
+        .querySelector('.cv-day[data-date="2026-09-04"] .cv-day-body')
+        ?.getBoundingClientRect();
+      if (!source || !target) throw new Error("Expected a visible all-day bar and timed column");
+      const y = source.top + source.height / 2;
+      return {
+        source: { x: source.left + source.width / 2, y },
+        target: { x: target.left + target.width / 2, y },
+        timedY: target.top + 24,
+        originalSpan: bar.style.gridColumn,
+      };
+    }, gesture);
+    await page.mouse.move(points.source.x, points.source.y);
+    await page.mouse.down();
+    await page.mouse.move(points.target.x, points.target.y);
+    if (gesture === "move") await expect(page.locator(".cv-drag-mirror")).toBeVisible();
+    else await expect(bar).not.toHaveCSS("grid-column", points.originalSpan);
+    await page.mouse.move(points.target.x, points.timedY);
+    await page.mouse.up();
+    await expect(page.locator("calendar-view")).not.toHaveAttribute("data-gesture-intent");
+    await expect(page.locator(".cv-drag-mirror")).toHaveCount(0);
+    await expect(bar).toHaveCSS("grid-column", points.originalSpan);
+    const range = await page.evaluate(() => {
+      const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+        document.querySelector("calendar-view")
+      );
+      const event = calendar.getEventById("ad");
+      return [String(event?.start), String(event?.end)];
+    });
+    expect(range).toEqual(["2026-09-03", "2026-09-04"]);
+  });
+}
 
 test("all-day keyboard resize keeps at least one day and obeys policy", async ({ page }) => {
   await openDemo(page, "basic");

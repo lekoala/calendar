@@ -238,16 +238,17 @@ for (const equal of [false, true]) {
   });
 }
 
-for (const action of ["move", "resize", "allDay", "select"]) {
+for (const action of ["move", "resize", "allDay", "allDayResize", "select"]) {
   for (const allowedAtRelease of [false, true]) {
     test(`${action} rechecks dynamic policy at release: ${allowedAtRelease}`, async ({ page }) => {
       await openDemo(page, "basic");
       await page.evaluate((action) => {
         const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-        calendar.events =
-          action === "allDay"
-            ? [{ id: "ad", allDay: true, start: "2026-09-03", end: "2026-09-04" }]
-            : [calendar.events[0]];
+        const allDay = action === "allDay" || action === "allDayResize";
+        calendar.events = allDay
+          ? [{ id: "ad", allDay: true, start: "2026-09-03", end: "2026-09-04" }]
+          : [calendar.events[0]];
+        if (allDay) calendar.style.setProperty("--calendar-column-min", "5rem");
         calendar.backgrounds = [];
         /** @type {any} */ (window).allowed = true;
         /** @type {any} */ (window).intents = 0;
@@ -260,20 +261,23 @@ for (const action of ["move", "resize", "allDay", "select"]) {
         const body = /** @type {HTMLElement} */ (
           document.querySelector(".cv-day-body")
         ).getBoundingClientRect();
+        const allDay = action === "allDay" || action === "allDayResize";
         const node = document.querySelector(
           action === "select"
             ? ".cv-day-body"
             : action === "allDay"
               ? ".cv-allday-event"
-              : action === "resize"
-                ? ".cv-resize-s"
-                : ".cv-event",
+              : action === "allDayResize"
+                ? ".cv-allday-event .cv-resize-e"
+                : action === "resize"
+                  ? ".cv-resize-s"
+                  : ".cv-event",
         );
         if (!node) throw new Error("Expected gesture target");
         const box = node.getBoundingClientRect();
         const x = box.x + box.width / 2;
         const y = action === "select" ? body.y + 100 : box.y + box.height / 2;
-        return { x, y, tx: action === "allDay" ? x + body.width : x, ty: action === "allDay" ? y : y + 60 };
+        return { x, y, tx: allDay ? x + body.width : x, ty: allDay ? y : y + 60 };
       }, action);
       await page.mouse.move(points.x, points.y);
       await page.mouse.down();

@@ -75,6 +75,10 @@ Dragging a slice of a multi-day event shifts the whole event: the day delta betw
 
 All-day bars drag with the same state machine but day-snapped: the mirror rides the lane's column tracks within one resource block, and the commit shifts both `Temporal.PlainDate` boundaries by the difference in columns, preserving the civil span. Shift + arrows move a bar by one day. Visible true edges support day-snapped pointer resize and `Alt` + arrows: Up/Down adjust the start by one day, Left/Right adjust the exclusive end by one day. Resizing preserves the resource, keeps at least one civil day, and uses the same policy, cancellation and revert contract as timed resize. Edges clipped by the visible range or hidden days do not expose a handle. Creation inside the lane and timed-to-all-day conversion remain deferred.
 
+An all-day pointer move or resize commits only when released over a visible
+date column in the all-day lane. Leaving the lane clears the preview, and
+releasing there cancels the gesture.
+
 ## 4b. External placement (drag out of application chrome)
 
 Application-owned draggables (a sidebar workbench item, a "new block" chip)
