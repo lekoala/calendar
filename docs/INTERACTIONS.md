@@ -114,7 +114,10 @@ parking panel glows via `:has()`), and releasing there dispatches
 `calendar:eventdropout`. The residual click on the source card is
 suppressed, so parking never falls through to `calendar:eventclick`.
 
-A viewport autoscroller advances the scroll while the pointer rests near the scroller edge, on both axes: vertically while dragging along the time body, horizontally in wide resource grids whose columns overflow the viewport. It is a separate helper, not part of layout math.
+A viewport autoscroller advances the scroll while the pointer rests near the
+scroller edge, vertically in the time body and horizontally in wide resource
+grids. The timed event mirror follows the slot under the stationary pointer.
+Releasing the pointer resolves the drop against the current viewport.
 
 Event nodes use `touch-action: pan-x pan-y` so a touch gesture starting on an event can still scroll the grid; a scroll takeover fires `pointercancel`, which the drag/resize paths already treat as an abort without commit. Resize handles keep `touch-action: none` for precision. Touch range selection remains a later milestone.
 

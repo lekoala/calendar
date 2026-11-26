@@ -17,10 +17,12 @@
  * @param {object} [config]
  * @param {number} [config.edge] distance in pixels from the edge where scrolling starts
  * @param {number} [config.speed] pixels advanced per animation frame
+ * @param {() => void} [config.onScroll] notify the drag when the viewport actually moves
  */
-export declare function createAutoscroller(scroller: Element, { edge, speed }?: {
+export declare function createAutoscroller(scroller: Element, { edge, speed, onScroll }?: {
     edge?: number;
     speed?: number;
+    onScroll?: () => void;
 }): {
     /**
      * @param {number} clientX

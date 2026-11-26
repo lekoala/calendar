@@ -20,6 +20,8 @@
   even when the source ignores its abort signal.
 * Focus restoration and external pointer placement work when the calendar
   is embedded inside a shadow root.
+* During timed event drags, the preview and drop target follow autoscroll
+  even when the pointer stays still.
 
 ### Changed
 

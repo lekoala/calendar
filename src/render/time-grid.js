@@ -1592,12 +1592,12 @@ export function renderTimeGrid({
         const downX = nativeEvent.clientX;
         const downY = nativeEvent.clientY;
         const scroller = body.closest(".cv-scroller");
-        const autoscroll = scroller ? createAutoscroller(scroller) : null;
+        let pointerX = downX;
+        let pointerY = downY;
+        const autoscroll = scroller ? createAutoscroller(scroller, { onScroll: paintDragTarget }) : null;
         let moved = false;
         /** @type {HTMLButtonElement | null} */
         let mirror = null;
-        /** @type {{ start: number, end: number, column: TimeGridColumn, droppable: boolean } | null} */
-        let pending = null;
         // Last evaluated destination (`column:start`) and its policy
         // decision: re-evaluated only when the snapped target changes.
         // Seeded with the entry target so the first identical snap skips.
@@ -1605,35 +1605,28 @@ export function renderTimeGrid({
         let dragKey = `${columnIndex}:${item.start}`;
         let dragOk = true;
 
-        /** @param {PointerEvent} moveEvent @returns {void} */
-        const onMove = (moveEvent) => {
-          if (longPressConsumed) return;
-          if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
-          if (!moved) return;
-          if (!mirror) {
-            mirror = /** @type {HTMLButtonElement} */ (node.cloneNode(true));
-            mirror.classList.add("cv-drag-mirror");
-            mirror.classList.remove("cv-drag-source");
-            mirror.tabIndex = -1;
-            mirror.setAttribute("aria-hidden", "true");
-            node.classList.add("cv-drag-source");
-          }
-          autoscroll?.update(moveEvent.clientX, moveEvent.clientY);
-          const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
-          // Outside every column the drag arms "drop out of the calendar":
-          // the application lights its parking target while the pointer
-          // hovers the grid edge (axis strip included).
-          if (hit) node.removeAttribute("data-dropout");
-          else node.setAttribute("data-dropout", "true");
-          if (!hit) return;
+        /** @param {NonNullable<ReturnType<typeof gridHit>>} hit */
+        function dragTarget(hit) {
           const raw = hit.minutes - grabOffset;
           const target = bodies[hit.column];
           const start = Math.min(
             Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes),
             endMinutes - duration,
           );
-          const droppable = target.column.resource?.droppable !== false;
-          pending = { start, end: start + duration, column: target.column, droppable };
+          return { ...target, start, droppable: target.column.resource?.droppable !== false };
+        }
+
+        function paintDragTarget() {
+          if (longPressConsumed || !mirror) return;
+          const hit = gridHit(pointerX, pointerY);
+          // Outside every column the drag arms "drop out of the calendar":
+          // the application lights its parking target while the pointer
+          // hovers the grid edge (axis strip included).
+          if (hit) node.removeAttribute("data-dropout");
+          else node.setAttribute("data-dropout", "true");
+          if (!hit) return;
+          const target = dragTarget(hit);
+          const { start, droppable } = target;
           if (mirror.parentNode !== target.body) target.body.append(mirror);
           mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
           mirror.style.height = `${duration * pxPerMinute}px`;
@@ -1661,6 +1654,25 @@ export function renderTimeGrid({
             else delete mirror.dataset.reason;
           }
           mirror.classList.toggle("cv-invalid", !droppable || !dragOk);
+        }
+
+        /** @param {PointerEvent} moveEvent @returns {void} */
+        const onMove = (moveEvent) => {
+          if (longPressConsumed) return;
+          if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
+          if (!moved) return;
+          if (!mirror) {
+            mirror = /** @type {HTMLButtonElement} */ (node.cloneNode(true));
+            mirror.classList.add("cv-drag-mirror");
+            mirror.classList.remove("cv-drag-source");
+            mirror.tabIndex = -1;
+            mirror.setAttribute("aria-hidden", "true");
+            node.classList.add("cv-drag-source");
+          }
+          pointerX = moveEvent.clientX;
+          pointerY = moveEvent.clientY;
+          autoscroll?.update(pointerX, pointerY);
+          paintDragTarget();
         };
 
         const cleanup = () => {
@@ -1680,7 +1692,6 @@ export function renderTimeGrid({
         /** @param {PointerEvent} upEvent @returns {void} */
         const onUp = (upEvent) => {
           const wasMoved = moved;
-          const range = pending;
           cleanup();
           // A fired long-press owns the gesture: no commit, and the residual
           // click stays suppressed for its own capture-phase handler.
@@ -1690,7 +1701,8 @@ export function renderTimeGrid({
           // is a parking intent the application may feed its workbench
           // ("drag out of the calendar"). The commit below only runs when
           // the release itself is over a column.
-          if (!gridHit(upEvent.clientX, upEvent.clientY)) {
+          const hit = gridHit(upEvent.clientX, upEvent.clientY);
+          if (!hit) {
             // Same as a committed drop: the residual click on the source card
             // must not fall through to `calendar:eventclick`.
             suppressClick = true;
@@ -1705,7 +1717,8 @@ export function renderTimeGrid({
             return;
           }
           // A moved press never leaks a click, even on a refused target.
-          if (!range?.droppable) {
+          const range = dragTarget(hit);
+          if (!range.droppable) {
             suppressClick = true;
             return;
           }

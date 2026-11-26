@@ -17,8 +17,9 @@
  * @param {object} [config]
  * @param {number} [config.edge] distance in pixels from the edge where scrolling starts
  * @param {number} [config.speed] pixels advanced per animation frame
+ * @param {() => void} [config.onScroll] notify the drag when the viewport actually moves
  */
-export function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
+export function createAutoscroller(scroller, { edge = 48, speed = 12, onScroll } = {}) {
   /** @type {number} */
   let deltaX = 0;
   /** @type {number} */
@@ -44,9 +45,11 @@ export function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
       frame = 0;
       return;
     }
-    scroller.scrollTop += deltaY;
-    scroller.scrollLeft += deltaX;
+    const { scrollTop, scrollLeft } = scroller;
+    scroller.scrollTop = scrollTop + deltaY;
+    scroller.scrollLeft = scrollLeft + deltaX;
     frame = requestAnimationFrame(tick);
+    if (onScroll && (scroller.scrollTop !== scrollTop || scroller.scrollLeft !== scrollLeft)) onScroll();
   };
 
   return {

@@ -1012,6 +1012,48 @@ test("a late revert does not undo the echo that confirmed the move", async ({ pa
   expect(start).toContain("T11:00");
 });
 
+test("a stationary timed drag follows vertical autoscroll and commits the previewed time", async ({
+  page,
+}) => {
+  await openDemo(page, "basic");
+  const scroller = page.locator(".cv-scroller");
+  const edgeY = await scroller.evaluate((node) => {
+    node.style.maxHeight = "320px";
+    node.scrollIntoView({ block: "center" });
+    return node.getBoundingClientRect().top + node.clientTop + node.clientHeight - 24;
+  });
+  const box = await eventBox(page, "a");
+  const x = box.x + box.width / 2;
+  await page.mouse.move(x, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, edgeY, { steps: 6 });
+  const mirror = page.locator(".cv-drag-mirror");
+  await expect
+    .poll(() => mirror.evaluate((node) => Number.parseFloat(node.style.top)), { timeout: 8000 })
+    .toBeGreaterThan(400);
+  await page.evaluate(() => {
+    document.addEventListener(
+      "pointerup",
+      () => {
+        const mirror = /** @type {HTMLElement | null} */ (document.querySelector(".cv-drag-mirror"));
+        document.documentElement.dataset.dragTop = mirror?.style.top ?? "";
+      },
+      { capture: true, once: true },
+    );
+  });
+  await page.mouse.up();
+  const times = await page.evaluate(() => {
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      document.querySelector("calendar-view")
+    );
+    const start = /** @type {{ hour: number, minute: number }} */ (calendar.getEventById("a")?.start);
+    // The demo starts at 08:00 and uses 1.8 pixels per minute.
+    const preview = Number.parseFloat(document.documentElement.dataset.dragTop ?? "");
+    return { committed: start.hour * 60 + start.minute, previewed: 480 + Math.round(preview / 1.8) };
+  });
+  expect(times.committed).toBe(times.previewed);
+});
+
 test("autoscroll stops when the calendar leaves the document mid-drag", async ({ page }) => {
   await openDemo(page, "basic");
   await page.evaluate(() => {

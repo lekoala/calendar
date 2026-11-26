@@ -329,7 +329,9 @@ test("geometry seams resize the axis and sticky header rows together", async ({ 
   await page.evaluate(() => document.getElementById("seams")?.remove());
 });
 
-test("dragging toward the horizontal edge autoscrolls the wide resource grid", async ({ page }) => {
+test("a stationary drag follows horizontal autoscroll and drops on the newly visible resource", async ({
+  page,
+}) => {
   await openDemo(page, "resources");
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.createElement("calendar-view"));
@@ -386,6 +388,9 @@ test("dragging toward the horizontal edge autoscrolls the wide resource grid", a
       { timeout: 8000 },
     )
     .toBe(true);
+  await expect(page.locator('#wide .cv-day[data-resource-id="room-11"] .cv-drag-mirror')).toBeVisible({
+    timeout: 8000,
+  });
   await page.mouse.up();
 
   const after = await page.evaluate(() => {
@@ -396,10 +401,14 @@ test("dragging toward the horizontal edge autoscrolls the wide resource grid", a
     return {
       scrollLeft: scroller?.scrollLeft ?? -1,
       lastVisible: viewport && header ? header.right > viewport.left && header.left < viewport.right : false,
+      resourceId: /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+        document.querySelector("#wide")
+      ).getEventById("drag")?.resourceId,
     };
   });
   expect(after.scrollLeft).toBeGreaterThan(0);
   expect(after.lastVisible).toBe(true);
+  expect(after.resourceId).toBe("room-11");
   await page.evaluate(() => document.getElementById("wide")?.remove());
 });
 

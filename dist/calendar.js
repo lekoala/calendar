@@ -4900,7 +4900,7 @@
   }
 
   // src/render/autoscroll.js
-  function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
+  function createAutoscroller(scroller, { edge = 48, speed = 12, onScroll } = {}) {
     let deltaX = 0;
     let deltaY = 0;
     let frame = 0;
@@ -4917,9 +4917,12 @@
         frame = 0;
         return;
       }
-      scroller.scrollTop += deltaY;
-      scroller.scrollLeft += deltaX;
+      const { scrollTop, scrollLeft } = scroller;
+      scroller.scrollTop = scrollTop + deltaY;
+      scroller.scrollLeft = scrollLeft + deltaX;
       frame = requestAnimationFrame(tick);
+      if (onScroll && (scroller.scrollTop !== scrollTop || scroller.scrollLeft !== scrollLeft))
+        onScroll();
     };
     return {
       update(clientX, clientY) {
@@ -6286,40 +6289,31 @@
           const downX = nativeEvent.clientX;
           const downY = nativeEvent.clientY;
           const scroller = body.closest(".cv-scroller");
-          const autoscroll = scroller ? createAutoscroller(scroller) : null;
+          let pointerX = downX;
+          let pointerY = downY;
+          const autoscroll = scroller ? createAutoscroller(scroller, { onScroll: paintDragTarget }) : null;
           let moved = false;
           let mirror = null;
-          let pending = null;
           let dragKey = `${columnIndex}:${item.start}`;
           let dragOk = true;
-          const onMove = (moveEvent) => {
-            if (longPressConsumed)
+          function dragTarget(hit) {
+            const raw = hit.minutes - grabOffset;
+            const target = bodies[hit.column];
+            const start = Math.min(Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes), endMinutes - duration);
+            return { ...target, start, droppable: target.column.resource?.droppable !== false };
+          }
+          function paintDragTarget() {
+            if (longPressConsumed || !mirror)
               return;
-            if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
-              moved = true;
-            if (!moved)
-              return;
-            if (!mirror) {
-              mirror = node.cloneNode(true);
-              mirror.classList.add("cv-drag-mirror");
-              mirror.classList.remove("cv-drag-source");
-              mirror.tabIndex = -1;
-              mirror.setAttribute("aria-hidden", "true");
-              node.classList.add("cv-drag-source");
-            }
-            autoscroll?.update(moveEvent.clientX, moveEvent.clientY);
-            const hit = gridHit(moveEvent.clientX, moveEvent.clientY);
+            const hit = gridHit(pointerX, pointerY);
             if (hit)
               node.removeAttribute("data-dropout");
             else
               node.setAttribute("data-dropout", "true");
             if (!hit)
               return;
-            const raw = hit.minutes - grabOffset;
-            const target = bodies[hit.column];
-            const start = Math.min(Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes), endMinutes - duration);
-            const droppable = target.column.resource?.droppable !== false;
-            pending = { start, end: start + duration, column: target.column, droppable };
+            const target = dragTarget(hit);
+            const { start, droppable } = target;
             if (mirror.parentNode !== target.body)
               target.body.append(mirror);
             mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
@@ -6343,6 +6337,26 @@
                 delete mirror.dataset.reason;
             }
             mirror.classList.toggle("cv-invalid", !droppable || !dragOk);
+          }
+          const onMove = (moveEvent) => {
+            if (longPressConsumed)
+              return;
+            if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
+              moved = true;
+            if (!moved)
+              return;
+            if (!mirror) {
+              mirror = node.cloneNode(true);
+              mirror.classList.add("cv-drag-mirror");
+              mirror.classList.remove("cv-drag-source");
+              mirror.tabIndex = -1;
+              mirror.setAttribute("aria-hidden", "true");
+              node.classList.add("cv-drag-source");
+            }
+            pointerX = moveEvent.clientX;
+            pointerY = moveEvent.clientY;
+            autoscroll?.update(pointerX, pointerY);
+            paintDragTarget();
           };
           const cleanup = () => {
             node.removeEventListener("pointermove", onMove);
@@ -6356,13 +6370,13 @@
           };
           const onUp = (upEvent) => {
             const wasMoved = moved;
-            const range = pending;
             cleanup();
             if (longPressConsumed)
               return;
             if (!wasMoved)
               return;
-            if (!gridHit(upEvent.clientX, upEvent.clientY)) {
+            const hit = gridHit(upEvent.clientX, upEvent.clientY);
+            if (!hit) {
               suppressClick = true;
               root.dispatchEvent(new CustomEvent("calendar:eventdropout", {
                 bubbles: true,
@@ -6372,7 +6386,8 @@
               }));
               return;
             }
-            if (!range?.droppable) {
+            const range = dragTarget(hit);
+            if (!range.droppable) {
               suppressClick = true;
               return;
             }
