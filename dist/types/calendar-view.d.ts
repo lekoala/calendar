@@ -78,6 +78,7 @@ export type CalendarConfig = {
      */
     interactionPolicy?: (decision: InteractionPolicyInput) => boolean | string | null | undefined;
 };
+export type RenderReason = "events-updated" | "structure";
 export type InteractionPolicyInput = {
     /**
      * the proposed interaction; `select` and `external` carry no existing event

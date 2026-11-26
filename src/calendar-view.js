@@ -100,6 +100,14 @@ function sameSourceScope(a, b) {
  */
 
 /**
+ * Why a render was requested. Only `events-updated` currently allows the
+ * renderer to reconcile an existing subtree in place; every other reason
+ * rebuilds it.
+ *
+ * @typedef {"events-updated" | "structure"} RenderReason
+ */
+
+/**
  * Input for the dynamic interaction policy.
  *
  * @typedef {object} InteractionPolicyInput
@@ -351,7 +359,9 @@ export class CalendarViewElement extends HTMLElement {
 
   /** @param {string} name */
   attributeChangedCallback(name) {
-    if (name === "date") this.#dateIsImplicit = false;
+    // Removing `date` ends the explicit pin, so a later zone change must be
+    // allowed to reflect the implicit anchor again.
+    if (name === "date") this.#dateIsImplicit = !this.hasAttribute("date");
     if (this.isConnected) this.#queueRender();
     if ((name === "date" || name === "view") && this.#sourceRequest) {
       // Navigation methods replace the request in the same call. A direct
@@ -1115,7 +1125,7 @@ export class CalendarViewElement extends HTMLElement {
     // An echo or a partial edit outranks any undo still waiting on a server.
     this.#stampPlacement(id);
     this.#events = this.#events.map((item, i) => (i === index ? next : item));
-    this.#queueRender(true);
+    this.#queueRender("events-updated");
     return next;
   }
 
@@ -1427,10 +1437,10 @@ export class CalendarViewElement extends HTMLElement {
     emitCalendarEvent(this, "calendar:loading", { loading });
   }
 
-  /** @param {boolean} [eventUpdateOnly] */
-  #queueRender(eventUpdateOnly = false) {
+  /** @param {RenderReason} [reason] */
+  #queueRender(reason = "structure") {
     this.#interactionRevision += 1;
-    if (!eventUpdateOnly) this.#replaceRender = true;
+    if (reason !== "events-updated") this.#replaceRender = true;
     if (this.#batchDepth || this.#renderQueued) return;
     this.#renderQueued = true;
     requestAnimationFrame(() => {
@@ -1706,8 +1716,10 @@ export class CalendarViewElement extends HTMLElement {
 
     // Dispatched once the whole subtree exists, so applications can decorate
     // rendered columns without observing mutations. Listeners that mutate
-    // state simply queue the next frame, like any other mutation.
-    emitCalendarEvent(this, "calendar:render", { view: this.view, dates, resources });
+    // state simply queue the next frame, like any other mutation. `partial`
+    // tells them whether that subtree is the old tree reconciled in place:
+    // surviving nodes make non-idempotent decoration unsafe.
+    emitCalendarEvent(this, "calendar:render", { view: this.view, dates, resources, partial });
 
     // Post-render work (focus, announcements, future reveal highlight) runs
     // after app decorators so it sees the final subtree. Snapshot-and-clear:

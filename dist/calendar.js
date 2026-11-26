@@ -7088,7 +7088,7 @@
     }
     attributeChangedCallback(name) {
       if (name === "date")
-        this.#dateIsImplicit = false;
+        this.#dateIsImplicit = !this.hasAttribute("date");
       if (this.isConnected)
         this.#queueRender();
       if ((name === "date" || name === "view") && this.#sourceRequest) {
@@ -7522,7 +7522,7 @@
       const next = merged;
       this.#stampPlacement(id);
       this.#events = this.#events.map((item, i) => i === index ? next : item);
-      this.#queueRender(true);
+      this.#queueRender("events-updated");
       return next;
     }
     removeEvent(id) {
@@ -7761,9 +7761,9 @@
     #announceLoading(loading) {
       emitCalendarEvent(this, "calendar:loading", { loading });
     }
-    #queueRender(eventUpdateOnly = false) {
+    #queueRender(reason = "structure") {
       this.#interactionRevision += 1;
-      if (!eventUpdateOnly)
+      if (reason !== "events-updated")
         this.#replaceRender = true;
       if (this.#batchDepth || this.#renderQueued)
         return;
@@ -7963,7 +7963,7 @@
         const target = [...this.querySelectorAll("[data-focus-key]")].find((node) => node.dataset.focusKey === focusKey);
         target?.focus({ preventScroll: true });
       }
-      emitCalendarEvent(this, "calendar:render", { view: this.view, dates: dates2, resources });
+      emitCalendarEvent(this, "calendar:render", { view: this.view, dates: dates2, resources, partial });
       const pending = this.#afterRenderQueue;
       this.#afterRenderQueue = [];
       for (const entry of pending)

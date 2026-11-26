@@ -121,6 +121,9 @@ validation reuses the range context's overlapping events for conflict checks.
 Dragging an event out of the calendar is the inverse gesture. During a
 timed drag, each column receives drops only on its visible time body.
 The scroller edge, sticky headers and time axis can cover parts of a column.
+Hit testing uses the painted tree (the element under the pointer in the
+calendar's root), not geometry alone, so an overlay that covers a column
+also removes it from the drop target.
 While the pointer is outside the visible time bodies, the dragged
 node carries `data-dropout`, which an application can style (a sibling
 parking panel glows via `:has()`), and releasing there dispatches

@@ -249,7 +249,7 @@ calendar.configure({
 
 `allDaySlot` controls the all-day lane in time grids. It defaults to `true`, and the lane renders only when an all-day event or background is visible in the current range (an empty lane takes no space). `false` hides all-day events/backgrounds from time grids deliberately; month and list remain date-driven and keep showing them.
 
-Everything here is set through `configure()` rather than through attributes. Content hooks cannot be attributes at all, and keeping the options that drive date derivation in one place avoids an attribute-versus-property precedence rule. Serializable options may still gain attributes later.
+Everything here is set through `configure()` rather than through attributes. Content hooks cannot be attributes at all, and keeping the options that drive date derivation in one place avoids an attribute-versus-property precedence rule. Serializable options may still gain attributes later. Time-grid bounds are the exception: `slot-min`, `slot-max` and `slot-duration` are attributes only, and `configure({ slotMin })` does not translate them.
 
 ## Sources
 
@@ -292,7 +292,8 @@ navigation methods, use `refetchEvents()` to load the new scope.
 Without a `date` attribute, the element anchors on today in the configured
 time zone and reflects that date on connection. A zone change recomputes
 this implicit anchor. Providing a `date` attribute or calling `gotoDate()`
-pins the civil date until the attribute is removed.
+pins the civil date until the attribute is removed; removal restores the
+implicit anchor, including its reflection on the next zone change.
 
 ```js
 calendar.setView("week")
@@ -704,7 +705,7 @@ calendar.addEventListener("calendar:loading", (event) => {
 });
 ```
 
-`calendar:render` fires once the rendered subtree exists, with `detail: { view, dates, resources }`. It is the supported way to decorate rendered columns; listeners that mutate state simply queue the next frame, like any other mutation.
+`calendar:render` fires once the rendered subtree exists, with `detail: { view, dates, resources, partial }`. It is the supported way to decorate rendered columns; listeners that mutate state simply queue the next frame, like any other mutation. `partial` is `true` when the renderer reconciled the existing subtree in place (`updateEvent()` in time grids or month) and `false` for a full rebuild. Because a partial render keeps existing nodes, decorators must be idempotent: re-apply their state to the current nodes instead of appending a new node on every event.
 
 A full render replaces the grid subtree. A time-grid render triggered only by `updateEvent()` reconciles timed segments in place: unchanged events keep their node, custom content and focus, while the changed event gets a fresh node and fresh handlers. The shell (scroller, headers, all-day lane, now indicator, external placement) stays mounted. A structural all-day change, `addEvent()`/`removeEvent()`, a refetch, a navigation or a view change still rebuilds the subtree. When focus was inside an event node, the calendar restores it to the same rendered segment (event id + date + resource) after a rebuild, and preserves `scrollTop`/`scrollLeft`; focus outside the calendar is never stolen. Replacing the node under an active pointer gesture cancels that gesture, removes its mirror/ghost, and commits nothing. An in-place update of another event does not interrupt the gesture: its layout edges are refreshed and cached validation is re-evaluated against the new state. Applications that need transactional gestures should not trigger a structural render mid-drag.
 

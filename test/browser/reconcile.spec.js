@@ -393,10 +393,15 @@ test("an all-day update falls back to a full grid render", async ({ page }) => {
 });
 
 test("a partial update leaves scroll and the now indicator in place", async ({ page }) => {
+  // Pin the clock outside the default 08:00-18:00 bounds: the full-day
+  // attributes below are what keep the indicator visible, so the test does
+  // not silently pass before 18:00 or depend on the day it runs.
+  await page.clock.setFixedTime(new Date("2026-11-26T20:00:00Z"));
   await setupEvents(page, [A, B]);
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    calendar.configure({ slotMin: "00:00", slotMax: "24:00" });
+    calendar.setAttribute("slot-min", "00:00");
+    calendar.setAttribute("slot-max", "24:00");
     calendar.date = "2026-11-26";
   });
   await page.evaluate(
@@ -427,4 +432,27 @@ test("a partial update leaves scroll and the now indicator in place", async ({ p
   }));
   expect(result.scrollTop).toBe(scrollTop);
   expect(result.now).toBe(1);
+});
+
+test("calendar:render reports whether the render was partial", async ({ page }) => {
+  await setupEvents(page, [A, B]);
+  const partials = await page.evaluate(async () => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    /** @type {boolean[]} */
+    const seen = [];
+    calendar.addEventListener("calendar:render", (/** @type {CustomEvent} */ event) =>
+      seen.push(event.detail.partial),
+    );
+    calendar.addEvent({
+      id: "c",
+      title: "Gamma",
+      start: "2026-09-03T14:00:00+02:00[Europe/Brussels]",
+      end: "2026-09-03T15:00:00+02:00[Europe/Brussels]",
+    });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    calendar.updateEvent({ id: "a", title: "Alpha updated" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return seen;
+  });
+  expect(partials).toEqual([false, true]);
 });

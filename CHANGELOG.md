@@ -11,7 +11,8 @@
   outside the navigation methods.
 * The implicit anchor date follows the configured time zone, including when
   the application configures the calendar after mounting it. Explicit dates
-  stay pinned.
+  stay pinned. Removing the `date` attribute resumes the implicit anchor and
+  its reflection on the next zone change.
 * `calendar:viewchange`, `calendar:datechange`, and `calendar:loaderror` now
   bubble and cross shadow boundaries.
 * Sticky resource, group, and day headers stack using the rendered row
@@ -42,6 +43,8 @@
 
 ### Changed
 
+* `calendar:render` reports `detail.partial`, so decorators can distinguish
+  an in-place event reconciliation from a full subtree rebuild.
 * In month view, `updateEvent()` preserves the DOM, custom content, and
   keyboard focus of unchanged chips that stay visible with the same
   temporal state.

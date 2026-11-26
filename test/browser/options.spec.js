@@ -408,7 +408,19 @@ test("the implicit anchor uses the configured zone and explicit navigation pins 
     calendar.configure({ timeZone: "UTC" });
     const pinned = String(calendar.date);
     calendar.removeAttribute("date");
-    return { utc, zoned, implicitAttribute, pinned, restored: String(calendar.date) };
+    const restored = String(calendar.date);
+    // Removal restores the implicit anchor, including its reflection on the
+    // next zone change.
+    calendar.configure({ timeZone: "Pacific/Kiritimati" });
+    return {
+      utc,
+      zoned,
+      implicitAttribute,
+      pinned,
+      restored,
+      restoredAttribute: String(calendar.getAttribute("date")),
+      restoredZoned: String(calendar.date),
+    };
   });
   expect(dates).toEqual({
     utc: "2026-09-03",
@@ -416,6 +428,8 @@ test("the implicit anchor uses the configured zone and explicit navigation pins 
     implicitAttribute: "2026-09-04",
     pinned: "2026-09-04",
     restored: "2026-09-03",
+    restoredAttribute: "2026-09-04",
+    restoredZoned: "2026-09-04",
   });
 });
 
