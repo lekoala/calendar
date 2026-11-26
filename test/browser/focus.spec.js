@@ -38,13 +38,18 @@ for (const resourceAware of [false, true]) {
         if (!box || !day) throw new Error("expected resize geometry");
         const x = box.x + box.width / 2;
         const y = box.y + box.height / 2;
+        // Narrow viewports keep min-width columns behind a horizontal
+        // scroller: the destination day's centre can sit past the scroller's
+        // right edge, where no element receives the pointer. Its visible
+        // sliver still belongs to that civil day.
+        const scroller = await page.locator(".cv-scroller").boundingBox();
+        if (!scroller) throw new Error("expected the calendar scroller");
+        const targetX = Math.min(day.x + day.width / 2, scroller.x + scroller.width - 1);
         await page.mouse.move(x, y);
         await page.mouse.down();
-        await page.mouse.move(
-          allDay ? day.x + day.width / 2 : x,
-          allDay ? y : y + (edge === "start" ? -30 : 30),
-          { steps: 5 },
-        );
+        await page.mouse.move(allDay ? targetX : x, allDay ? y : y + (edge === "start" ? -30 : 30), {
+          steps: 5,
+        });
         await expect(eventNode).not.toHaveAttribute("style", originalGeometry ?? "");
         await page.evaluate(() => {
           /** @type {any} */ (document.querySelector("calendar-view")).updateEvent({

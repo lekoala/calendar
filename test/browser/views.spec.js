@@ -132,6 +132,10 @@ test("a month event update preserves another chip, its content and keyboard focu
     };
   });
   expect(result).toEqual({ keptNode: true, keptContent: true, keptFocus: true, order: ["Keep", "After"] });
+  // Assert the preserved focus explicitly, then let the locator own the key
+  // dispatch so a transient focus transfer on a loaded runner cannot swallow
+  // it.
+  await expect(chip).toBeFocused();
   const pressed = page.evaluate(
     () =>
       new Promise((resolve) => {
@@ -144,7 +148,7 @@ test("a month event update preserves another chip, its content and keyboard focu
         );
       }),
   );
-  await page.keyboard.press("Enter");
+  await chip.press("Enter");
   expect(await pressed).toBe("keep");
 });
 

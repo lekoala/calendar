@@ -9,7 +9,15 @@ function flush(page) {
 }
 
 for (const scenario of ["resource", "hidden", "continuation"]) {
-  test(`all-day drag uses civil displacement: ${scenario}`, async ({ page }) => {
+  test(`all-day drag uses civil displacement: ${scenario}`, async ({ page, isMobile }) => {
+    // Narrow viewports keep min-width columns behind a horizontal scroller:
+    // the dragged bar's resource and the destination resource are never on
+    // screen together. Reaching across is the autoscroll gesture, not a
+    // direct drop.
+    test.skip(
+      Boolean(isMobile) && scenario === "resource",
+      "source and target resource columns never share a 390px viewport",
+    );
     await openDemo(page, "basic");
     await page.evaluate((kind) => {
       const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
@@ -40,10 +48,15 @@ for (const scenario of ["resource", "hidden", "continuation"]) {
       const source = bodies[kind === "continuation" ? 1 : 0].getBoundingClientRect();
       const target =
         bodies[kind === "resource" ? 3 : kind === "continuation" ? 2 : 1].getBoundingClientRect();
+      const scroller = document.querySelector(".cv-scroller")?.getBoundingClientRect();
       return {
         x: source.x + source.width / 2,
         y: bar.y + bar.height / 2,
-        target: target.x + target.width / 2,
+        // Narrow viewports keep min-width columns behind a horizontal
+        // scroller: the destination's centre can sit past its right edge,
+        // where no element receives the pointer. The visible sliver still
+        // belongs to that day.
+        target: Math.min(target.x + target.width / 2, (scroller?.right ?? innerWidth) - 1),
       };
     }, scenario);
     await page.mouse.move(points.x, points.y);
