@@ -48,12 +48,61 @@ export function bindExternalPlacement({
   let externalGhost = null;
   /** @type {{ source: ReturnType<TimeGridHost["getExternalDrag"]>, revision: number, key: string, placement: ReturnType<typeof resolveExternal> } | null} */
   let externalPreview = null;
+  /** @type {HTMLElement | null} */
+  let highlightedColumn = null;
+
+  /** @param {number} index */
+  function highlightLaneColumn(index) {
+    const day = bodies[index]?.body.closest(".cv-day");
+    if (highlightedColumn === day) return;
+    clearLaneHighlight();
+    if (!(day instanceof HTMLElement)) return;
+    day.classList.add("cv-external-lane-target");
+    highlightedColumn = day;
+  }
+
+  /** @returns {void} */
+  function clearLaneHighlight() {
+    highlightedColumn?.classList.remove("cv-external-lane-target");
+    highlightedColumn = null;
+  }
 
   /** @returns {void} */
   function removeExternalGhost() {
     externalGhost?.node.remove();
     externalGhost = null;
     externalPreview = null;
+    clearLaneHighlight();
+  }
+
+  /**
+   * Column exposed under the pointer, ignoring sticky headers and areas
+   * clipped by the scroller. A declared all-day source may skip the lane,
+   * but not the requirement that its target is a real day column.
+   *
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {number}
+   */
+  function visibleColumnAtPoint(clientX, clientY) {
+    const day = elementAtPoint(root, clientX, clientY)?.closest(".cv-day");
+    if (!day) return -1;
+    return bodies.findIndex(({ body }) => body.closest(".cv-day") === day);
+  }
+
+  /**
+   * Lane column exposed under the pointer. Unlike a rect overlap check this
+   * ignores the lane when sticky headers or the scroller clip it.
+   *
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {number}
+   */
+  function laneColumnAtPoint(clientX, clientY) {
+    if (!lane.isConnected) return -1;
+    const hit = elementAtPoint(lane, clientX, clientY);
+    if (!hit || !lane.contains(hit)) return -1;
+    return columnIndexAtX(clientX);
   }
 
   /**
@@ -98,6 +147,7 @@ export function bindExternalPlacement({
    *   target: { date: Temporal.PlainDate, time: null, resourceId: string | null, allDay: boolean },
    *   ok: boolean,
    *   reason: string | null,
+   *   highlight: boolean,
    * } | null}
    */
   function resolveExternal(clientX, clientY, refresh = false) {
@@ -119,9 +169,16 @@ export function bindExternalPlacement({
       externalPreview = { source: external, revision, key, placement };
       return placement;
     };
-    if (meta.allDay === true || (columnIndexAtX(clientX) >= 0 && isOverLane(clientY))) {
-      const index = columnIndexAtX(clientX);
+    // A declared all-day source may target a visibility-eligible day column
+    // without requiring the lane to exist. A timed source only enters the
+    // lane when the lane itself is exposed under the pointer.
+    const laneIndex = laneColumnAtPoint(clientX, clientY);
+    const allDayIndex =
+      meta.allDay === true && laneIndex < 0 ? visibleColumnAtPoint(clientX, clientY) : laneIndex;
+    if (meta.allDay === true || laneIndex >= 0) {
+      const index = allDayIndex;
       if (index < 0) return null;
+      const highlight = meta.allDay === true && laneIndex < 0;
       const key = `lane:${index}`;
       const previous = cached(key);
       if (previous) return previous;
@@ -144,6 +201,7 @@ export function bindExternalPlacement({
           target: { date: column.date, time: null, resourceId, allDay: true },
           ok: false,
           reason: policy.reason,
+          highlight,
         });
       }
       const validity = externalTargetValidity(
@@ -159,6 +217,7 @@ export function bindExternalPlacement({
         target: { date: column.date, time: null, resourceId, allDay: true },
         ok: validity.ok,
         reason: validity.reason,
+        highlight,
       });
     }
     const hit = gridHit(clientX, clientY);
@@ -220,12 +279,6 @@ export function bindExternalPlacement({
     });
   }
 
-  /** @param {number} clientY */
-  function isOverLane(clientY) {
-    const rect = lane.getBoundingClientRect();
-    return rect.height > 0 && clientY >= rect.top && clientY <= rect.bottom;
-  }
-
   /**
    * Paint (or clear) the placement ghost. Structural or policy invalidity
    * marks it `cv-invalid` instead of hiding the target.
@@ -239,6 +292,11 @@ export function bindExternalPlacement({
       return;
     }
     const external = host.getExternalDrag();
+    if (placement.kind === "lane" && placement.highlight) {
+      highlightLaneColumn(placement.index);
+    } else {
+      clearLaneHighlight();
+    }
     let node = externalGhost?.node;
     if (!node?.isConnected || externalGhost?.kind !== placement.kind) {
       node?.remove();
@@ -263,7 +321,7 @@ export function bindExternalPlacement({
       label.className = "";
       node.style.gridColumn = `${placement.index + 2} / ${placement.index + 3}`;
       node.style.gridRow = "1 / -1";
-      if (node.parentNode !== lane) lane.append(node);
+      if (!placement.highlight && lane.isConnected && node.parentNode !== lane) lane.append(node);
     }
     node.classList.toggle("cv-invalid", !placement.ok);
     if (placement.reason) node.dataset.reason = placement.reason;

@@ -29,14 +29,33 @@
   lane. Resizes validate the current target and policy at release.
 * Timed selections and resizes resolve the current slot in their original
   column at release and cancel outside that column's visible time body.
+* External all-day placement uses the lane actually exposed under the
+  pointer. Sticky headers and clipped areas are not valid lane targets, and a
+  source declared `allDay: true` no longer becomes valid only because its
+  pointer x-coordinate matches a column: it must land on a visible day
+  column. When the lane is not rendered, that column is highlighted instead
+  of receiving a lane ghost.
 
 ### Changed
 
 * In month view, `updateEvent()` preserves the DOM, custom content, and
   keyboard focus of unchanged chips that stay visible with the same
   temporal state.
+* In time grids, `updateEvent()` reconciles timed segments in place: an
+  unchanged event keeps its node, custom content and focus while its
+  geometry and neighbor magnetism are refreshed. A changed event gets a fresh
+  node and handlers. Structural all-day changes, add/remove mutations,
+  refetches and navigation still rebuild the view.
+* A render triggered by `updateEvent()` of another event no longer cancels an
+  active drag or resize. The gesture continues against the refreshed layout
+  and its cached validation is re-evaluated. Updating the manipulated event,
+  or a full rebuild, disposes the gesture explicitly before removing its
+  node.
 * Time grids calculate timed segments and overlap geometry before rendering.
   Pointer and native drag-and-drop share the external placement controller.
+* Event and all-day gestures share one pointer lifecycle primitive for
+  pointer identity, capture, movement threshold, cancellation and cleanup.
+  The all-day lane is rendered by its own module.
 
 ## 0.4.0 - 2026-11-06
 

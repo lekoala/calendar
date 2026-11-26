@@ -643,13 +643,27 @@ test("resizing from the top moves the start", async ({ page }) => {
 test("pointercancel aborts a drag without dispatching", async ({ page }) => {
   await openDemo(page, "basic");
   await trackMoves(page);
+  // The pointer id is the engine's to choose; read it off the real gesture so
+  // the synthetic cancel targets the active pointer.
+  await page.evaluate(() => {
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        /** @type {any} */ (window).pointerId = event.pointerId;
+      },
+      { capture: true, once: true },
+    );
+  });
   const box = await eventBox(page, "a");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 40, { steps: 4 });
   await page.evaluate(() => {
     /** @type {any} */ (document.querySelector('[data-event-id="a"]')).dispatchEvent(
-      new PointerEvent("pointercancel", { bubbles: true }),
+      new PointerEvent("pointercancel", {
+        bubbles: true,
+        pointerId: /** @type {any} */ (window).pointerId,
+      }),
     );
   });
   await page.mouse.up();

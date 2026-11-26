@@ -211,8 +211,9 @@ listener cleanup.
 
 ## Loading state
 
-`calendar:loading` brackets every source run, including aborted/superseded
-ones:
+`calendar:loading` reports the busy state of the newest source run. A
+superseded or aborted run never reports `false` while a newer one is in
+flight; only the newest request settles the state:
 
 ```js
 el.addEventListener("calendar:loading", (event) => {

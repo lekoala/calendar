@@ -24,4 +24,15 @@ export declare function emitCalendarEvent<T>(target: EventTarget, name: string, 
  * @param {number} y
  */
 export declare function elementAtPoint(origin: Element, x: number, y: number): Element | null;
+/**
+ * Dispatch a cancelable context intent. When the application handles the
+ * intent (`preventDefault()` on the dispatched event), the native browser
+ * menu is suppressed; otherwise it is left alone.
+ *
+ * @param {Element} target
+ * @param {object} detail
+ * @param {Event} nativeEvent
+ * @returns {void}
+ */
+export declare function dispatchContextMenu(target: Element, detail: object, nativeEvent: Event): void;
 //# sourceMappingURL=dom.d.ts.map

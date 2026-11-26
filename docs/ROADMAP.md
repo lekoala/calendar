@@ -41,8 +41,10 @@ Shipped in 0.1:
 
 Deliberately deferred (revisit only with a concrete use case):
 
-- keyed DOM reconciliation for time grids and list — month already preserves unchanged chips on individual updates;
-- a consolidated pointer engine;
+- keyed DOM reconciliation for add/remove/refetch and list — time-grid
+  `updateEvent()` renders already preserve unchanged timed segments; month
+  preserves unchanged chips;
+- further consolidation of selection gestures into the pointer primitive;
 - density policies per view: slot-row policy, `datesAboveResources`;
 - source-range caching.
 
@@ -356,7 +358,7 @@ Adoption and interaction completeness, not new views:
 
 Deferred again, with no version commitment: empty all-day lane selection,
 month multi-day spanning bars, timed↔all-day conversion, framework packages,
-empty-lane configuration, and any renderer reconciler.
+empty-lane configuration, and reconciliation for add/remove/refetch and list.
 
 ## Post-0.x candidates (revisit only with a use case)
 

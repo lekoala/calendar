@@ -23,11 +23,11 @@ Application
    │  ├─ collision/overlap layout
    │  └─ resource/date column model
    │
-    ├─ Renderers
-    │  ├─ timeGrid
-    │  ├─ resourceTimeGrid
-    │  ├─ month (summary day grid, solo)
-    │  └─ list (chronological groups, solo)
+   ├─ Renderers
+   │  ├─ timeGrid
+   │  ├─ resourceTimeGrid
+   │  ├─ month (summary day grid, solo)
+   │  └─ list (chronological groups, solo)
    │
    └─ Interaction engine
       ├─ hover hit test
@@ -47,8 +47,13 @@ rendering it. Pointer and native external placement share a controller that
 uses the grid's hit tests.
 
 Month chips reconcile in place when only an existing event is updated.
-Time grids, list and month changes that affect the whole view still rebuild
-their DOM. The element restores focus by segment key when a node is replaced.
+Time-grid segments use the same identity rule for `updateEvent()` renders:
+unchanged segments keep their node, custom content and focus, while the
+changed event is recreated. The grid shell stays mounted. Structural all-day
+changes, add/remove mutations, refetches and navigation still rebuild the
+whole view. When a node is replaced, the element restores focus by segment
+key; when the node under an active gesture is replaced, the gesture is
+disposed explicitly before removal.
 
 ## View state
 

@@ -587,6 +587,108 @@ test("dropping on the all-day lane places a civil anchor", async ({ page }) => {
   });
 });
 
+test("a declared all-day source targets a visible column without a lane", async ({ page }) => {
+  await openDemo(page, "basic");
+  await expect(page.locator(".cv-day")).toHaveCount(3);
+  // No all-day content: the lane takes no space and is not rendered.
+  await expect(page.locator(".cv-allday")).toHaveCount(0);
+  await injectSource(page, { kind: "occurrence", ref: "all-day" }, { allDay: true, title: "Closure" });
+  const point = await slotPoint(page, { date: "2026-09-04", time: "10:00" });
+
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
+  const target = page.locator('.cv-day[data-date="2026-09-04"].cv-external-lane-target');
+  await expect(target).toHaveCount(1);
+  await expect(page.locator(".cv-external-ghost-lane")).toHaveCount(0);
+
+  const detail = await page.evaluate(async ({ x, y }) => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    return new Promise((resolve) => {
+      calendar.addEventListener(
+        "calendar:externaldrop",
+        (/** @type {any} */ event) =>
+          resolve({
+            date: String(event.detail.date),
+            time: event.detail.time ?? null,
+            allDay: event.detail.allDay,
+            resourceId: event.detail.resourceId ?? null,
+          }),
+        { once: true },
+      );
+      /** @type {any} */ (globalThis).__extDrop(x, y);
+    });
+  }, point);
+
+  expect(detail).toEqual({
+    date: "2026-09-04",
+    time: null,
+    allDay: true,
+    resourceId: null,
+  });
+  await expect(page.locator(".cv-external-lane-target")).toHaveCount(0);
+});
+
+test("a declared all-day source refuses a sticky header target", async ({ page }) => {
+  await openDemo(page, "basic");
+  await expect(page.locator(".cv-day")).toHaveCount(3);
+  await injectSource(page, { kind: "occurrence" }, { allDay: true });
+  const header = await page.locator(".cv-day-header").first().boundingBox();
+  if (!header) throw new Error("Expected the first day header");
+  const point = { x: header.x + header.width / 2, y: header.y + header.height / 2 };
+
+  await page.evaluate(({ x, y }) => {
+    /** @type {any} */ (globalThis).__headerDropped = false;
+    document.querySelector("calendar-view")?.addEventListener("calendar:externaldrop", () => {
+      /** @type {any} */ (globalThis).__headerDropped = true;
+    });
+    /** @type {any} */ (globalThis).__extOver(x, y);
+  }, point);
+  await expect(page.locator(".cv-external-lane-target")).toHaveCount(0);
+  await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extDrop(x, y), point);
+  expect(await page.evaluate(() => /** @type {any} */ (globalThis).__headerDropped)).toBe(false);
+});
+
+test("a timed external source ignores a lane hidden under sticky headers", async ({ page }) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.addEvent({ id: "ad", allDay: true, start: "2026-09-03", end: "2026-09-04" });
+  });
+  await flushRender(page);
+  await expect(page.locator(".cv-allday")).toBeVisible();
+  await injectSource(page, { kind: "occurrence" }, { duration: 60 });
+
+  const point = await page.evaluate(() => {
+    const scroller = /** @type {HTMLElement} */ (document.querySelector(".cv-scroller"));
+    const lane = /** @type {HTMLElement} */ (document.querySelector(".cv-allday"));
+    const header = /** @type {HTMLElement} */ (document.querySelector(".cv-day-header"));
+    const body = /** @type {HTMLElement} */ (document.querySelector(".cv-day-body"));
+    const bodyRect = body.getBoundingClientRect();
+    const x = bodyRect.left + bodyRect.width / 2;
+    // Find a scroll position where the point is inside the lane's rect but
+    // the sticky header is the element actually exposed there.
+    for (let scroll = 0; scroll <= scroller.scrollHeight; scroll += 4) {
+      scroller.scrollTop = scroll;
+      const headerRect = header.getBoundingClientRect();
+      const laneRect = lane.getBoundingClientRect();
+      const y = headerRect.top + headerRect.height / 2;
+      if (y < laneRect.top || y > laneRect.bottom) continue;
+      const hit = document.elementFromPoint(x, y);
+      if (hit?.closest(".cv-day-header")) {
+        return { x, y, insideLaneRect: true, hit: hit.className, scrollTop: scroller.scrollTop };
+      }
+    }
+    return { x, y: 0, insideLaneRect: false, hit: null, scrollTop: scroller.scrollTop };
+  });
+  expect(point.insideLaneRect).toBe(true);
+  expect(String(point.hit)).toContain("cv-day-header");
+
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
+  await expect(page.locator(".cv-external-ghost-lane")).toHaveCount(0);
+  await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+});
+
 test("a non-droppable resource refuses the drop", async ({ page }) => {
   await openDemo(page, "resources");
   await expect(page.locator(".cv-day").first()).toBeVisible();

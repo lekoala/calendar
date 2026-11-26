@@ -11,23 +11,22 @@ import {
 import { defaultSnapThreshold, eventGeometry, findSnapTarget, snapMinutes } from "../core/geometry.js";
 import { hitTest } from "../core/hit.js";
 import { DEFAULT_LABELS } from "../core/labels.js";
-import { layoutDaySegments } from "../core/layout.js";
 import { isMovable, isResizable } from "../core/model.js";
 import {
-  backgroundAppliesToColumn,
   eventBelongsToColumn,
-  getDaySpans,
   getResourceColumns,
   getTimeGridColumns,
   groupResources,
 } from "../core/resources.js";
-import { describeEvent, eventOverlapsDate, sliceTimedEventForDay, toZonedDateTime } from "../core/slicing.js";
+import { describeEvent, sliceTimedEventForDay, toZonedDateTime } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
 import { deriveTimedColumn } from "../core/time-grid-model.js";
+import { createAllDayLane } from "./all-day-lane.js";
 import { createAutoscroller } from "./autoscroll.js";
-import { applyContent, elementAtPoint, emitCalendarEvent } from "./dom.js";
+import { applyContent, dispatchContextMenu, elementAtPoint, emitCalendarEvent } from "./dom.js";
 import { bindExternalPlacement } from "./external-placement.js";
 import { startNowIndicator } from "./now-indicator.js";
+import { startPointerGesture } from "./pointer-gesture.js";
 
 /**
  * @typedef {object} ExternalDropTarget
@@ -116,7 +115,7 @@ import { startNowIndicator } from "./now-indicator.js";
  * @param {(info: object) => unknown} [input.resourceHeaderContent]
  * @param {(info: object) => unknown} [input.resourceGroupContent]
  * @param {(info: object) => unknown} [input.slotLabelContent]
- * @returns {DocumentFragment}
+ * @returns {{ fragment: DocumentFragment, update: (events: import("../core/model.js").NormalizedEvent[], now: Temporal.ZonedDateTime) => boolean, dispose: () => void }}
  */
 export function renderTimeGrid({
   dates,
@@ -157,6 +156,15 @@ export function renderTimeGrid({
   // the exact same tracks when it spans them. The axis width is authored CSS
   // (`--calendar-axis-size`); the renderer only names the track.
   const gridTemplate = `var(--calendar-axis-size) repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
+
+  /** @param {number} clientX @returns {number} */
+  const columnIndexAtX = (clientX) => {
+    for (let index = 0; index < bodies.length; index += 1) {
+      const rect = bodies[index].body.getBoundingClientRect();
+      if (clientX >= rect.left && clientX < rect.right) return index;
+    }
+    return -1;
+  };
 
   // Grouped resource headers row: one header per group spanning its member
   // columns, above the resource row. Rendered only when at least one real
@@ -217,7 +225,7 @@ export function renderTimeGrid({
   const timeZone = options.timeZone ?? "UTC";
   // Shared render instant: the now indicator, temporal states and interaction
   // policy all read the same value, so one render never disagrees with itself.
-  const renderNow = now ?? Temporal.Now.zonedDateTimeISO(timeZone);
+  let renderNow = now ?? Temporal.Now.zonedDateTimeISO(timeZone);
   /**
    * @param {import("../core/model.js").NormalizedEvent} event
    * @returns {import("../core/temporal.js").TemporalState}
@@ -238,10 +246,9 @@ export function renderTimeGrid({
   // always covered; a plain click proposes defaultTimedEventDuration.
   /** @type {ActiveSelection | null} */
   let selecting = null;
-  let suppressClick = false;
-  // Set when a press-and-hold fires: the pointer release that follows must
-  // not start a drag, commit a move, or leak a click/select.
-  let longPressConsumed = false;
+  // Shared by timed and all-day interactions so a long press or a committed
+  // gesture suppresses exactly one residual click across both planes.
+  const interaction = { suppressClick: false, longPressConsumed: false };
 
   const LONG_PRESS_MS = 550;
   const LONG_PRESS_PX = 12;
@@ -260,28 +267,6 @@ export function renderTimeGrid({
     } catch {
       // Capture is an enhancement, not a requirement.
     }
-  }
-
-  /**
-   * Dispatch a cancelable context intent. When the application handles the
-   * intent (`preventDefault()` on the dispatched event), the native browser
-   * menu is suppressed; otherwise it is left alone.
-   *
-   * @param {Element} target
-   * @param {object} detail
-   * @param {Event} nativeEvent
-   * @returns {void}
-   */
-  function dispatchContextMenu(target, detail, nativeEvent) {
-    const handled = !target.dispatchEvent(
-      new CustomEvent("calendar:eventcontextmenu", {
-        bubbles: true,
-        composed: true,
-        cancelable: true,
-        detail: { ...detail, nativeEvent },
-      }),
-    );
-    if (handled) nativeEvent.preventDefault?.();
   }
 
   /**
@@ -315,8 +300,8 @@ export function renderTimeGrid({
       timer = window.setTimeout(() => {
         timer = 0;
         if (!host.isConnected()) return;
-        longPressConsumed = true;
-        suppressClick = true;
+        interaction.longPressConsumed = true;
+        interaction.suppressClick = true;
         onFire(nativeEvent);
       }, LONG_PRESS_MS);
     });
@@ -415,626 +400,34 @@ export function renderTimeGrid({
     empty.textContent = labels.noResources;
     root.append(empty);
     fragment.append(root);
-    return fragment;
+    return { fragment, update: () => false, dispose: () => {} };
   }
 
   // --- All-day lane -------------------------------------------------------
   // Timed events and civil all-day events are separate planes. The lane uses
   // the same columns as the time grid, so a bar spans civil days inside its
   // resource block and never crosses into the neighbouring room.
-  /**
-   * @param {{ start: unknown, end: unknown, allDay?: boolean }} range
-   * @returns {boolean}
-   */
-  const overVisibleDays = (range) => dates.some((date) => eventOverlapsDate(range, date, timeZone));
-
-  /**
-   * @param {{ start: unknown, end: unknown, resourceId?: string | null }} range
-   * @param {typeof eventBelongsToColumn} applies
-   */
-  const daySpans = (range, applies) => getDaySpans(columns, range, applies, timeZone);
-
-  const allDaySegments = events
-    .filter((event) => event.allDay === true && overVisibleDays(event))
-    .flatMap((event) =>
-      daySpans(event, eventBelongsToColumn).map((span) => ({
-        event,
-        resourceId: resourceView ? (event.resourceId ?? null) : null,
-        ...span,
-      })),
-    );
-  const allDayBackgroundSegments = backgrounds
-    .filter((background) => background.allDay === true && overVisibleDays(background))
-    .flatMap((background) =>
-      daySpans(background, backgroundAppliesToColumn).map((span) => ({
-        background,
-        ...span,
-      })),
-    );
-
-  const showAllDay =
-    options.allDaySlot !== false && (allDaySegments.length > 0 || allDayBackgroundSegments.length > 0);
-  /** @type {Array<{ bar: HTMLButtonElement, event: import("../core/model.js").NormalizedEvent, startDay: number, endDay: number }>} */
-  const allDayBars = [];
-
-  /**
-   * Column under a pointer x-coordinate, or the first column when the pointer
-   * is over the axis gutter. Read after render, when `bodies` is populated.
-   *
-   * @param {number} clientX
-   * @returns {TimeGridColumn}
-   */
-  const columnAtX = (clientX) => {
-    for (let index = 0; index < bodies.length; index += 1) {
-      const rect = bodies[index].body.getBoundingClientRect();
-      if (clientX >= rect.left && clientX < rect.right) return columns[index];
-    }
-    return columns[0];
-  };
-
-  /** @param {number} clientX @returns {number} */
-  const columnIndexAtX = (clientX) => {
-    for (let index = 0; index < bodies.length; index += 1) {
-      const rect = bodies[index].body.getBoundingClientRect();
-      if (clientX >= rect.left && clientX < rect.right) return index;
-    }
-    return -1;
-  };
-
-  /** @param {number} x @param {number} y */
-  function allDayColumnAtPoint(x, y) {
-    const hit = elementAtPoint(lane, x, y);
-    return hit && lane.contains(hit) ? columnIndexAtX(x) : -1;
-  }
-
-  /**
-   * Day-preserving move of one all-day bar, shared by pointer drag and
-   * Shift+arrows. Boundaries stay `Temporal.PlainDate`, so both commute
-   * through the same optimistic commit as every other move.
-   *
-   * @param {import("../core/model.js").NormalizedEvent} evt
-   * @param {number} days
-   * @param {string | null} resourceId
-   * @param {Event | null} nativeEvent
-   * @returns {import("../core/model.js").NormalizedEvent | null}
-   */
-  const commitAllDayMove = (evt, days, resourceId, nativeEvent) => {
-    if (!(evt.start instanceof Temporal.PlainDate)) return null;
-    const start = /** @type {Temporal.PlainDate} */ (evt.start);
-    const end = /** @type {Temporal.PlainDate} */ (evt.end);
-    return host.commitEventMove({
-      event: evt,
-      previous: { start: evt.start, end: evt.end, resourceId: evt.resourceId ?? null },
-      current: { start: start.add({ days }), end: end.add({ days }), resourceId },
-      nativeEvent,
-    });
-  };
-
-  /**
-   * Pointer drag of an all-day bar: day-snapped, whole span preserved, can
-   * cross resources. The original bar stays put while a mirror follows the
-   * pointer; a non-droppable target reverts silently.
-   *
-   * @param {HTMLButtonElement} bar
-   * @param {import("../core/model.js").NormalizedEvent} event
-   * @param {number} startDay
-   * @param {PointerEvent} nativeEvent
-   * @returns {void}
-   */
-  function beginAllDayDrag(bar, event, startDay, nativeEvent) {
-    if (nativeEvent.button !== 0) return;
-    if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
-      return;
-    }
-    // A refused start never arms a drag: no mirror, no capture.
-    if (event.start instanceof Temporal.PlainDate && event.end instanceof Temporal.PlainDate) {
-      const startGate = host.checkInteraction({
-        action: "move",
-        event,
-        start: event.start,
-        end: event.end,
-        resourceId: event.resourceId ?? null,
-        allDay: true,
-      });
-      if (!startGate.ok) return;
-    }
-    tryCapture(bar, nativeEvent.pointerId);
-    const downX = nativeEvent.clientX;
-    const downY = nativeEvent.clientY;
-    let moved = false;
-    /** @type {HTMLButtonElement | null} */
-    let mirror = null;
-    // Last evaluated destination (day index) and its policy decision.
-    // Seeded with the entry day so the first identical snap skips.
-    const grabbedColumn = columnIndexAtX(downX);
-    const origin = columns[grabbedColumn < 0 ? startDay : grabbedColumn];
-    let laneKey = grabbedColumn;
-    let laneOk = true;
-
-    /** @param {PointerEvent} moveEvent @returns {void} */
-    const onMove = (moveEvent) => {
-      if (longPressConsumed) return;
-      if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
-      if (!moved) return;
-      const index = allDayColumnAtPoint(moveEvent.clientX, moveEvent.clientY);
-      if (index < 0) {
-        mirror?.remove();
-        return;
-      }
-      if (!mirror) {
-        mirror = /** @type {HTMLButtonElement} */ (bar.cloneNode(true));
-        mirror.classList.add("cv-drag-mirror");
-        mirror.tabIndex = -1;
-        mirror.setAttribute("aria-hidden", "true");
-        bar.classList.add("cv-drag-source");
-      }
-      if (!mirror.isConnected) lane.append(mirror);
-      const droppable = columns[index].resource?.droppable !== false;
-      const days = columns[index].date.since(origin.date).days;
-      const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
-      const spans = daySpans(
-        {
-          start: /** @type {Temporal.PlainDate} */ (event.start).add({ days }),
-          end: /** @type {Temporal.PlainDate} */ (event.end).add({ days }),
-          resourceId,
-        },
-        eventBelongsToColumn,
-      );
-      const span = spans.find((entry) => index >= entry.startDay && index < entry.endDay);
-      mirror.style.gridColumn = span ? `${span.startDay + 2} / ${span.endDay + 2}` : `${index + 2}`;
-      mirror.style.gridRow = String(Number.parseFloat(bar.style.gridRow) || 1);
-      if (index !== laneKey) {
-        laneKey = index;
-        const dayDelta = columns[index].date.since(origin.date).days;
-        const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
-        /** @type {import("../core/policy.js").PolicyDecision} */
-        let decision = { ok: true, reason: null };
-        if (event.start instanceof Temporal.PlainDate && event.end instanceof Temporal.PlainDate) {
-          decision = host.checkInteraction({
-            action: "move",
-            event,
-            start: event.start.add({ days: dayDelta }),
-            end: event.end.add({ days: dayDelta }),
-            resourceId,
-            allDay: true,
-          });
-        }
-        laneOk = decision.ok;
-        if (decision.reason) mirror.dataset.reason = decision.reason;
-        else delete mirror.dataset.reason;
-      }
-      mirror.classList.toggle("cv-invalid", !droppable || !laneOk);
-    };
-
-    const cleanup = () => {
-      bar.removeEventListener("pointermove", onMove);
-      bar.removeEventListener("pointerup", onUp);
-      bar.removeEventListener("pointercancel", onCancel);
-      bar.removeEventListener("lostpointercapture", onCancel);
-      mirror?.remove();
-      bar.classList.remove("cv-drag-source");
-    };
-
-    /** @param {PointerEvent} upEvent @returns {void} */
-    const onUp = (upEvent) => {
-      cleanup();
-      if (longPressConsumed || !moved) return;
-      suppressClick = true;
-      const index = allDayColumnAtPoint(upEvent.clientX, upEvent.clientY);
-      if (index < 0 || columns[index].resource?.droppable === false) return;
-      const dayDelta = columns[index].date.since(origin.date).days;
-      // A column with no resource carries no new assignment: the bar keeps
-      // its current resource instead of being silently unassigned.
-      const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
-      const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
-      if (next) {
-        host.announce(describeEvent(next, timeZone, labels.untitledEvent));
-        host.refocusEvent(event.id);
-      }
-    };
-
-    /** @param {PointerEvent} _cancelEvent @returns {void} */
-    const onCancel = (_cancelEvent) => {
-      cleanup();
-      longPressConsumed = false;
-      suppressClick = false;
-    };
-
-    bar.addEventListener("pointermove", onMove);
-    bar.addEventListener("pointerup", onUp);
-    bar.addEventListener("pointercancel", onCancel);
-    bar.addEventListener("lostpointercapture", onCancel);
-  }
-
-  /**
-   * Resize one visible edge of an all-day bar. The event keeps its resource
-   * and civil bounds; the pointer only changes the visible start or the
-   * exclusive end. Edges hidden by the visible window or by hidden days are
-   * not reachable here.
-   *
-   * @param {HTMLButtonElement} bar
-   * @param {import("../core/model.js").NormalizedEvent} event
-   * @param {"start" | "end"} edge
-   * @param {PointerEvent} nativeEvent
-   * @returns {void}
-   */
-  function beginAllDayResize(bar, event, edge, nativeEvent) {
-    if (nativeEvent.button !== 0) return;
-    if (!(event.start instanceof Temporal.PlainDate) || !(event.end instanceof Temporal.PlainDate)) return;
-    const startDate = event.start;
-    const endDate = event.end;
-    const pressGate = host.checkInteraction({
-      action: "resize",
-      event,
-      start: startDate,
-      end: endDate,
-      resourceId: event.resourceId ?? null,
-      allDay: true,
-    });
-    if (!pressGate.ok) return;
-    nativeEvent.stopPropagation();
-    nativeEvent.preventDefault();
-    tryCapture(bar, nativeEvent.pointerId);
-    const savedGridColumn = bar.style.gridColumn;
-    const downX = nativeEvent.clientX;
-    const downY = nativeEvent.clientY;
-    let moved = false;
-    /** @type {string | null} */
-    let resizeKey = null;
-
-    /**
-     * Grid span for a civil range, clamped to the visible columns. All-day
-     * columns are contiguous within one resource block, so the first and
-     * last overlapping columns are enough.
-     *
-     * @param {Temporal.PlainDate} start
-     * @param {Temporal.PlainDate} end
-     * @returns {string | null}
-     */
-    const spanFor = (start, end) => {
-      let first = -1;
-      let last = -1;
-      for (let index = 0; index < columns.length; index += 1) {
-        if (!belongsToEventBlock(columns[index])) continue;
-        const date = columns[index].date;
-        if (first < 0 && Temporal.PlainDate.compare(date, start) >= 0) first = index;
-        if (Temporal.PlainDate.compare(date, end) < 0) last = index;
-      }
-      if (first < 0 || last < first) return null;
-      return `${first + 2} / ${last + 3}`;
-    };
-
-    /** @param {{ date: Temporal.PlainDate, resource?: { id: string } | null }} column */
-    const belongsToEventBlock = (column) =>
-      !resourceView || event.resourceId == null || column.resource?.id === event.resourceId;
-
-    /**
-     * Last visible day before a civil bound, used when the pointer moves
-     * past the event end. Clamping to `end - 1` could land on a hidden day
-     * with no column and no reachable handle.
-     *
-     * @param {Temporal.PlainDate} bound
-     * @returns {Temporal.PlainDate | null}
-     */
-    const lastVisibleBefore = (bound) => {
-      let found = null;
-      for (const column of columns) {
-        if (belongsToEventBlock(column) && Temporal.PlainDate.compare(column.date, bound) < 0) {
-          found = column.date;
-        }
-      }
-      return found;
-    };
-
-    /** @param {PointerEvent} pointer */
-    const resizeTarget = (pointer) => {
-      const index = allDayColumnAtPoint(pointer.clientX, pointer.clientY);
-      if (index < 0) return null;
-      // A resize never changes resources. Ignore columns outside the
-      // event's own resource block instead of silently reassigning it.
-      if (!belongsToEventBlock(columns[index])) return null;
-      const pointerDate = columns[index].date;
-      let nextStart = startDate;
-      let nextEnd = endDate;
-      if (edge === "start") {
-        if (Temporal.PlainDate.compare(pointerDate, endDate) >= 0) {
-          const last = lastVisibleBefore(endDate);
-          if (!last) return null;
-          nextStart = last;
-        } else {
-          nextStart = pointerDate;
-        }
-      } else {
-        const endFromDay = pointerDate.add({ days: 1 });
-        nextEnd =
-          Temporal.PlainDate.compare(endFromDay, startDate.add({ days: 1 })) < 0
-            ? startDate.add({ days: 1 })
-            : endFromDay;
-      }
-      const span = spanFor(nextStart, nextEnd);
-      if (!span) return null;
-      return { span, range: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null } };
-    };
-
-    const resetPreview = () => {
-      bar.style.gridColumn = savedGridColumn;
-      bar.classList.remove("cv-invalid");
-      delete bar.dataset.reason;
-      resizeKey = null;
-    };
-
-    /** @param {PointerEvent} moveEvent @returns {void} */
-    const onMove = (moveEvent) => {
-      if (longPressConsumed) return;
-      if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
-      if (!moved) return;
-      const target = resizeTarget(moveEvent);
-      if (!target) {
-        resetPreview();
-        return;
-      }
-      const { span, range } = target;
-      bar.style.gridColumn = span;
-      const key = `${range.start}:${range.end}`;
-      if (key !== resizeKey) {
-        resizeKey = key;
-        const decision = host.checkInteraction({
-          action: "resize",
-          event,
-          ...range,
-          allDay: true,
+  const allDay =
+    options.allDaySlot === false
+      ? { lane: document.createElement("div"), hasContent: false, dispose: () => {} }
+      : createAllDayLane({
+          columns,
+          dates,
+          events,
+          backgrounds,
+          resourceView,
+          timeZone,
+          labels,
+          gridTemplate,
+          host,
+          eventContent,
+          stateOf,
+          interaction,
+          columnIndexAtX,
+          watchLongPress,
         });
-        bar.classList.toggle("cv-invalid", !decision.ok);
-        if (decision.reason) bar.dataset.reason = decision.reason;
-        else delete bar.dataset.reason;
-      }
-    };
-
-    /** @param {PointerEvent} upEvent @returns {void} */
-    const onUp = (upEvent) => {
-      cleanup();
-      if (longPressConsumed || !moved) {
-        resetPreview();
-        return;
-      }
-      suppressClick = true;
-      const target = resizeTarget(upEvent);
-      resetPreview();
-      if (!target) return;
-      const result = host.commitEventResize({
-        event,
-        previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-        current: target.range,
-        nativeEvent: upEvent,
-      });
-      if (!result) return;
-      host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-      host.refocusEvent(event.id);
-    };
-
-    /** @param {PointerEvent} _cancelEvent @returns {void} */
-    const onCancel = (_cancelEvent) => {
-      cleanup();
-      resetPreview();
-      longPressConsumed = false;
-      suppressClick = false;
-    };
-
-    const cleanup = () => {
-      bar.removeEventListener("pointermove", onMove);
-      bar.removeEventListener("pointerup", onUp);
-      bar.removeEventListener("pointercancel", onCancel);
-      bar.removeEventListener("lostpointercapture", onCancel);
-    };
-
-    bar.addEventListener("pointermove", onMove);
-    bar.addEventListener("pointerup", onUp);
-    bar.addEventListener("pointercancel", onCancel);
-    bar.addEventListener("lostpointercapture", onCancel);
-  }
-
-  const lane = document.createElement("div");
-  lane.className = "cv-allday";
-  lane.style.gridTemplateColumns = gridTemplate;
-  lane.style.gridColumn = "1 / -1";
-  lane.style.gridRow = "2";
-  if (showAllDay) {
-    const corner = document.createElement("span");
-    corner.className = "cv-allday-corner";
-    corner.textContent = labels.allDaySlotLabel;
-    corner.setAttribute("aria-hidden", "true");
-    lane.append(corner);
-    for (const tint of allDayBackgroundSegments) {
-      const node = document.createElement("div");
-      node.className = ["cv-allday-background", ...(tint.background.classNames ?? [])].join(" ");
-      node.style.gridColumn = `${tint.startDay + 2} / ${tint.endDay + 2}`;
-      node.style.gridRow = "1 / -1";
-      lane.append(node);
-    }
-    for (const segment of layoutDaySegments(allDaySegments)) {
-      const { event, startDay, endDay } = segment;
-      const bar = document.createElement("button");
-      bar.type = "button";
-      bar.className = ["cv-allday-event", ...(event.classNames ?? [])].join(" ");
-      bar.dataset.eventId = event.id;
-      bar.dataset.focusKey = JSON.stringify([event.id, "allday", event.resourceId ?? null]);
-      const barState = stateOf(event);
-      bar.dataset.temporalState = barState;
-      bar.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-      bar.style.gridColumn = `${startDay + 2} / ${endDay + 2}`;
-      bar.style.gridRow = String(segment.row + 1);
-      const column = columns[startDay];
-      const content = eventContent?.({
-        event,
-        date: column.date,
-        resource: column.resource,
-        temporalState: barState,
-        element: bar,
-      });
-      if (!applyContent(bar, content)) bar.textContent = event.title ?? labels.untitledEvent;
-      lane.append(bar);
-      allDayBars.push({ bar, event, startDay, endDay });
-
-      // --- All-day interactions (v1) ---------------------------------------
-      // Native <button> activation covers pointer click and Enter/Space; a
-      // single capture-phase handler both dispatches eventclick and drops the
-      // residual click after a drag, resize or long-press. Creation inside
-      // the lane and timed<->all-day conversion stay deferred.
-      bar.addEventListener(
-        "click",
-        (nativeEvent) => {
-          if (suppressClick) {
-            suppressClick = false;
-            longPressConsumed = false;
-            nativeEvent.stopPropagation();
-            nativeEvent.preventDefault();
-            return;
-          }
-          const target = columnAtX(nativeEvent.clientX);
-          bar.dispatchEvent(
-            new CustomEvent("calendar:eventclick", {
-              bubbles: true,
-              composed: true,
-              cancelable: true,
-              detail: { event, date: target.date, resource: target.resource, nativeEvent },
-            }),
-          );
-        },
-        true,
-      );
-
-      bar.addEventListener("contextmenu", (nativeEvent) => {
-        const target = columnAtX(nativeEvent.clientX);
-        dispatchContextMenu(
-          bar,
-          {
-            event,
-            date: target.date,
-            resourceId: target.resource?.id ?? null,
-            clientX: nativeEvent.clientX,
-            clientY: nativeEvent.clientY,
-          },
-          nativeEvent,
-        );
-      });
-
-      watchLongPress(bar, (press) => {
-        const target = columnAtX(press.clientX);
-        dispatchContextMenu(
-          bar,
-          {
-            event,
-            date: target.date,
-            resourceId: target.resource?.id ?? null,
-            clientX: press.clientX,
-            clientY: press.clientY,
-          },
-          press,
-        );
-      });
-
-      const movable = isMovable(event, host.editable);
-      const resizable = isResizable(event, host.editable);
-
-      bar.addEventListener("keydown", (keyboardEvent) => {
-        if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
-        const key = keyboardEvent.key;
-        if (keyboardEvent.shiftKey) {
-          if (key !== "ArrowLeft" && key !== "ArrowRight") return;
-          if (!movable) return;
-          keyboardEvent.preventDefault();
-          const days = key === "ArrowRight" ? 1 : -1;
-          if (event.start instanceof Temporal.PlainDate && event.end instanceof Temporal.PlainDate) {
-            const gate = host.checkInteraction({
-              action: "move",
-              event,
-              start: event.start.add({ days }),
-              end: event.end.add({ days }),
-              resourceId: event.resourceId ?? null,
-              allDay: true,
-            });
-            if (!gate.ok) {
-              if (gate.reason) host.announce(gate.reason);
-              return;
-            }
-          }
-          const next = commitAllDayMove(event, days, event.resourceId ?? null, keyboardEvent);
-          if (next) host.announce(describeEvent(next, timeZone, labels.untitledEvent));
-          return;
-        }
-        if (!keyboardEvent.altKey || !resizable) return;
-        if (!(event.start instanceof Temporal.PlainDate) || !(event.end instanceof Temporal.PlainDate))
-          return;
-        const adjustsStart = key === "ArrowUp" || key === "ArrowDown";
-        const adjustsEnd = key === "ArrowLeft" || key === "ArrowRight";
-        if (!adjustsStart && !adjustsEnd) return;
-        keyboardEvent.preventDefault();
-        let nextStart = event.start;
-        let nextEnd = event.end;
-        if (key === "ArrowUp") nextStart = nextStart.subtract({ days: 1 });
-        else if (key === "ArrowDown") nextStart = nextStart.add({ days: 1 });
-        else if (key === "ArrowLeft") nextEnd = nextEnd.subtract({ days: 1 });
-        else nextEnd = nextEnd.add({ days: 1 });
-        if (Temporal.PlainDate.compare(nextEnd, nextStart) <= 0) return;
-        const gate = host.checkInteraction({
-          action: "resize",
-          event,
-          start: nextStart,
-          end: nextEnd,
-          resourceId: event.resourceId ?? null,
-          allDay: true,
-        });
-        if (!gate.ok) {
-          if (gate.reason) host.announce(gate.reason);
-          return;
-        }
-        const result = host.commitEventResize({
-          event,
-          previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-          current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
-          nativeEvent: keyboardEvent,
-        });
-        if (!result) return;
-        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-        host.refocusEvent(event.id);
-      });
-
-      if (resizable) {
-        const resizeAllowed = host.checkInteraction({
-          action: "resize",
-          event,
-          start: event.start,
-          end: event.end,
-          resourceId: event.resourceId ?? null,
-          allDay: true,
-        }).ok;
-        const startEdgeVisible =
-          event.start instanceof Temporal.PlainDate &&
-          Temporal.PlainDate.compare(columns[startDay].date, event.start) === 0;
-        const endEdgeVisible =
-          event.end instanceof Temporal.PlainDate &&
-          Temporal.PlainDate.compare(columns[endDay - 1].date.add({ days: 1 }), event.end) === 0;
-        if (resizeAllowed) {
-          for (const edge of /** @type {["start", "end"]} */ (["start", "end"])) {
-            if (edge === "start" && !startEdgeVisible) continue;
-            if (edge === "end" && !endEdgeVisible) continue;
-            const handle = document.createElement("div");
-            handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "w" : "e"}`;
-            bar.append(handle);
-            handle.addEventListener("pointerdown", (nativeEvent) => {
-              beginAllDayResize(bar, event, edge, nativeEvent);
-            });
-          }
-        }
-      }
-
-      if (movable) {
-        bar.addEventListener("pointerdown", (nativeEvent) =>
-          beginAllDayDrag(bar, event, startDay, nativeEvent),
-        );
-      }
-    }
-  }
+  const lane = allDay.lane;
+  const showAllDay = options.allDaySlot !== false && allDay.hasContent;
 
   // --- Day header row -----------------------------------------------------
   // Headers are grid items of their own row so the lane can sit between the
@@ -1120,6 +513,607 @@ export function renderTimeGrid({
     return hit ? { ...hit, column: index } : null;
   }
 
+  /** @type {Map<string, { node: HTMLButtonElement, event: import("../core/model.js").NormalizedEvent, state: import("../core/temporal.js").TemporalState }>} */
+  let eventNodes = new Map();
+  /** @type {Map<HTMLElement, () => void>} */
+  const gestureDisposers = new Map();
+  let previousEvents = events;
+
+  /**
+   * @param {import("../core/model.js").NormalizedEvent} event
+   * @param {import("../core/resources.js").TimeGridColumn} column
+   */
+  const segmentKey = (event, column) =>
+    JSON.stringify([event.id, column.date.toString(), column.resource?.id ?? null]);
+
+  /**
+   * Build one timed segment node and its interaction handlers. The caller
+   * owns insertion and reconciliation so a kept node can update geometry
+   * without losing focus or custom content.
+   *
+   * @param {HTMLDivElement} body
+   * @param {import("../core/resources.js").TimeGridColumn} column
+   * @param {number} columnIndex
+   * @param {{ event: import("../core/model.js").NormalizedEvent, start: number, end: number, left: number, width: number, geometry: { top: number, height: number } }} item
+   * @returns {HTMLButtonElement}
+   */
+  function createTimedEventNode(body, column, columnIndex, item) {
+    const { event, geometry } = item;
+    const node = document.createElement("button");
+    node.type = "button";
+    node.className = ["cv-event", ...(event.classNames ?? [])].join(" ");
+    node.dataset.eventId = event.id;
+    node.dataset.focusKey = JSON.stringify([event.id, column.date.toString(), column.resource?.id ?? null]);
+    const nodeState = stateOf(event);
+    node.dataset.temporalState = nodeState;
+    node.style.top = `${geometry.top}px`;
+    node.style.height = `${geometry.height}px`;
+    node.style.insetInlineStart = `${item.left * 100}%`;
+    node.style.width = `${item.width * 100}%`;
+    node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
+
+    const content = eventContent?.({
+      event,
+      date: column.date,
+      resource: column.resource,
+      temporalState: nodeState,
+      element: node,
+    });
+    if (!applyContent(node, content)) node.textContent = event.title ?? labels.untitledEvent;
+
+    // Native <button> activation covers pointer click and Enter/Space equally.
+    // A single capture-phase handler both dispatches eventclick and drops
+    // the residual click after a drag, resize or long-press.
+    node.addEventListener(
+      "click",
+      (nativeEvent) => {
+        if (interaction.suppressClick) {
+          interaction.suppressClick = false;
+          interaction.longPressConsumed = false;
+          nativeEvent.stopPropagation();
+          nativeEvent.preventDefault();
+          return;
+        }
+        emitCalendarEvent(
+          node,
+          "calendar:eventclick",
+          { event, date: column.date, resource: column.resource, nativeEvent },
+          { cancelable: true },
+        );
+      },
+      true,
+    );
+
+    const movable = isMovable(event, host.editable);
+    const resizable = isResizable(event, host.editable);
+
+    node.addEventListener("contextmenu", (nativeEvent) => {
+      dispatchContextMenu(
+        node,
+        {
+          event,
+          date: column.date,
+          resourceId: column.resource?.id ?? null,
+          clientX: nativeEvent.clientX,
+          clientY: nativeEvent.clientY,
+        },
+        nativeEvent,
+      );
+    });
+
+    watchLongPress(node, (press) => {
+      dispatchContextMenu(
+        node,
+        {
+          event,
+          date: column.date,
+          resourceId: column.resource?.id ?? null,
+          clientX: press.clientX,
+          clientY: press.clientY,
+        },
+        press,
+      );
+    });
+
+    /**
+     * Focus navigation between events. Data-changing keys reuse the same
+     * optimistic commit as pointer and commands; cross-resource moves stay
+     * a command operation (`moveEvent` with `resourceId`).
+     *
+     * @param {KeyboardEvent} keyboardEvent
+     * @returns {void}
+     */
+    function onEventKeyDown(keyboardEvent) {
+      if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
+      const key = keyboardEvent.key;
+      const shift = keyboardEvent.shiftKey;
+      const alt = keyboardEvent.altKey;
+      if (!shift && !alt) {
+        if (
+          key === "ArrowUp" ||
+          key === "ArrowDown" ||
+          key === "ArrowLeft" ||
+          key === "ArrowRight" ||
+          key === "Home" ||
+          key === "End"
+        ) {
+          keyboardEvent.preventDefault();
+          moveEventFocus(key);
+        }
+        return;
+      }
+      if (shift && !alt && key.startsWith("Arrow")) {
+        if (!movable) return;
+        keyboardEvent.preventDefault();
+        keyboardMoveEvent(key, keyboardEvent);
+        return;
+      }
+      if (alt && !shift && key.startsWith("Arrow")) {
+        if (!resizable) return;
+        keyboardEvent.preventDefault();
+        keyboardResizeEvent(key, keyboardEvent);
+      }
+    }
+
+    /**
+     * @param {string} key
+     * @returns {void}
+     */
+    function moveEventFocus(key) {
+      const currentBody = node.closest(".cv-day-body");
+      if (!(currentBody instanceof HTMLDivElement)) return;
+      if (key === "ArrowUp" || key === "ArrowDown" || key === "Home" || key === "End") {
+        const peers = focusableEvents(currentBody);
+        const index = peers.indexOf(node);
+        if (index < 0) return;
+        const target =
+          key === "Home"
+            ? peers[0]
+            : key === "End"
+              ? peers[peers.length - 1]
+              : peers[index + (key === "ArrowDown" ? 1 : -1)];
+        target?.focus();
+        return;
+      }
+      const bodyIndex = bodies.findIndex((entry) => entry.body === currentBody);
+      const target = bodies[bodyIndex + (key === "ArrowRight" ? 1 : -1)];
+      if (!target) return;
+      const peers = focusableEvents(target.body);
+      if (peers.length === 0) return;
+      const top = Number.parseFloat(node.style.top);
+      let best = peers[0];
+      for (const peer of peers) {
+        if (
+          Math.abs(Number.parseFloat(peer.style.top) - top) <
+          Math.abs(Number.parseFloat(best.style.top) - top)
+        ) {
+          best = peer;
+        }
+      }
+      best.focus();
+    }
+
+    /**
+     * @param {string} key
+     * @param {KeyboardEvent} nativeEvent
+     * @returns {void}
+     */
+    function keyboardMoveEvent(key, nativeEvent) {
+      const startZoned = toZonedDateTime(event.start, timeZone);
+      const endZoned = toZonedDateTime(event.end, timeZone);
+      const previous = { start: event.start, end: event.end, resourceId: event.resourceId ?? null };
+      let current;
+      if (key === "ArrowUp" || key === "ArrowDown") {
+        const delta = key === "ArrowDown" ? snapStep : -snapStep;
+        current = {
+          start: startZoned.add({ minutes: delta }),
+          end: endZoned.add({ minutes: delta }),
+          resourceId: event.resourceId ?? null,
+        };
+      } else {
+        const nextStart = startZoned.add({ days: key === "ArrowRight" ? 1 : -1 });
+        const duration = Temporal.Duration.from({
+          milliseconds: endZoned.epochMilliseconds - startZoned.epochMilliseconds,
+        });
+        const nextEnd = nextStart.add(duration);
+        current = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
+      }
+      // Keyboard moves obey the policy like pointer drags: a refusal
+      // announces its reason when it has one, and commits nothing.
+      const moveGate = host.checkInteraction({
+        action: "move",
+        event,
+        start: current.start,
+        end: current.end,
+        resourceId: current.resourceId ?? null,
+        allDay: event.allDay === true,
+      });
+      if (!moveGate.ok) {
+        if (moveGate.reason) host.announce(moveGate.reason);
+        return;
+      }
+      const result = host.commitEventMove({ event, previous, current, nativeEvent });
+      if (!result) return;
+      host.announce(describeEvent(result, timeZone, labels.untitledEvent));
+      host.refocusEvent(event.id);
+    }
+
+    /**
+     * Alt + arrows resize: Up/Down adjust the start edge, Left/Right the
+     * end edge, keeping at least one snap step of duration.
+     *
+     * @param {string} key
+     * @param {KeyboardEvent} nativeEvent
+     * @returns {void}
+     */
+    function keyboardResizeEvent(key, nativeEvent) {
+      const startZoned = toZonedDateTime(event.start, timeZone);
+      const endZoned = toZonedDateTime(event.end, timeZone);
+      let nextStart = startZoned;
+      let nextEnd = endZoned;
+      if (key === "ArrowUp") nextStart = startZoned.subtract({ minutes: snapStep });
+      else if (key === "ArrowDown") nextStart = startZoned.add({ minutes: snapStep });
+      else if (key === "ArrowLeft") nextEnd = endZoned.subtract({ minutes: snapStep });
+      else nextEnd = endZoned.add({ minutes: snapStep });
+      if (nextEnd.epochMilliseconds - nextStart.epochMilliseconds < snapStep * 60 * 1000) return;
+      const resizeGate = host.checkInteraction({
+        action: "resize",
+        event,
+        start: nextStart,
+        end: nextEnd,
+        resourceId: event.resourceId ?? null,
+        allDay: event.allDay === true,
+      });
+      if (!resizeGate.ok) {
+        if (resizeGate.reason) host.announce(resizeGate.reason);
+        return;
+      }
+      const result = host.commitEventResize({
+        event,
+        previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+        current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
+        nativeEvent,
+      });
+      if (!result) return;
+      host.announce(describeEvent(result, timeZone, labels.untitledEvent));
+      host.refocusEvent(event.id);
+    }
+
+    node.addEventListener("keydown", onEventKeyDown);
+
+    // No resize handle when the policy refuses the event where it stands:
+    // the gate doubles as the destination checker's entry point.
+    const resizeAllowed =
+      resizable &&
+      host.checkInteraction({
+        action: "resize",
+        event,
+        start: event.start,
+        end: event.end,
+        resourceId: event.resourceId ?? null,
+        allDay: event.allDay === true,
+      }).ok;
+    if (resizeAllowed) {
+      for (const edge of /** @type {["start", "end"]} */ (["start", "end"])) {
+        const handle = document.createElement("div");
+        handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "n" : "s"}`;
+        node.append(handle);
+        handle.addEventListener("pointerdown", (nativeEvent) => {
+          beginResize(nativeEvent, edge);
+        });
+      }
+    }
+
+    if (movable) {
+      node.addEventListener("pointerdown", beginDrag);
+    }
+
+    /**
+     * @param {PointerEvent} nativeEvent
+     * @param {"start" | "end"} edge
+     * @returns {void}
+     */
+    function beginResize(nativeEvent, edge) {
+      if (nativeEvent.button !== 0) return;
+      const startZoned = toZonedDateTime(event.start, timeZone);
+      const endZoned = toZonedDateTime(event.end, timeZone);
+      // Only the day owning the real edge may resize it; continuation
+      // slices must never truncate the full event.
+      const isFirstDay = Temporal.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
+      const isLastDay = Temporal.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
+      if ((edge === "start" && !isFirstDay) || (edge === "end" && !isLastDay)) return;
+      // Handles only render when allowed, but the policy may read state
+      // the calendar never re-renders on: re-check at press time.
+      const pressGate = host.checkInteraction({
+        action: "resize",
+        event,
+        start: event.start,
+        end: event.end,
+        resourceId: event.resourceId ?? null,
+        allDay: event.allDay === true,
+      });
+      if (!pressGate.ok) return;
+      nativeEvent.stopPropagation();
+      nativeEvent.preventDefault();
+      const savedTop = node.style.top;
+      const savedHeight = node.style.height;
+      // Last evaluated destination (`start:end`) and its policy decision.
+      // The first destination may differ from a clipped original edge.
+      /** @type {string | null} */
+      let resizeKey = null;
+      let resizeRevision = host.getInteractionRevision();
+
+      /** @param {PointerEvent} pointer */
+      const resizeTarget = (pointer) => {
+        const hit = gridHit(pointer.clientX, pointer.clientY);
+        if (hit?.column !== columnIndex) return null;
+        const edges = columnEdges(columnIndex, event.id);
+        let start = item.start;
+        let end = item.end;
+        if (edge === "end") {
+          end = Math.max(magnetOrSnap(hit.minutes, "ceil", edges), start + snapStep);
+        } else {
+          start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
+        }
+        const range = {
+          start: edge === "start" ? zonedDateTimeAt(column.date, start, timeZone) : startZoned,
+          end: edge === "end" ? zonedDateTimeAt(column.date, end, timeZone) : endZoned,
+          resourceId: event.resourceId ?? null,
+        };
+        return { start, end, range };
+      };
+
+      const resetPreview = () => {
+        node.style.top = savedTop;
+        node.style.height = savedHeight;
+        node.classList.remove("cv-invalid");
+        delete node.dataset.reason;
+        resizeKey = null;
+      };
+
+      const gesture = startPointerGesture({
+        target: node,
+        event: nativeEvent,
+        onMove(moveEvent) {
+          if (interaction.longPressConsumed) return;
+          const target = resizeTarget(moveEvent);
+          if (!target) {
+            resetPreview();
+            return;
+          }
+          const { start, end, range } = target;
+          node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
+          node.style.height = `${(end - start) * pxPerMinute}px`;
+          const key = `${start}:${end}`;
+          const revision = host.getInteractionRevision();
+          if (revision !== resizeRevision) {
+            resizeRevision = revision;
+            resizeKey = null;
+          }
+          if (key !== resizeKey) {
+            resizeKey = key;
+            const decision = host.checkInteraction({
+              action: "resize",
+              event,
+              ...range,
+            });
+            node.classList.toggle("cv-invalid", !decision.ok);
+            if (decision.reason) node.dataset.reason = decision.reason;
+            else delete node.dataset.reason;
+          }
+        },
+        onEnd(upEvent, { moved }) {
+          const target = moved && !interaction.longPressConsumed ? resizeTarget(upEvent) : null;
+          resetPreview();
+          if (interaction.longPressConsumed || !moved) return;
+          interaction.suppressClick = true;
+          if (!target || Temporal.ZonedDateTime.compare(target.range.end, target.range.start) <= 0) {
+            return;
+          }
+          host.commitEventResize({
+            event,
+            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+            current: target.range,
+            nativeEvent: upEvent,
+          });
+        },
+        onCancel() {
+          resetPreview();
+          // No click follows a cancel: drop both suppression flags.
+          interaction.longPressConsumed = false;
+          interaction.suppressClick = false;
+        },
+      });
+      gestureDisposers.set(node, () => gesture.dispose());
+    }
+
+    /**
+     * Drag an event across time, days and resources. The original node
+     * stays in place while a detached mirror follows the pointer; the
+     * calendar commits optimistically on drop and re-renders.
+     *
+     * @param {PointerEvent} nativeEvent
+     * @returns {void}
+     */
+    function beginDrag(nativeEvent) {
+      if (nativeEvent.button !== 0) return;
+      if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
+        return;
+      }
+      const downHit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
+      if (!downHit) return;
+      // A refused start never arms a drag: no mirror, no capture.
+      const startGate = host.checkInteraction({
+        action: "move",
+        event,
+        start: event.start,
+        end: event.end,
+        resourceId: event.resourceId ?? null,
+        allDay: event.allDay === true,
+      });
+      if (!startGate.ok) return;
+      const duration = item.end - item.start;
+      const grabOffset = downHit.minutes - item.start;
+      let pointerX = nativeEvent.clientX;
+      let pointerY = nativeEvent.clientY;
+      const scroller = body.closest(".cv-scroller");
+      const autoscroll = scroller ? createAutoscroller(scroller, { onScroll: paintDragTarget }) : null;
+      /** @type {HTMLButtonElement | null} */
+      let mirror = null;
+      // Last evaluated destination (`column:start`) and its policy
+      // decision: re-evaluated only when the snapped target changes.
+      // Seeded with the entry target so the first identical snap skips.
+      /** @type {string | null} */
+      let dragKey = `${columnIndex}:${item.start}`;
+      let dragRevision = host.getInteractionRevision();
+      let dragOk = true;
+
+      /** @param {NonNullable<ReturnType<typeof gridHit>>} hit */
+      function dragTarget(hit) {
+        const raw = hit.minutes - grabOffset;
+        const target = bodies[hit.column];
+        const start = Math.min(
+          Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes),
+          endMinutes - duration,
+        );
+        return { ...target, start, droppable: target.column.resource?.droppable !== false };
+      }
+
+      function paintDragTarget() {
+        if (interaction.longPressConsumed || !mirror) return;
+        const hit = gridHit(pointerX, pointerY);
+        // Outside every column the drag arms "drop out of the calendar":
+        // the application lights its parking target while the pointer
+        // hovers the grid edge (axis strip included).
+        if (hit) node.removeAttribute("data-dropout");
+        else node.setAttribute("data-dropout", "true");
+        if (!hit) return;
+        const target = dragTarget(hit);
+        const { start, droppable } = target;
+        if (mirror.parentNode !== target.body) target.body.append(mirror);
+        mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
+        mirror.style.height = `${duration * pxPerMinute}px`;
+        const key = `${hit.column}:${start}`;
+        const revision = host.getInteractionRevision();
+        if (revision !== dragRevision) {
+          dragRevision = revision;
+          dragKey = null;
+        }
+        if (key !== dragKey) {
+          dragKey = key;
+          // The policy judges what the commit writes: the whole event
+          // shifted by the column day delta plus the slice's minute
+          // delta — not the slice's own target, which would disagree
+          // for a clipped slice (event starting off-range, multi-day
+          // span). Two separate adds keep the duration sign-consistent.
+          const dayDelta = target.column.date.since(column.date).days;
+          const minuteDelta = start - item.start;
+          const decision = host.checkInteraction({
+            action: "move",
+            event,
+            start: toZonedDateTime(event.start, timeZone)
+              .add({ days: dayDelta })
+              .add({ minutes: minuteDelta }),
+            end: toZonedDateTime(event.end, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
+            resourceId: target.column.resource?.id ?? event.resourceId ?? null,
+          });
+          dragOk = decision.ok;
+          if (decision.reason) mirror.dataset.reason = decision.reason;
+          else delete mirror.dataset.reason;
+        }
+        mirror.classList.toggle("cv-invalid", !droppable || !dragOk);
+      }
+
+      const gesture = startPointerGesture({
+        target: node,
+        event: nativeEvent,
+        onMove(moveEvent) {
+          if (interaction.longPressConsumed) return;
+          if (!mirror) {
+            mirror = /** @type {HTMLButtonElement} */ (node.cloneNode(true));
+            mirror.classList.add("cv-drag-mirror");
+            mirror.classList.remove("cv-drag-source");
+            mirror.tabIndex = -1;
+            mirror.setAttribute("aria-hidden", "true");
+            node.classList.add("cv-drag-source");
+          }
+          pointerX = moveEvent.clientX;
+          pointerY = moveEvent.clientY;
+          autoscroll?.update(pointerX, pointerY);
+          paintDragTarget();
+        },
+        onEnd(upEvent, { moved }) {
+          // A fired long-press owns the gesture: no commit, and the residual
+          // click stays suppressed for its own capture-phase handler.
+          if (interaction.longPressConsumed) return;
+          if (!moved) return;
+          // Released outside every column: the event leaves the grid — that
+          // is a parking intent the application may feed its workbench
+          // ("drag out of the calendar"). The commit below only runs when
+          // the release itself is over a column.
+          const hit = gridHit(upEvent.clientX, upEvent.clientY);
+          if (!hit) {
+            // Same as a committed drop: the residual click on the source card
+            // must not fall through to `calendar:eventclick`.
+            interaction.suppressClick = true;
+            root.dispatchEvent(
+              new CustomEvent("calendar:eventdropout", {
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+                detail: { event, eventId: event.id, nativeEvent: upEvent },
+              }),
+            );
+            return;
+          }
+          // A moved press never leaks a click, even on a refused target.
+          const range = dragTarget(hit);
+          if (!range.droppable) {
+            interaction.suppressClick = true;
+            return;
+          }
+          interaction.suppressClick = true;
+          // The mirror shows the dragged slice, but the commit shifts the
+          // whole event so multi-day spans keep their total duration (same
+          // contract as the keyboard move path). The day and minute deltas
+          // apply as two separate adds: combined in one bag they can
+          // disagree in sign (a day backward, hours forward), which is not
+          // a valid Temporal.Duration.
+          const dayDelta = range.column.date.since(column.date).days;
+          const minuteDelta = range.start - item.start;
+          const startZoned = toZonedDateTime(event.start, timeZone);
+          const endZoned = toZonedDateTime(event.end, timeZone);
+          host.commitEventMove({
+            event,
+            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+            current: {
+              start: startZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
+              end: endZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
+              // A column with no resource carries no new assignment: the
+              // event keeps its current resource instead of being silently
+              // unassigned by a move inside a resource-less grid.
+              resourceId: range.column.resource?.id ?? event.resourceId ?? null,
+            },
+            nativeEvent: upEvent,
+          });
+        },
+        onCancel() {
+          // No click follows a cancel: drop both suppression flags.
+          interaction.longPressConsumed = false;
+          interaction.suppressClick = false;
+        },
+        onCleanup() {
+          autoscroll?.stop();
+          mirror?.remove();
+          node.classList.remove("cv-drag-source");
+          node.removeAttribute("data-dropout");
+        },
+      });
+      gestureDisposers.set(node, () => gesture.dispose());
+    }
+
+    return node;
+  }
   for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
     const column = columns[columnIndex];
     const day = document.createElement("section");
@@ -1157,614 +1151,13 @@ export function renderTimeGrid({
     }
 
     for (const item of model.events) {
-      const { event, geometry } = item;
-      const node = document.createElement("button");
-      node.type = "button";
-      node.className = ["cv-event", ...(event.classNames ?? [])].join(" ");
-      node.dataset.eventId = event.id;
-      node.dataset.focusKey = JSON.stringify([event.id, column.date.toString(), column.resource?.id ?? null]);
-      const nodeState = stateOf(event);
-      node.dataset.temporalState = nodeState;
-      node.style.top = `${geometry.top}px`;
-      node.style.height = `${geometry.height}px`;
-      node.style.insetInlineStart = `${item.left * 100}%`;
-      node.style.width = `${item.width * 100}%`;
-      node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-
-      const content = eventContent?.({
-        event,
-        date: column.date,
-        resource: column.resource,
-        temporalState: nodeState,
-        element: node,
-      });
-      if (!applyContent(node, content)) node.textContent = event.title ?? labels.untitledEvent;
-
-      // Native <button> activation covers pointer click and Enter/Space equally.
-      // A single capture-phase handler both dispatches eventclick and drops
-      // the residual click after a drag, resize or long-press.
-      node.addEventListener(
-        "click",
-        (nativeEvent) => {
-          if (suppressClick) {
-            suppressClick = false;
-            longPressConsumed = false;
-            nativeEvent.stopPropagation();
-            nativeEvent.preventDefault();
-            return;
-          }
-          emitCalendarEvent(
-            node,
-            "calendar:eventclick",
-            { event, date: column.date, resource: column.resource, nativeEvent },
-            { cancelable: true },
-          );
-        },
-        true,
-      );
-
-      const movable = isMovable(event, host.editable);
-      const resizable = isResizable(event, host.editable);
-
-      node.addEventListener("contextmenu", (nativeEvent) => {
-        dispatchContextMenu(
-          node,
-          {
-            event,
-            date: column.date,
-            resourceId: column.resource?.id ?? null,
-            clientX: nativeEvent.clientX,
-            clientY: nativeEvent.clientY,
-          },
-          nativeEvent,
-        );
-      });
-
-      watchLongPress(node, (press) => {
-        dispatchContextMenu(
-          node,
-          {
-            event,
-            date: column.date,
-            resourceId: column.resource?.id ?? null,
-            clientX: press.clientX,
-            clientY: press.clientY,
-          },
-          press,
-        );
-      });
-
-      /**
-       * Focus navigation between events. Data-changing keys reuse the same
-       * optimistic commit as pointer and commands; cross-resource moves stay
-       * a command operation (`moveEvent` with `resourceId`).
-       *
-       * @param {KeyboardEvent} keyboardEvent
-       * @returns {void}
-       */
-      function onEventKeyDown(keyboardEvent) {
-        if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
-        const key = keyboardEvent.key;
-        const shift = keyboardEvent.shiftKey;
-        const alt = keyboardEvent.altKey;
-        if (!shift && !alt) {
-          if (
-            key === "ArrowUp" ||
-            key === "ArrowDown" ||
-            key === "ArrowLeft" ||
-            key === "ArrowRight" ||
-            key === "Home" ||
-            key === "End"
-          ) {
-            keyboardEvent.preventDefault();
-            moveEventFocus(key);
-          }
-          return;
-        }
-        if (shift && !alt && key.startsWith("Arrow")) {
-          if (!movable) return;
-          keyboardEvent.preventDefault();
-          keyboardMoveEvent(key, keyboardEvent);
-          return;
-        }
-        if (alt && !shift && key.startsWith("Arrow")) {
-          if (!resizable) return;
-          keyboardEvent.preventDefault();
-          keyboardResizeEvent(key, keyboardEvent);
-        }
-      }
-
-      /**
-       * @param {string} key
-       * @returns {void}
-       */
-      function moveEventFocus(key) {
-        const currentBody = node.closest(".cv-day-body");
-        if (!(currentBody instanceof HTMLDivElement)) return;
-        if (key === "ArrowUp" || key === "ArrowDown" || key === "Home" || key === "End") {
-          const peers = focusableEvents(currentBody);
-          const index = peers.indexOf(node);
-          if (index < 0) return;
-          const target =
-            key === "Home"
-              ? peers[0]
-              : key === "End"
-                ? peers[peers.length - 1]
-                : peers[index + (key === "ArrowDown" ? 1 : -1)];
-          target?.focus();
-          return;
-        }
-        const bodyIndex = bodies.findIndex((entry) => entry.body === currentBody);
-        const target = bodies[bodyIndex + (key === "ArrowRight" ? 1 : -1)];
-        if (!target) return;
-        const peers = focusableEvents(target.body);
-        if (peers.length === 0) return;
-        const top = Number.parseFloat(node.style.top);
-        let best = peers[0];
-        for (const peer of peers) {
-          if (
-            Math.abs(Number.parseFloat(peer.style.top) - top) <
-            Math.abs(Number.parseFloat(best.style.top) - top)
-          ) {
-            best = peer;
-          }
-        }
-        best.focus();
-      }
-
-      /**
-       * @param {string} key
-       * @param {KeyboardEvent} nativeEvent
-       * @returns {void}
-       */
-      function keyboardMoveEvent(key, nativeEvent) {
-        const startZoned = toZonedDateTime(event.start, timeZone);
-        const endZoned = toZonedDateTime(event.end, timeZone);
-        const previous = { start: event.start, end: event.end, resourceId: event.resourceId ?? null };
-        let current;
-        if (key === "ArrowUp" || key === "ArrowDown") {
-          const delta = key === "ArrowDown" ? snapStep : -snapStep;
-          current = {
-            start: startZoned.add({ minutes: delta }),
-            end: endZoned.add({ minutes: delta }),
-            resourceId: event.resourceId ?? null,
-          };
-        } else {
-          const nextStart = startZoned.add({ days: key === "ArrowRight" ? 1 : -1 });
-          const duration = Temporal.Duration.from({
-            milliseconds: endZoned.epochMilliseconds - startZoned.epochMilliseconds,
-          });
-          const nextEnd = nextStart.add(duration);
-          current = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
-        }
-        // Keyboard moves obey the policy like pointer drags: a refusal
-        // announces its reason when it has one, and commits nothing.
-        const moveGate = host.checkInteraction({
-          action: "move",
-          event,
-          start: current.start,
-          end: current.end,
-          resourceId: current.resourceId ?? null,
-          allDay: event.allDay === true,
-        });
-        if (!moveGate.ok) {
-          if (moveGate.reason) host.announce(moveGate.reason);
-          return;
-        }
-        const result = host.commitEventMove({ event, previous, current, nativeEvent });
-        if (!result) return;
-        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-        host.refocusEvent(event.id);
-      }
-
-      /**
-       * Alt + arrows resize: Up/Down adjust the start edge, Left/Right the
-       * end edge, keeping at least one snap step of duration.
-       *
-       * @param {string} key
-       * @param {KeyboardEvent} nativeEvent
-       * @returns {void}
-       */
-      function keyboardResizeEvent(key, nativeEvent) {
-        const startZoned = toZonedDateTime(event.start, timeZone);
-        const endZoned = toZonedDateTime(event.end, timeZone);
-        let nextStart = startZoned;
-        let nextEnd = endZoned;
-        if (key === "ArrowUp") nextStart = startZoned.subtract({ minutes: snapStep });
-        else if (key === "ArrowDown") nextStart = startZoned.add({ minutes: snapStep });
-        else if (key === "ArrowLeft") nextEnd = endZoned.subtract({ minutes: snapStep });
-        else nextEnd = endZoned.add({ minutes: snapStep });
-        if (nextEnd.epochMilliseconds - nextStart.epochMilliseconds < snapStep * 60 * 1000) return;
-        const resizeGate = host.checkInteraction({
-          action: "resize",
-          event,
-          start: nextStart,
-          end: nextEnd,
-          resourceId: event.resourceId ?? null,
-          allDay: event.allDay === true,
-        });
-        if (!resizeGate.ok) {
-          if (resizeGate.reason) host.announce(resizeGate.reason);
-          return;
-        }
-        const result = host.commitEventResize({
-          event,
-          previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-          current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
-          nativeEvent,
-        });
-        if (!result) return;
-        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-        host.refocusEvent(event.id);
-      }
-
-      node.addEventListener("keydown", onEventKeyDown);
-
-      // No resize handle when the policy refuses the event where it stands:
-      // the gate doubles as the destination checker's entry point.
-      const resizeAllowed =
-        resizable &&
-        host.checkInteraction({
-          action: "resize",
-          event,
-          start: event.start,
-          end: event.end,
-          resourceId: event.resourceId ?? null,
-          allDay: event.allDay === true,
-        }).ok;
-      if (resizeAllowed) {
-        for (const edge of /** @type {["start", "end"]} */ (["start", "end"])) {
-          const handle = document.createElement("div");
-          handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "n" : "s"}`;
-          node.append(handle);
-          handle.addEventListener("pointerdown", (nativeEvent) => {
-            beginResize(nativeEvent, edge);
-          });
-        }
-      }
-
-      if (movable) {
-        node.addEventListener("pointerdown", beginDrag);
-      }
-
-      /**
-       * @param {PointerEvent} nativeEvent
-       * @param {"start" | "end"} edge
-       * @returns {void}
-       */
-      function beginResize(nativeEvent, edge) {
-        if (nativeEvent.button !== 0) return;
-        const startZoned = toZonedDateTime(event.start, timeZone);
-        const endZoned = toZonedDateTime(event.end, timeZone);
-        // Only the day owning the real edge may resize it; continuation
-        // slices must never truncate the full event.
-        const isFirstDay = Temporal.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
-        const isLastDay = Temporal.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
-        if ((edge === "start" && !isFirstDay) || (edge === "end" && !isLastDay)) return;
-        // Handles only render when allowed, but the policy may read state
-        // the calendar never re-renders on: re-check at press time.
-        const pressGate = host.checkInteraction({
-          action: "resize",
-          event,
-          start: event.start,
-          end: event.end,
-          resourceId: event.resourceId ?? null,
-          allDay: event.allDay === true,
-        });
-        if (!pressGate.ok) return;
-        nativeEvent.stopPropagation();
-        nativeEvent.preventDefault();
-        tryCapture(node, nativeEvent.pointerId);
-        const savedTop = node.style.top;
-        const savedHeight = node.style.height;
-        const downX = nativeEvent.clientX;
-        const downY = nativeEvent.clientY;
-        let moved = false;
-        // Last evaluated destination (`start:end`) and its policy decision.
-        // The first destination may differ from a clipped original edge.
-        /** @type {string | null} */
-        let resizeKey = null;
-
-        /** @param {PointerEvent} pointer */
-        const resizeTarget = (pointer) => {
-          const hit = gridHit(pointer.clientX, pointer.clientY);
-          if (hit?.column !== columnIndex) return null;
-          const edges = columnEdges(columnIndex, event.id);
-          let start = item.start;
-          let end = item.end;
-          if (edge === "end") {
-            end = Math.max(magnetOrSnap(hit.minutes, "ceil", edges), start + snapStep);
-          } else {
-            start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
-          }
-          const range = {
-            start: edge === "start" ? zonedDateTimeAt(column.date, start, timeZone) : startZoned,
-            end: edge === "end" ? zonedDateTimeAt(column.date, end, timeZone) : endZoned,
-            resourceId: event.resourceId ?? null,
-          };
-          return { start, end, range };
-        };
-
-        const resetPreview = () => {
-          node.style.top = savedTop;
-          node.style.height = savedHeight;
-          node.classList.remove("cv-invalid");
-          delete node.dataset.reason;
-          resizeKey = null;
-        };
-
-        /** @param {PointerEvent} moveEvent @returns {void} */
-        const onMove = (moveEvent) => {
-          if (longPressConsumed) return;
-          if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
-          if (!moved) return;
-          const target = resizeTarget(moveEvent);
-          if (!target) {
-            resetPreview();
-            return;
-          }
-          const { start, end, range } = target;
-          node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
-          node.style.height = `${(end - start) * pxPerMinute}px`;
-          const key = `${start}:${end}`;
-          if (key !== resizeKey) {
-            resizeKey = key;
-            const decision = host.checkInteraction({
-              action: "resize",
-              event,
-              ...range,
-            });
-            node.classList.toggle("cv-invalid", !decision.ok);
-            if (decision.reason) node.dataset.reason = decision.reason;
-            else delete node.dataset.reason;
-          }
-        };
-
-        /** @param {PointerEvent} upEvent @returns {void} */
-        const onUp = (upEvent) => {
-          cleanup();
-          const target = moved && !longPressConsumed ? resizeTarget(upEvent) : null;
-          resetPreview();
-          if (longPressConsumed || !moved) return;
-          suppressClick = true;
-          if (!target || Temporal.ZonedDateTime.compare(target.range.end, target.range.start) <= 0) return;
-          host.commitEventResize({
-            event,
-            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-            current: target.range,
-            nativeEvent: upEvent,
-          });
-        };
-
-        const cleanup = () => {
-          node.removeEventListener("pointermove", onMove);
-          node.removeEventListener("pointerup", onUp);
-          node.removeEventListener("pointercancel", onCancel);
-          node.removeEventListener("lostpointercapture", onCancel);
-        };
-
-        /** @param {PointerEvent} _cancelEvent @returns {void} */
-        const onCancel = (_cancelEvent) => {
-          cleanup();
-          resetPreview();
-          // No click follows a cancel: drop both suppression flags.
-          longPressConsumed = false;
-          suppressClick = false;
-        };
-
-        node.addEventListener("pointermove", onMove);
-        node.addEventListener("pointerup", onUp);
-        node.addEventListener("pointercancel", onCancel);
-        // Losing the capture ends the gesture as surely as a cancel does,
-        // and it happens without either: an explicit
-        // `releasePointerCapture()`, or the captured node being detached by
-        // a render that lands mid-gesture. Without this the remaining
-        // pointer events go elsewhere, so no cleanup ever runs.
-        node.addEventListener("lostpointercapture", onCancel);
-      }
-
-      /**
-       * Drag an event across time, days and resources. The original node
-       * stays in place while a detached mirror follows the pointer; the
-       * calendar commits optimistically on drop and re-renders.
-       *
-       * @param {PointerEvent} nativeEvent
-       * @returns {void}
-       */
-      function beginDrag(nativeEvent) {
-        if (nativeEvent.button !== 0) return;
-        if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
-          return;
-        }
-        const downHit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
-        if (!downHit) return;
-        // A refused start never arms a drag: no mirror, no capture.
-        const startGate = host.checkInteraction({
-          action: "move",
-          event,
-          start: event.start,
-          end: event.end,
-          resourceId: event.resourceId ?? null,
-          allDay: event.allDay === true,
-        });
-        if (!startGate.ok) return;
-        tryCapture(node, nativeEvent.pointerId);
-        const duration = item.end - item.start;
-        const grabOffset = downHit.minutes - item.start;
-        const downX = nativeEvent.clientX;
-        const downY = nativeEvent.clientY;
-        const scroller = body.closest(".cv-scroller");
-        let pointerX = downX;
-        let pointerY = downY;
-        const autoscroll = scroller ? createAutoscroller(scroller, { onScroll: paintDragTarget }) : null;
-        let moved = false;
-        /** @type {HTMLButtonElement | null} */
-        let mirror = null;
-        // Last evaluated destination (`column:start`) and its policy
-        // decision: re-evaluated only when the snapped target changes.
-        // Seeded with the entry target so the first identical snap skips.
-        /** @type {string} */
-        let dragKey = `${columnIndex}:${item.start}`;
-        let dragOk = true;
-
-        /** @param {NonNullable<ReturnType<typeof gridHit>>} hit */
-        function dragTarget(hit) {
-          const raw = hit.minutes - grabOffset;
-          const target = bodies[hit.column];
-          const start = Math.min(
-            Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes),
-            endMinutes - duration,
-          );
-          return { ...target, start, droppable: target.column.resource?.droppable !== false };
-        }
-
-        function paintDragTarget() {
-          if (longPressConsumed || !mirror) return;
-          const hit = gridHit(pointerX, pointerY);
-          // Outside every column the drag arms "drop out of the calendar":
-          // the application lights its parking target while the pointer
-          // hovers the grid edge (axis strip included).
-          if (hit) node.removeAttribute("data-dropout");
-          else node.setAttribute("data-dropout", "true");
-          if (!hit) return;
-          const target = dragTarget(hit);
-          const { start, droppable } = target;
-          if (mirror.parentNode !== target.body) target.body.append(mirror);
-          mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
-          mirror.style.height = `${duration * pxPerMinute}px`;
-          const key = `${hit.column}:${start}`;
-          if (key !== dragKey) {
-            dragKey = key;
-            // The policy judges what the commit writes: the whole event
-            // shifted by the column day delta plus the slice's minute
-            // delta — not the slice's own target, which would disagree
-            // for a clipped slice (event starting off-range, multi-day
-            // span). Two separate adds keep the duration sign-consistent.
-            const dayDelta = target.column.date.since(column.date).days;
-            const minuteDelta = start - item.start;
-            const decision = host.checkInteraction({
-              action: "move",
-              event,
-              start: toZonedDateTime(event.start, timeZone)
-                .add({ days: dayDelta })
-                .add({ minutes: minuteDelta }),
-              end: toZonedDateTime(event.end, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
-              resourceId: target.column.resource?.id ?? event.resourceId ?? null,
-            });
-            dragOk = decision.ok;
-            if (decision.reason) mirror.dataset.reason = decision.reason;
-            else delete mirror.dataset.reason;
-          }
-          mirror.classList.toggle("cv-invalid", !droppable || !dragOk);
-        }
-
-        /** @param {PointerEvent} moveEvent @returns {void} */
-        const onMove = (moveEvent) => {
-          if (longPressConsumed) return;
-          if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
-          if (!moved) return;
-          if (!mirror) {
-            mirror = /** @type {HTMLButtonElement} */ (node.cloneNode(true));
-            mirror.classList.add("cv-drag-mirror");
-            mirror.classList.remove("cv-drag-source");
-            mirror.tabIndex = -1;
-            mirror.setAttribute("aria-hidden", "true");
-            node.classList.add("cv-drag-source");
-          }
-          pointerX = moveEvent.clientX;
-          pointerY = moveEvent.clientY;
-          autoscroll?.update(pointerX, pointerY);
-          paintDragTarget();
-        };
-
-        const cleanup = () => {
-          node.removeEventListener("pointermove", onMove);
-          node.removeEventListener("pointerup", onUp);
-          node.removeEventListener("pointercancel", onCancel);
-          // Released last: a normal drop releases the capture implicitly, so
-          // `lostpointercapture` still arrives after `pointerup` and would
-          // otherwise cancel the gesture that just committed.
-          node.removeEventListener("lostpointercapture", onCancel);
-          autoscroll?.stop();
-          mirror?.remove();
-          node.classList.remove("cv-drag-source");
-          node.removeAttribute("data-dropout");
-        };
-
-        /** @param {PointerEvent} upEvent @returns {void} */
-        const onUp = (upEvent) => {
-          const wasMoved = moved;
-          cleanup();
-          // A fired long-press owns the gesture: no commit, and the residual
-          // click stays suppressed for its own capture-phase handler.
-          if (longPressConsumed) return;
-          if (!wasMoved) return;
-          // Released outside every column: the event leaves the grid — that
-          // is a parking intent the application may feed its workbench
-          // ("drag out of the calendar"). The commit below only runs when
-          // the release itself is over a column.
-          const hit = gridHit(upEvent.clientX, upEvent.clientY);
-          if (!hit) {
-            // Same as a committed drop: the residual click on the source card
-            // must not fall through to `calendar:eventclick`.
-            suppressClick = true;
-            root.dispatchEvent(
-              new CustomEvent("calendar:eventdropout", {
-                bubbles: true,
-                composed: true,
-                cancelable: true,
-                detail: { event, eventId: event.id, nativeEvent: upEvent },
-              }),
-            );
-            return;
-          }
-          // A moved press never leaks a click, even on a refused target.
-          const range = dragTarget(hit);
-          if (!range.droppable) {
-            suppressClick = true;
-            return;
-          }
-          suppressClick = true;
-          // The mirror shows the dragged slice, but the commit shifts the
-          // whole event so multi-day spans keep their total duration (same
-          // contract as the keyboard move path). The day and minute deltas
-          // apply as two separate adds: combined in one bag they can
-          // disagree in sign (a day backward, hours forward), which is not
-          // a valid Temporal.Duration.
-          const dayDelta = range.column.date.since(column.date).days;
-          const minuteDelta = range.start - item.start;
-          const startZoned = toZonedDateTime(event.start, timeZone);
-          const endZoned = toZonedDateTime(event.end, timeZone);
-          host.commitEventMove({
-            event,
-            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-            current: {
-              start: startZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
-              end: endZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
-              // A column with no resource carries no new assignment: the
-              // event keeps its current resource instead of being silently
-              // unassigned by a move inside a resource-less grid.
-              resourceId: range.column.resource?.id ?? event.resourceId ?? null,
-            },
-            nativeEvent: upEvent,
-          });
-        };
-
-        /** @param {PointerEvent} _cancelEvent @returns {void} */
-        const onCancel = (_cancelEvent) => {
-          cleanup();
-          // No click follows a cancel: drop both suppression flags.
-          longPressConsumed = false;
-          suppressClick = false;
-        };
-
-        node.addEventListener("pointermove", onMove);
-        node.addEventListener("pointerup", onUp);
-        node.addEventListener("pointercancel", onCancel);
-        node.addEventListener("lostpointercapture", onCancel);
-      }
-
+      const node = createTimedEventNode(body, column, columnIndex, item);
       body.append(node);
+      eventNodes.set(segmentKey(item.event, column), {
+        node,
+        event: item.event,
+        state: stateOf(item.event),
+      });
     }
 
     const canSelect = column.resource?.selectable !== false;
@@ -1786,6 +1179,7 @@ export function renderTimeGrid({
       // decision: re-evaluated only when the snapped target changes.
       /** @type {string | null} */
       let selectKey = null;
+      let selectRevision = host.getInteractionRevision();
 
       /** @param {PointerEvent} nativeEvent @returns {void} */
       const showHover = (nativeEvent) => {
@@ -1872,6 +1266,11 @@ export function renderTimeGrid({
         ghost.style.height = `${(end - start) * pxPerMinute}px`;
         ghostChip.textContent = `${formatClock(start)} - ${formatClock(end)}`;
         const key = `${start}:${end}`;
+        const revision = host.getInteractionRevision();
+        if (revision !== selectRevision) {
+          selectRevision = revision;
+          selectKey = null;
+        }
         if (key !== selectKey) {
           selectKey = key;
           const decision = host.checkInteraction({
@@ -1895,8 +1294,8 @@ export function renderTimeGrid({
       const finishSelection = (nativeEvent, cancelled) => {
         // A fired long-press owns the gesture: drop the pending selection and
         // keep the residual click suppressed for its own handler below.
-        const wasLongPress = longPressConsumed;
-        longPressConsumed = false;
+        const wasLongPress = interaction.longPressConsumed;
+        interaction.longPressConsumed = false;
         if (!selecting) return;
         const { anchor, moved } = selecting;
         selecting = null;
@@ -1904,7 +1303,7 @@ export function renderTimeGrid({
         ghost = null;
         ghostChip = null;
         if (cancelled || wasLongPress) return;
-        if (moved) suppressClick = true;
+        if (moved) interaction.suppressClick = true;
         const hit = gridHit(nativeEvent.clientX, nativeEvent.clientY);
         if (hit?.column !== columnIndex) return;
         if (moved) {
@@ -1921,8 +1320,8 @@ export function renderTimeGrid({
 
       // A true drag-selection must not leak a second select from its residual click.
       body.addEventListener("click", (nativeEvent) => {
-        if (!suppressClick) return;
-        suppressClick = false;
+        if (!interaction.suppressClick) return;
+        interaction.suppressClick = false;
         nativeEvent.stopPropagation();
         nativeEvent.preventDefault();
       });
@@ -1978,6 +1377,130 @@ export function renderTimeGrid({
     day.append(body);
     bodies.push({ column, body });
     root.append(day);
+  }
+
+  // --- Incremental update (updateEvent-only renders) -----------------------
+  // The shell, headers, lane, now indicator and external placement stay put.
+  // Only timed segments reconcile; any structural all-day change falls back
+  // to a full render instead of growing a second DOM diff.
+  /**
+   * @param {HTMLButtonElement} node
+   * @param {{ event: import("../core/model.js").NormalizedEvent, start: number, end: number, left: number, width: number, geometry: { top: number, height: number } }} item
+   */
+  function applyTimedGeometry(node, item) {
+    const top = `${item.geometry.top}px`;
+    const height = `${item.geometry.height}px`;
+    const start = `${item.left * 100}%`;
+    const width = `${item.width * 100}%`;
+    if (node.style.top !== top) node.style.top = top;
+    if (node.style.height !== height) node.style.height = height;
+    if (node.style.insetInlineStart !== start) node.style.insetInlineStart = start;
+    if (node.style.width !== width) node.style.width = width;
+    const state = stateOf(item.event);
+    if (node.dataset.temporalState !== state) node.dataset.temporalState = state;
+    const label = describeEvent(item.event, timeZone, labels.untitledEvent);
+    if (node.getAttribute("aria-label") !== label) node.setAttribute("aria-label", label);
+  }
+
+  /** @param {HTMLButtonElement} node */
+  function removeTimedNode(node) {
+    gestureDisposers.get(node)?.();
+    gestureDisposers.delete(node);
+    node.remove();
+  }
+
+  /**
+   * Keep event nodes in model order before overlays, while moving only the
+   * nodes whose position actually differs.
+   *
+   * @param {HTMLDivElement} body
+   * @param {HTMLButtonElement[]} nodes
+   * @param {Element | null} anchor
+   */
+  function reorderTimedNodes(body, nodes, anchor) {
+    let expected = anchor;
+    for (let index = nodes.length - 1; index >= 0; index -= 1) {
+      const node = nodes[index];
+      if (node.nextSibling !== expected) body.insertBefore(node, expected);
+      expected = node;
+    }
+  }
+
+  /**
+   * @param {import("../core/model.js").NormalizedEvent[]} nextEvents
+   * @param {Temporal.ZonedDateTime} nextNow
+   * @returns {boolean} false when a full render is required
+   */
+  function update(nextEvents, nextNow) {
+    const previousAllDay = new Map(
+      previousEvents.filter((item) => item.allDay === true).map((item) => [item.id, item]),
+    );
+    const nextAllDay = new Map(
+      nextEvents.filter((item) => item.allDay === true).map((item) => [item.id, item]),
+    );
+    if (previousAllDay.size !== nextAllDay.size) return false;
+    for (const [id, item] of nextAllDay) {
+      if (previousAllDay.get(id) !== item) return false;
+    }
+
+    previousEvents = nextEvents;
+    renderNow = nextNow;
+    const nextNodes = new Map();
+
+    for (let index = 0; index < columns.length; index += 1) {
+      const column = columns[index];
+      const body = bodies[index].body;
+      // The anchor keeps the event block before hover, preview and gesture
+      // overlays even when a segment is recreated.
+      const anchor =
+        body.querySelector(
+          ":scope > :is(.cv-hover, .cv-select-ghost, .cv-preview, .cv-external-ghost, .cv-drag-mirror)",
+        ) ?? null;
+      const model = deriveTimedColumn(column, nextEvents, backgrounds, {
+        timeZone,
+        slotMin: startMinutes,
+        slotMax: endMinutes,
+        pxPerMinute,
+      });
+      // Handlers already installed read this array for neighbor magnetism, so
+      // an in-place update must refresh it instead of capturing stale edges.
+      columnSlices[index] = model;
+
+      /** @type {HTMLButtonElement[]} */
+      const columnNodes = [];
+      for (const item of model.events) {
+        const { event } = item;
+        const key = segmentKey(event, column);
+        const existing = eventNodes.get(key);
+        const state = stateOf(event);
+        let node;
+        if (existing && existing.event === event && existing.state === state) {
+          node = existing.node;
+          applyTimedGeometry(node, item);
+        } else {
+          if (existing) removeTimedNode(existing.node);
+          node = createTimedEventNode(body, column, index, item);
+          if (anchor?.parentNode === body) body.insertBefore(node, anchor);
+          else body.append(node);
+        }
+        columnNodes.push(node);
+        nextNodes.set(key, { node, event, state });
+      }
+      reorderTimedNodes(body, columnNodes, anchor);
+    }
+
+    for (const [key, entry] of eventNodes) {
+      if (!nextNodes.has(key)) removeTimedNode(entry.node);
+    }
+    eventNodes = nextNodes;
+    return true;
+  }
+
+  /** @returns {void} */
+  function dispose() {
+    for (const disposeGesture of gestureDisposers.values()) disposeGesture();
+    gestureDisposers.clear();
+    allDay.dispose?.();
   }
 
   // --- Range preview (application-proposed placement target) ---------------
@@ -2047,5 +1570,5 @@ export function renderTimeGrid({
     }),
   );
   fragment.append(root);
-  return fragment;
+  return { fragment, update, dispose };
 }

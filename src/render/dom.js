@@ -35,3 +35,25 @@ export function elementAtPoint(origin, x, y) {
   const hitRoot = tree instanceof ShadowRoot ? tree : origin.ownerDocument;
   return hitRoot.elementFromPoint(x, y);
 }
+
+/**
+ * Dispatch a cancelable context intent. When the application handles the
+ * intent (`preventDefault()` on the dispatched event), the native browser
+ * menu is suppressed; otherwise it is left alone.
+ *
+ * @param {Element} target
+ * @param {object} detail
+ * @param {Event} nativeEvent
+ * @returns {void}
+ */
+export function dispatchContextMenu(target, detail, nativeEvent) {
+  const handled = !target.dispatchEvent(
+    new CustomEvent("calendar:eventcontextmenu", {
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+      detail: { ...detail, nativeEvent },
+    }),
+  );
+  if (handled) nativeEvent.preventDefault?.();
+}

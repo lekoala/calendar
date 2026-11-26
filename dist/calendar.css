@@ -88,6 +88,20 @@
   background: var(--calendar-surface);
 }
 
+/* A declared all-day source may target a day even when the all-day lane is
+   not rendered. Highlight the column instead of inventing a lane. */
+.cv-day.cv-external-lane-target {
+  background-color: var(--calendar-event-bg);
+  outline: 2px dashed var(--calendar-accent);
+  outline-offset: -2px;
+}
+
+@supports (color: color-mix(in srgb, black, white)) {
+  .cv-day.cv-external-lane-target {
+    background-color: color-mix(in srgb, var(--calendar-accent) 10%, var(--calendar-surface));
+  }
+}
+
 .cv-day-header {
   position: sticky;
   top: 0;

@@ -198,7 +198,7 @@ export type ActiveSelection = {
  * @param {(info: object) => unknown} [input.resourceHeaderContent]
  * @param {(info: object) => unknown} [input.resourceGroupContent]
  * @param {(info: object) => unknown} [input.slotLabelContent]
- * @returns {DocumentFragment}
+ * @returns {{ fragment: DocumentFragment, update: (events: import("../core/model.js").NormalizedEvent[], now: Temporal.ZonedDateTime) => boolean, dispose: () => void }}
  */
 export declare function renderTimeGrid({ dates, resources, view, resourceGroups, events, backgrounds, options, now, host, eventContent, dayHeaderContent, resourceHeaderContent, resourceGroupContent, slotLabelContent, }: {
     dates: Temporal.PlainDate[];
@@ -215,5 +215,9 @@ export declare function renderTimeGrid({ dates, resources, view, resourceGroups,
     resourceHeaderContent?: (info: object) => unknown;
     resourceGroupContent?: (info: object) => unknown;
     slotLabelContent?: (info: object) => unknown;
-}): DocumentFragment;
+}): {
+    fragment: DocumentFragment;
+    update: (events: import("../core/model.js").NormalizedEvent[], now: Temporal.ZonedDateTime) => boolean;
+    dispose: () => void;
+};
 //# sourceMappingURL=time-grid.d.ts.map

@@ -74,6 +74,8 @@ A column carries no new assignment when it has no resource of its own: dropping 
 
 During a drag the original node stays in place while a detached mirror follows the pointer across time, days and resources. The calendar commits optimistically on drop and re-renders; the residual click after a moved drag is suppressed, including when the destination was refused.
 
+A render triggered by `updateEvent()` of another event keeps the gesture's node connected: the gesture continues, neighbor magnetism reads the refreshed layout, and cached validation is re-evaluated against the new state. If the gesture's own event is updated, or the grid is rebuilt by a refetch, navigation or structural change, the gesture is disposed before its node is removed and commits nothing. `lostpointercapture` remains the safety net for browser-initiated interruptions.
+
 A refused destination paints before the drop ever happens: the mirror (and the selection/external ghosts) carries `cv-invalid` plus `data-reason` when the policy names a reason, and the stylesheet renders that attribute as a chip inside the ghost — a refusal says why, it does not only turn red. Because the refused drop commits nothing and dispatches nothing, the attribute is also the one place an application can read the reason as the pointer releases.
 
 Dragging a slice of a multi-day event shifts the whole event: the day delta between source and target columns plus the wall-clock minute delta apply to both `start` and `end`, so the total duration is preserved (same contract as `Shift` + arrows). A single `click` handler in the capture phase both dispatches `calendar:eventclick` and drops the residual click after a drag, resize or long-press.

@@ -264,6 +264,10 @@ export class CalendarViewElement extends HTMLElement {
   #replaceRender = false;
   /** @type {ReturnType<typeof renderMonthGrid>["update"] | null} */
   #updateMonth = null;
+  /** @type {ReturnType<typeof renderTimeGrid>["update"] | null} */
+  #updateTimeGrid = null;
+  /** @type {ReturnType<typeof renderTimeGrid>["dispose"] | null} */
+  #disposeTimeGrid = null;
   #interactionRevision = 0;
   /**
    * Post-render callbacks, drained once the pending render inserted its
@@ -310,6 +314,9 @@ export class CalendarViewElement extends HTMLElement {
 
   disconnectedCallback() {
     this.#updateMonth = null;
+    this.#updateTimeGrid = null;
+    this.#disposeTimeGrid?.();
+    this.#disposeTimeGrid = null;
     this.#stopHeaderObservation?.();
     this.#stopHeaderObservation = null;
     this.#stopNowIndicator?.();
@@ -1549,12 +1556,6 @@ export class CalendarViewElement extends HTMLElement {
 
   /** @param {boolean} replace */
   #render(replace) {
-    this.#stopHeaderObservation?.();
-    this.#stopHeaderObservation = null;
-    this.#stopNowIndicator?.();
-    this.#stopNowIndicator = null;
-    this.#externalDropTarget?.clear();
-    this.#externalDropTarget = null;
     if (!isKnownView(this.view) && this.#warnedView !== this.view) {
       this.#warnedView = this.view;
       console.warn(`calendar-view: unknown view "${this.view}", rendering as a rolling range`);
@@ -1579,9 +1580,26 @@ export class CalendarViewElement extends HTMLElement {
       active instanceof Element && this.contains(active) ? active.closest("[data-focus-key]") : null;
     const focusKey = focusOwner instanceof HTMLElement ? (focusOwner.dataset.focusKey ?? null) : null;
     const updateMonth = !replace && renderer === "month" ? this.#updateMonth : null;
+    const updateTimeGrid = !replace && renderer === "timeGrid" ? this.#updateTimeGrid : null;
+    // A partial render keeps the scroller, sticky headers, now indicator and
+    // external placement alive. Only a full rebuild owns their teardown.
+    let partial = false;
     if (updateMonth) {
       updateMonth(this.#events, now);
-    } else {
+      partial = true;
+    } else if (updateTimeGrid) {
+      partial = updateTimeGrid(this.#events, now);
+    }
+    if (!partial) {
+      this.#stopHeaderObservation?.();
+      this.#stopHeaderObservation = null;
+      this.#stopNowIndicator?.();
+      this.#stopNowIndicator = null;
+      this.#externalDropTarget?.clear();
+      this.#externalDropTarget = null;
+      this.#disposeTimeGrid?.();
+      this.#disposeTimeGrid = null;
+      this.#updateTimeGrid = null;
       this.#updateMonth = null;
       const scroll = this.querySelector(".cv-scroller");
       const scrollTop = scroll?.scrollTop ?? 0;
@@ -1629,45 +1647,45 @@ export class CalendarViewElement extends HTMLElement {
           }),
         );
       } else {
-        scroller.append(
-          renderTimeGrid({
-            dates,
-            resources,
-            resourceGroups: this.#resourceGroups,
-            view: this.view,
-            events: this.#events,
-            backgrounds: this.#backgrounds,
-            options,
-            now,
-            host: {
-              editable: this.#config.editable,
-              isConnected: () => this.isConnected,
-              announce: (message) => this.#announce(message),
-              refocusEvent: (id) => this.#refocusEvent(id),
-              getRangeContext: (range) => this.getRangeContext(range),
-              checkInteraction: (
-                /** @type {Parameters<CalendarViewElement["checkInteraction"]>[0]} */ input,
-              ) => this.checkInteraction(input),
-              commitEventMove: (input) => this.#commitEventMove(input),
-              commitEventResize: (input) => this.#commitEventResize(input),
-              getExternalDrag: () => this.#dragExternal,
-              clearExternalDrag: () => this.#clearExternalDrag(),
-              getInteractionRevision: () => this.#interactionRevision,
-              setExternalDropTarget: (target) => {
-                this.#externalDropTarget = target;
-              },
-              getPreview: () => this.#preview,
-              setNowIndicatorCleanup: (cleanup) => {
-                this.#stopNowIndicator = cleanup;
-              },
+        const grid = renderTimeGrid({
+          dates,
+          resources,
+          resourceGroups: this.#resourceGroups,
+          view: this.view,
+          events: this.#events,
+          backgrounds: this.#backgrounds,
+          options,
+          now,
+          host: {
+            editable: this.#config.editable,
+            isConnected: () => this.isConnected,
+            announce: (message) => this.#announce(message),
+            refocusEvent: (id) => this.#refocusEvent(id),
+            getRangeContext: (range) => this.getRangeContext(range),
+            checkInteraction: (/** @type {Parameters<CalendarViewElement["checkInteraction"]>[0]} */ input) =>
+              this.checkInteraction(input),
+            commitEventMove: (input) => this.#commitEventMove(input),
+            commitEventResize: (input) => this.#commitEventResize(input),
+            getExternalDrag: () => this.#dragExternal,
+            clearExternalDrag: () => this.#clearExternalDrag(),
+            getInteractionRevision: () => this.#interactionRevision,
+            setExternalDropTarget: (target) => {
+              this.#externalDropTarget = target;
             },
-            eventContent: this.#config.eventContent,
-            dayHeaderContent: this.#config.dayHeaderContent,
-            resourceHeaderContent: this.#config.resourceHeaderContent,
-            resourceGroupContent: this.#config.resourceGroupContent,
-            slotLabelContent: this.#config.slotLabelContent,
-          }),
-        );
+            getPreview: () => this.#preview,
+            setNowIndicatorCleanup: (cleanup) => {
+              this.#stopNowIndicator = cleanup;
+            },
+          },
+          eventContent: this.#config.eventContent,
+          dayHeaderContent: this.#config.dayHeaderContent,
+          resourceHeaderContent: this.#config.resourceHeaderContent,
+          resourceGroupContent: this.#config.resourceGroupContent,
+          slotLabelContent: this.#config.slotLabelContent,
+        });
+        scroller.append(grid.fragment);
+        this.#updateTimeGrid = grid.update;
+        this.#disposeTimeGrid = grid.dispose;
       }
       this.append(scroller);
       this.#stopHeaderObservation = observeStickyHeaders(scroller);

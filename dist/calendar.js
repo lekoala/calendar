@@ -4429,6 +4429,16 @@
     const hitRoot = tree instanceof ShadowRoot ? tree : origin.ownerDocument;
     return hitRoot.elementFromPoint(x, y);
   }
+  function dispatchContextMenu(target, detail, nativeEvent) {
+    const handled = !target.dispatchEvent(new CustomEvent("calendar:eventcontextmenu", {
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+      detail: { ...detail, nativeEvent }
+    }));
+    if (handled)
+      nativeEvent.preventDefault?.();
+  }
 
   // src/render/list.js
   function renderList({
@@ -4747,6 +4757,58 @@
     return { column, date, resource, minutes };
   }
 
+  // src/core/resources.js
+  function getTimeGridColumns(dates) {
+    return dates.map((date) => ({ date, resource: null }));
+  }
+  function getResourceColumns(resources, dates) {
+    return resources.flatMap((resource) => dates.map((date) => ({ date, resource })));
+  }
+  function groupResources(resources, resourceGroups = []) {
+    const seen = new Set;
+    const sections = [];
+    for (const group of resourceGroups) {
+      const id = String(group.id);
+      if (seen.has(id))
+        continue;
+      seen.add(id);
+      const members = resources.filter((resource) => resource.groupId != null && String(resource.groupId) === id);
+      if (members.length > 0)
+        sections.push({ group, resources: members });
+    }
+    const leftover = resources.filter((resource) => resource.groupId == null || !seen.has(String(resource.groupId)));
+    if (leftover.length > 0)
+      sections.push({ group: null, resources: leftover });
+    return sections;
+  }
+  function eventBelongsToColumn(event, column) {
+    if (!column.resource)
+      return true;
+    return event.resourceId === column.resource.id;
+  }
+  function backgroundAppliesToColumn(background, column) {
+    if (!column.resource)
+      return true;
+    if (background.resourceId == null)
+      return true;
+    return background.resourceId === column.resource.id;
+  }
+  function getDaySpans(columns, range, applies, timeZone) {
+    const spans = [];
+    for (let index = 0;index < columns.length; index += 1) {
+      const column = columns[index];
+      if (!applies(range, column) || !eventOverlapsDate(range, column.date, timeZone))
+        continue;
+      const previous = spans[spans.length - 1];
+      if (previous?.endDay === index && columns[index - 1].resource === column.resource) {
+        previous.endDay = index + 1;
+      } else {
+        spans.push({ startDay: index, endDay: index + 1 });
+      }
+    }
+    return spans;
+  }
+
   // src/core/layout.js
   function layoutEvents(items) {
     const sorted = items.map((item, index) => ({ ...item, index })).sort((a, b) => a.start - b.start || a.index - b.index);
@@ -4812,58 +4874,6 @@
     }));
   }
 
-  // src/core/resources.js
-  function getTimeGridColumns(dates) {
-    return dates.map((date) => ({ date, resource: null }));
-  }
-  function getResourceColumns(resources, dates) {
-    return resources.flatMap((resource) => dates.map((date) => ({ date, resource })));
-  }
-  function groupResources(resources, resourceGroups = []) {
-    const seen = new Set;
-    const sections = [];
-    for (const group of resourceGroups) {
-      const id = String(group.id);
-      if (seen.has(id))
-        continue;
-      seen.add(id);
-      const members = resources.filter((resource) => resource.groupId != null && String(resource.groupId) === id);
-      if (members.length > 0)
-        sections.push({ group, resources: members });
-    }
-    const leftover = resources.filter((resource) => resource.groupId == null || !seen.has(String(resource.groupId)));
-    if (leftover.length > 0)
-      sections.push({ group: null, resources: leftover });
-    return sections;
-  }
-  function eventBelongsToColumn(event, column) {
-    if (!column.resource)
-      return true;
-    return event.resourceId === column.resource.id;
-  }
-  function backgroundAppliesToColumn(background, column) {
-    if (!column.resource)
-      return true;
-    if (background.resourceId == null)
-      return true;
-    return background.resourceId === column.resource.id;
-  }
-  function getDaySpans(columns, range, applies, timeZone) {
-    const spans = [];
-    for (let index = 0;index < columns.length; index += 1) {
-      const column = columns[index];
-      if (!applies(range, column) || !eventOverlapsDate(range, column.date, timeZone))
-        continue;
-      const previous = spans[spans.length - 1];
-      if (previous?.endDay === index && columns[index - 1].resource === column.resource) {
-        previous.endDay = index + 1;
-      } else {
-        spans.push({ startDay: index, endDay: index + 1 });
-      }
-    }
-    return spans;
-  }
-
   // src/core/time-grid-model.js
   function deriveTimedColumn(column, events, backgrounds, options) {
     const dayEvents = [];
@@ -4901,6 +4911,569 @@
         })
       })),
       backgrounds: dayBackgrounds
+    };
+  }
+
+  // src/render/pointer-gesture.js
+  function startPointerGesture({ target, event, threshold = 4, onMove, onEnd, onCancel, onCleanup }) {
+    const pointerId = event.pointerId;
+    const downX = event.clientX;
+    const downY = event.clientY;
+    let moved = false;
+    let finished = false;
+    const cleanup = () => {
+      if (finished)
+        return;
+      finished = true;
+      target.removeEventListener("pointermove", handleMove);
+      target.removeEventListener("pointerup", handleUp);
+      target.removeEventListener("pointercancel", handleCancel);
+      target.removeEventListener("lostpointercapture", handleLost);
+      try {
+        target.releasePointerCapture(pointerId);
+      } catch {}
+      onCleanup?.();
+    };
+    const handleMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId)
+        return;
+      if (!moved && Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= threshold) {
+        moved = true;
+      }
+      if (!moved)
+        return;
+      onMove(moveEvent, { moved });
+    };
+    const handleUp = (upEvent) => {
+      if (upEvent.pointerId !== pointerId)
+        return;
+      cleanup();
+      onEnd(upEvent, { moved });
+    };
+    const handleCancel = (cancelEvent) => {
+      if (cancelEvent.pointerId !== pointerId)
+        return;
+      cleanup();
+      onCancel?.("pointercancel");
+    };
+    const handleLost = (lostEvent) => {
+      if (lostEvent.pointerId !== pointerId)
+        return;
+      cleanup();
+      onCancel?.("lostpointercapture");
+    };
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {}
+    target.addEventListener("pointermove", handleMove);
+    target.addEventListener("pointerup", handleUp);
+    target.addEventListener("pointercancel", handleCancel);
+    target.addEventListener("lostpointercapture", handleLost);
+    return {
+      dispose() {
+        if (finished)
+          return;
+        cleanup();
+        onCancel?.("dispose");
+      }
+    };
+  }
+
+  // src/render/all-day-lane.js
+  function createAllDayLane({
+    columns,
+    dates,
+    events,
+    backgrounds,
+    resourceView,
+    timeZone,
+    labels,
+    gridTemplate,
+    host,
+    eventContent,
+    stateOf,
+    interaction,
+    columnIndexAtX,
+    watchLongPress
+  }) {
+    const overVisibleDays = (range) => dates.some((date) => eventOverlapsDate(range, date, timeZone));
+    const daySpans = (range, applies) => getDaySpans(columns, range, applies, timeZone);
+    const allDaySegments = events.filter((event) => event.allDay === true && overVisibleDays(event)).flatMap((event) => daySpans(event, eventBelongsToColumn).map((span) => ({
+      event,
+      resourceId: resourceView ? event.resourceId ?? null : null,
+      ...span
+    })));
+    const allDayBackgroundSegments = backgrounds.filter((background) => background.allDay === true && overVisibleDays(background)).flatMap((background) => daySpans(background, backgroundAppliesToColumn).map((span) => ({
+      background,
+      ...span
+    })));
+    const hasContent = allDaySegments.length > 0 || allDayBackgroundSegments.length > 0;
+    const gestureDisposers = new Map;
+    const lane = document.createElement("div");
+    lane.className = "cv-allday";
+    lane.style.gridTemplateColumns = gridTemplate;
+    lane.style.gridColumn = "1 / -1";
+    lane.style.gridRow = "2";
+    const columnAtX = (clientX) => columns[columnIndexAtX(clientX)] ?? columns[0];
+    function allDayColumnAtPoint(x, y) {
+      const hit = elementAtPoint(lane, x, y);
+      return hit && lane.contains(hit) ? columnIndexAtX(x) : -1;
+    }
+    const commitAllDayMove = (evt, days, resourceId, nativeEvent) => {
+      if (!(evt.start instanceof Temporal2.PlainDate))
+        return null;
+      const start = evt.start;
+      const end = evt.end;
+      return host.commitEventMove({
+        event: evt,
+        previous: { start: evt.start, end: evt.end, resourceId: evt.resourceId ?? null },
+        current: { start: start.add({ days }), end: end.add({ days }), resourceId },
+        nativeEvent
+      });
+    };
+    function beginAllDayDrag(bar, event, startDay, nativeEvent) {
+      if (nativeEvent.button !== 0)
+        return;
+      if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
+        return;
+      }
+      if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
+        const startGate = host.checkInteraction({
+          action: "move",
+          event,
+          start: event.start,
+          end: event.end,
+          resourceId: event.resourceId ?? null,
+          allDay: true
+        });
+        if (!startGate.ok)
+          return;
+      }
+      const downX = nativeEvent.clientX;
+      let mirror = null;
+      const grabbedColumn = columnIndexAtX(downX);
+      const origin = columns[grabbedColumn < 0 ? startDay : grabbedColumn];
+      let laneKey = grabbedColumn;
+      let laneRevision = host.getInteractionRevision();
+      let laneOk = true;
+      const gesture = startPointerGesture({
+        target: bar,
+        event: nativeEvent,
+        onMove(moveEvent) {
+          if (interaction.longPressConsumed)
+            return;
+          const index = allDayColumnAtPoint(moveEvent.clientX, moveEvent.clientY);
+          if (index < 0) {
+            mirror?.remove();
+            return;
+          }
+          if (!mirror) {
+            mirror = bar.cloneNode(true);
+            mirror.classList.add("cv-drag-mirror");
+            mirror.tabIndex = -1;
+            mirror.setAttribute("aria-hidden", "true");
+            bar.classList.add("cv-drag-source");
+          }
+          if (!mirror.isConnected)
+            lane.append(mirror);
+          const droppable = columns[index].resource?.droppable !== false;
+          const days = columns[index].date.since(origin.date).days;
+          const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
+          const spans = daySpans({
+            start: event.start.add({ days }),
+            end: event.end.add({ days }),
+            resourceId
+          }, eventBelongsToColumn);
+          const span = spans.find((entry) => index >= entry.startDay && index < entry.endDay);
+          mirror.style.gridColumn = span ? `${span.startDay + 2} / ${span.endDay + 2}` : `${index + 2}`;
+          mirror.style.gridRow = String(Number.parseFloat(bar.style.gridRow) || 1);
+          const revision = host.getInteractionRevision();
+          if (revision !== laneRevision) {
+            laneRevision = revision;
+            laneKey = null;
+          }
+          if (index !== laneKey) {
+            laneKey = index;
+            const dayDelta = columns[index].date.since(origin.date).days;
+            const nextResourceId = columns[index].resource?.id ?? event.resourceId ?? null;
+            let decision = { ok: true, reason: null };
+            if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
+              decision = host.checkInteraction({
+                action: "move",
+                event,
+                start: event.start.add({ days: dayDelta }),
+                end: event.end.add({ days: dayDelta }),
+                resourceId: nextResourceId,
+                allDay: true
+              });
+            }
+            laneOk = decision.ok;
+            if (decision.reason)
+              mirror.dataset.reason = decision.reason;
+            else
+              delete mirror.dataset.reason;
+          }
+          mirror.classList.toggle("cv-invalid", !droppable || !laneOk);
+        },
+        onEnd(upEvent, { moved }) {
+          if (interaction.longPressConsumed || !moved)
+            return;
+          interaction.suppressClick = true;
+          const index = allDayColumnAtPoint(upEvent.clientX, upEvent.clientY);
+          if (index < 0 || columns[index].resource?.droppable === false)
+            return;
+          const dayDelta = columns[index].date.since(origin.date).days;
+          const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
+          const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
+          if (next) {
+            host.announce(describeEvent(next, timeZone, labels.untitledEvent));
+            host.refocusEvent(event.id);
+          }
+        },
+        onCancel() {
+          interaction.longPressConsumed = false;
+          interaction.suppressClick = false;
+        },
+        onCleanup() {
+          mirror?.remove();
+          bar.classList.remove("cv-drag-source");
+        }
+      });
+      gestureDisposers.set(bar, () => gesture.dispose());
+    }
+    function beginAllDayResize(bar, event, edge, nativeEvent) {
+      if (nativeEvent.button !== 0)
+        return;
+      if (!(event.start instanceof Temporal2.PlainDate) || !(event.end instanceof Temporal2.PlainDate))
+        return;
+      const startDate = event.start;
+      const endDate = event.end;
+      const pressGate = host.checkInteraction({
+        action: "resize",
+        event,
+        start: startDate,
+        end: endDate,
+        resourceId: event.resourceId ?? null,
+        allDay: true
+      });
+      if (!pressGate.ok)
+        return;
+      nativeEvent.stopPropagation();
+      nativeEvent.preventDefault();
+      const savedGridColumn = bar.style.gridColumn;
+      let resizeKey = null;
+      let resizeRevision = host.getInteractionRevision();
+      const spanFor = (start, end) => {
+        let first = -1;
+        let last = -1;
+        for (let index = 0;index < columns.length; index += 1) {
+          if (!belongsToEventBlock(columns[index]))
+            continue;
+          const date = columns[index].date;
+          if (first < 0 && Temporal2.PlainDate.compare(date, start) >= 0)
+            first = index;
+          if (Temporal2.PlainDate.compare(date, end) < 0)
+            last = index;
+        }
+        if (first < 0 || last < first)
+          return null;
+        return `${first + 2} / ${last + 3}`;
+      };
+      const belongsToEventBlock = (column) => !resourceView || event.resourceId == null || column.resource?.id === event.resourceId;
+      const lastVisibleBefore = (bound) => {
+        let found = null;
+        for (const column of columns) {
+          if (belongsToEventBlock(column) && Temporal2.PlainDate.compare(column.date, bound) < 0) {
+            found = column.date;
+          }
+        }
+        return found;
+      };
+      const resizeTarget = (pointer) => {
+        const index = allDayColumnAtPoint(pointer.clientX, pointer.clientY);
+        if (index < 0)
+          return null;
+        if (!belongsToEventBlock(columns[index]))
+          return null;
+        const pointerDate = columns[index].date;
+        let nextStart = startDate;
+        let nextEnd = endDate;
+        if (edge === "start") {
+          if (Temporal2.PlainDate.compare(pointerDate, endDate) >= 0) {
+            const last = lastVisibleBefore(endDate);
+            if (!last)
+              return null;
+            nextStart = last;
+          } else {
+            nextStart = pointerDate;
+          }
+        } else {
+          const endFromDay = pointerDate.add({ days: 1 });
+          nextEnd = Temporal2.PlainDate.compare(endFromDay, startDate.add({ days: 1 })) < 0 ? startDate.add({ days: 1 }) : endFromDay;
+        }
+        const span = spanFor(nextStart, nextEnd);
+        if (!span)
+          return null;
+        return { span, range: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null } };
+      };
+      const resetPreview = () => {
+        bar.style.gridColumn = savedGridColumn;
+        bar.classList.remove("cv-invalid");
+        delete bar.dataset.reason;
+        resizeKey = null;
+      };
+      const gesture = startPointerGesture({
+        target: bar,
+        event: nativeEvent,
+        onMove(moveEvent) {
+          if (interaction.longPressConsumed)
+            return;
+          const target = resizeTarget(moveEvent);
+          if (!target) {
+            resetPreview();
+            return;
+          }
+          const { span, range } = target;
+          bar.style.gridColumn = span;
+          const key = `${range.start}:${range.end}`;
+          const revision = host.getInteractionRevision();
+          if (revision !== resizeRevision) {
+            resizeRevision = revision;
+            resizeKey = null;
+          }
+          if (key !== resizeKey) {
+            resizeKey = key;
+            const decision = host.checkInteraction({
+              action: "resize",
+              event,
+              ...range,
+              allDay: true
+            });
+            bar.classList.toggle("cv-invalid", !decision.ok);
+            if (decision.reason)
+              bar.dataset.reason = decision.reason;
+            else
+              delete bar.dataset.reason;
+          }
+        },
+        onEnd(upEvent, { moved }) {
+          if (interaction.longPressConsumed || !moved) {
+            resetPreview();
+            return;
+          }
+          interaction.suppressClick = true;
+          const target = resizeTarget(upEvent);
+          resetPreview();
+          if (!target)
+            return;
+          const result = host.commitEventResize({
+            event,
+            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+            current: target.range,
+            nativeEvent: upEvent
+          });
+          if (!result)
+            return;
+          host.announce(describeEvent(result, timeZone, labels.untitledEvent));
+          host.refocusEvent(event.id);
+        },
+        onCancel() {
+          resetPreview();
+          interaction.longPressConsumed = false;
+          interaction.suppressClick = false;
+        }
+      });
+      gestureDisposers.set(bar, () => gesture.dispose());
+    }
+    if (hasContent) {
+      const corner = document.createElement("span");
+      corner.className = "cv-allday-corner";
+      corner.textContent = labels.allDaySlotLabel;
+      corner.setAttribute("aria-hidden", "true");
+      lane.append(corner);
+      for (const tint of allDayBackgroundSegments) {
+        const node = document.createElement("div");
+        node.className = ["cv-allday-background", ...tint.background.classNames ?? []].join(" ");
+        node.style.gridColumn = `${tint.startDay + 2} / ${tint.endDay + 2}`;
+        node.style.gridRow = "1 / -1";
+        lane.append(node);
+      }
+      for (const segment of layoutDaySegments(allDaySegments)) {
+        const { event, startDay, endDay } = segment;
+        const bar = document.createElement("button");
+        bar.type = "button";
+        bar.className = ["cv-allday-event", ...event.classNames ?? []].join(" ");
+        bar.dataset.eventId = event.id;
+        bar.dataset.focusKey = JSON.stringify([event.id, "allday", event.resourceId ?? null]);
+        const barState = stateOf(event);
+        bar.dataset.temporalState = barState;
+        bar.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
+        bar.style.gridColumn = `${startDay + 2} / ${endDay + 2}`;
+        bar.style.gridRow = String(segment.row + 1);
+        const column = columns[startDay];
+        const content = eventContent?.({
+          event,
+          date: column.date,
+          resource: column.resource,
+          temporalState: barState,
+          element: bar
+        });
+        if (!applyContent(bar, content))
+          bar.textContent = event.title ?? labels.untitledEvent;
+        lane.append(bar);
+        bar.addEventListener("click", (nativeEvent) => {
+          if (interaction.suppressClick) {
+            interaction.suppressClick = false;
+            interaction.longPressConsumed = false;
+            nativeEvent.stopPropagation();
+            nativeEvent.preventDefault();
+            return;
+          }
+          const target = columnAtX(nativeEvent.clientX);
+          bar.dispatchEvent(new CustomEvent("calendar:eventclick", {
+            bubbles: true,
+            composed: true,
+            cancelable: true,
+            detail: { event, date: target.date, resource: target.resource, nativeEvent }
+          }));
+        }, true);
+        bar.addEventListener("contextmenu", (nativeEvent) => {
+          const target = columnAtX(nativeEvent.clientX);
+          dispatchContextMenu(bar, {
+            event,
+            date: target.date,
+            resourceId: target.resource?.id ?? null,
+            clientX: nativeEvent.clientX,
+            clientY: nativeEvent.clientY
+          }, nativeEvent);
+        });
+        watchLongPress(bar, (press) => {
+          const target = columnAtX(press.clientX);
+          dispatchContextMenu(bar, {
+            event,
+            date: target.date,
+            resourceId: target.resource?.id ?? null,
+            clientX: press.clientX,
+            clientY: press.clientY
+          }, press);
+        });
+        const movable = isMovable(event, host.editable);
+        const resizable = isResizable(event, host.editable);
+        bar.addEventListener("keydown", (keyboardEvent) => {
+          if (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
+            return;
+          const key = keyboardEvent.key;
+          if (keyboardEvent.shiftKey) {
+            if (key !== "ArrowLeft" && key !== "ArrowRight")
+              return;
+            if (!movable)
+              return;
+            keyboardEvent.preventDefault();
+            const days = key === "ArrowRight" ? 1 : -1;
+            if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
+              const gate = host.checkInteraction({
+                action: "move",
+                event,
+                start: event.start.add({ days }),
+                end: event.end.add({ days }),
+                resourceId: event.resourceId ?? null,
+                allDay: true
+              });
+              if (!gate.ok) {
+                if (gate.reason)
+                  host.announce(gate.reason);
+                return;
+              }
+            }
+            const next = commitAllDayMove(event, days, event.resourceId ?? null, keyboardEvent);
+            if (next)
+              host.announce(describeEvent(next, timeZone, labels.untitledEvent));
+            return;
+          }
+          if (!keyboardEvent.altKey || !resizable)
+            return;
+          if (!(event.start instanceof Temporal2.PlainDate) || !(event.end instanceof Temporal2.PlainDate))
+            return;
+          const adjustsStart = key === "ArrowUp" || key === "ArrowDown";
+          const adjustsEnd = key === "ArrowLeft" || key === "ArrowRight";
+          if (!adjustsStart && !adjustsEnd)
+            return;
+          keyboardEvent.preventDefault();
+          let nextStart = event.start;
+          let nextEnd = event.end;
+          if (key === "ArrowUp")
+            nextStart = nextStart.subtract({ days: 1 });
+          else if (key === "ArrowDown")
+            nextStart = nextStart.add({ days: 1 });
+          else if (key === "ArrowLeft")
+            nextEnd = nextEnd.subtract({ days: 1 });
+          else
+            nextEnd = nextEnd.add({ days: 1 });
+          if (Temporal2.PlainDate.compare(nextEnd, nextStart) <= 0)
+            return;
+          const gate = host.checkInteraction({
+            action: "resize",
+            event,
+            start: nextStart,
+            end: nextEnd,
+            resourceId: event.resourceId ?? null,
+            allDay: true
+          });
+          if (!gate.ok) {
+            if (gate.reason)
+              host.announce(gate.reason);
+            return;
+          }
+          const result = host.commitEventResize({
+            event,
+            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+            current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
+            nativeEvent: keyboardEvent
+          });
+          if (!result)
+            return;
+          host.announce(describeEvent(result, timeZone, labels.untitledEvent));
+          host.refocusEvent(event.id);
+        });
+        if (resizable) {
+          const resizeAllowed = host.checkInteraction({
+            action: "resize",
+            event,
+            start: event.start,
+            end: event.end,
+            resourceId: event.resourceId ?? null,
+            allDay: true
+          }).ok;
+          const startEdgeVisible = event.start instanceof Temporal2.PlainDate && Temporal2.PlainDate.compare(columns[startDay].date, event.start) === 0;
+          const endEdgeVisible = event.end instanceof Temporal2.PlainDate && Temporal2.PlainDate.compare(columns[endDay - 1].date.add({ days: 1 }), event.end) === 0;
+          if (resizeAllowed) {
+            for (const edge of ["start", "end"]) {
+              if (edge === "start" && !startEdgeVisible)
+                continue;
+              if (edge === "end" && !endEdgeVisible)
+                continue;
+              const handle = document.createElement("div");
+              handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "w" : "e"}`;
+              bar.append(handle);
+              handle.addEventListener("pointerdown", (nativeEvent) => {
+                beginAllDayResize(bar, event, edge, nativeEvent);
+              });
+            }
+          }
+        }
+        if (movable) {
+          bar.addEventListener("pointerdown", (nativeEvent) => beginAllDayDrag(bar, event, startDay, nativeEvent));
+        }
+      }
+    }
+    return {
+      lane,
+      hasContent,
+      dispose() {
+        for (const disposeGesture of gestureDisposers.values())
+          disposeGesture();
+        gestureDisposers.clear();
+      }
     };
   }
 
@@ -4970,10 +5543,40 @@
   }) {
     let externalGhost = null;
     let externalPreview = null;
+    let highlightedColumn = null;
+    function highlightLaneColumn(index) {
+      const day = bodies[index]?.body.closest(".cv-day");
+      if (highlightedColumn === day)
+        return;
+      clearLaneHighlight();
+      if (!(day instanceof HTMLElement))
+        return;
+      day.classList.add("cv-external-lane-target");
+      highlightedColumn = day;
+    }
+    function clearLaneHighlight() {
+      highlightedColumn?.classList.remove("cv-external-lane-target");
+      highlightedColumn = null;
+    }
     function removeExternalGhost() {
       externalGhost?.node.remove();
       externalGhost = null;
       externalPreview = null;
+      clearLaneHighlight();
+    }
+    function visibleColumnAtPoint(clientX, clientY) {
+      const day = elementAtPoint(root, clientX, clientY)?.closest(".cv-day");
+      if (!day)
+        return -1;
+      return bodies.findIndex(({ body }) => body.closest(".cv-day") === day);
+    }
+    function laneColumnAtPoint(clientX, clientY) {
+      if (!lane.isConnected)
+        return -1;
+      const hit = elementAtPoint(lane, clientX, clientY);
+      if (!hit || !lane.contains(hit))
+        return -1;
+      return columnIndexAtX(clientX);
     }
     function externalTargetValidity(date, time, resourceId, allDay, droppable) {
       if (!droppable)
@@ -4997,10 +5600,13 @@
         externalPreview = { source: external, revision, key, placement };
         return placement;
       };
-      if (meta.allDay === true || columnIndexAtX(clientX) >= 0 && isOverLane(clientY)) {
-        const index = columnIndexAtX(clientX);
+      const laneIndex = laneColumnAtPoint(clientX, clientY);
+      const allDayIndex = meta.allDay === true && laneIndex < 0 ? visibleColumnAtPoint(clientX, clientY) : laneIndex;
+      if (meta.allDay === true || laneIndex >= 0) {
+        const index = allDayIndex;
         if (index < 0)
           return null;
+        const highlight = meta.allDay === true && laneIndex < 0;
         const key = `lane:${index}`;
         const previous = cached(key);
         if (previous)
@@ -5021,7 +5627,8 @@
             index,
             target: { date: column.date, time: null, resourceId, allDay: true },
             ok: false,
-            reason: policy.reason
+            reason: policy.reason,
+            highlight
           });
         }
         const validity = externalTargetValidity(column.date, null, resourceId, true, column.resource?.droppable !== false);
@@ -5030,7 +5637,8 @@
           index,
           target: { date: column.date, time: null, resourceId, allDay: true },
           ok: validity.ok,
-          reason: validity.reason
+          reason: validity.reason,
+          highlight
         });
       }
       const hit = gridHit(clientX, clientY);
@@ -5082,16 +5690,17 @@
         reason: validity.reason
       });
     }
-    function isOverLane(clientY) {
-      const rect = lane.getBoundingClientRect();
-      return rect.height > 0 && clientY >= rect.top && clientY <= rect.bottom;
-    }
     function paintExternalGhost(placement) {
       if (!placement) {
         removeExternalGhost();
         return;
       }
       const external = host.getExternalDrag();
+      if (placement.kind === "lane" && placement.highlight) {
+        highlightLaneColumn(placement.index);
+      } else {
+        clearLaneHighlight();
+      }
       let node = externalGhost?.node;
       if (!node?.isConnected || externalGhost?.kind !== placement.kind) {
         node?.remove();
@@ -5118,7 +5727,7 @@
         label.className = "";
         node.style.gridColumn = `${placement.index + 2} / ${placement.index + 3}`;
         node.style.gridRow = "1 / -1";
-        if (node.parentNode !== lane)
+        if (!placement.highlight && lane.isConnected && node.parentNode !== lane)
           lane.append(node);
       }
       node.classList.toggle("cv-invalid", !placement.ok);
@@ -5263,6 +5872,14 @@
     const orderedResources = resourceView && sections.length > 0 ? sections.flatMap((section) => section.resources) : resources;
     const columns = resourceView ? getResourceColumns(orderedResources, dates) : getTimeGridColumns(dates);
     const gridTemplate = `var(--calendar-axis-size) repeat(${Math.max(1, columns.length)}, minmax(var(--calendar-column-min), 1fr))`;
+    const columnIndexAtX = (clientX) => {
+      for (let index = 0;index < bodies.length; index += 1) {
+        const rect = bodies[index].body.getBoundingClientRect();
+        if (clientX >= rect.left && clientX < rect.right)
+          return index;
+      }
+      return -1;
+    };
     if (resourceView) {
       const declaredSections = sections.filter((section) => section.group != null);
       if (declaredSections.length > 0) {
@@ -5314,7 +5931,7 @@
     const endMinutes = minutesFromMidnight(options.slotMax);
     const pxPerMinute = options.pxPerMinute;
     const timeZone = options.timeZone ?? "UTC";
-    const renderNow = now ?? Temporal2.Now.zonedDateTimeISO(timeZone);
+    let renderNow = now ?? Temporal2.Now.zonedDateTimeISO(timeZone);
     const stateOf = (event) => temporalState(event.start, event.end, renderNow, timeZone);
     const snapStep = durationMinutes(options.snapDuration ?? { minutes: 15 });
     const defaultDuration = durationMinutes(options.defaultTimedEventDuration ?? { minutes: 30 });
@@ -5322,24 +5939,13 @@
     const totalHeight = (endMinutes - startMinutes) * pxPerMinute;
     axis.style.height = `${totalHeight}px`;
     let selecting = null;
-    let suppressClick = false;
-    let longPressConsumed = false;
+    const interaction = { suppressClick: false, longPressConsumed: false };
     const LONG_PRESS_MS = 550;
     const LONG_PRESS_PX = 12;
     function tryCapture(target, pointerId) {
       try {
         target.setPointerCapture(pointerId);
       } catch {}
-    }
-    function dispatchContextMenu(target, detail, nativeEvent) {
-      const handled = !target.dispatchEvent(new CustomEvent("calendar:eventcontextmenu", {
-        bubbles: true,
-        composed: true,
-        cancelable: true,
-        detail: { ...detail, nativeEvent }
-      }));
-      if (handled)
-        nativeEvent.preventDefault?.();
     }
     function watchLongPress(target, onFire, shouldIgnore) {
       let timer = 0;
@@ -5365,8 +5971,8 @@
           timer = 0;
           if (!host.isConnected())
             return;
-          longPressConsumed = true;
-          suppressClick = true;
+          interaction.longPressConsumed = true;
+          interaction.suppressClick = true;
           onFire(nativeEvent);
         }, LONG_PRESS_MS);
       });
@@ -5440,509 +6046,26 @@
       empty.textContent = labels.noResources;
       root.append(empty);
       fragment.append(root);
-      return fragment;
+      return { fragment, update: () => false, dispose: () => {} };
     }
-    const overVisibleDays = (range) => dates.some((date) => eventOverlapsDate(range, date, timeZone));
-    const daySpans = (range, applies) => getDaySpans(columns, range, applies, timeZone);
-    const allDaySegments = events.filter((event) => event.allDay === true && overVisibleDays(event)).flatMap((event) => daySpans(event, eventBelongsToColumn).map((span) => ({
-      event,
-      resourceId: resourceView ? event.resourceId ?? null : null,
-      ...span
-    })));
-    const allDayBackgroundSegments = backgrounds.filter((background) => background.allDay === true && overVisibleDays(background)).flatMap((background) => daySpans(background, backgroundAppliesToColumn).map((span) => ({
-      background,
-      ...span
-    })));
-    const showAllDay = options.allDaySlot !== false && (allDaySegments.length > 0 || allDayBackgroundSegments.length > 0);
-    const allDayBars = [];
-    const columnAtX = (clientX) => {
-      for (let index = 0;index < bodies.length; index += 1) {
-        const rect = bodies[index].body.getBoundingClientRect();
-        if (clientX >= rect.left && clientX < rect.right)
-          return columns[index];
-      }
-      return columns[0];
-    };
-    const columnIndexAtX = (clientX) => {
-      for (let index = 0;index < bodies.length; index += 1) {
-        const rect = bodies[index].body.getBoundingClientRect();
-        if (clientX >= rect.left && clientX < rect.right)
-          return index;
-      }
-      return -1;
-    };
-    function allDayColumnAtPoint(x, y) {
-      const hit = elementAtPoint(lane, x, y);
-      return hit && lane.contains(hit) ? columnIndexAtX(x) : -1;
-    }
-    const commitAllDayMove = (evt, days, resourceId, nativeEvent) => {
-      if (!(evt.start instanceof Temporal2.PlainDate))
-        return null;
-      const start = evt.start;
-      const end = evt.end;
-      return host.commitEventMove({
-        event: evt,
-        previous: { start: evt.start, end: evt.end, resourceId: evt.resourceId ?? null },
-        current: { start: start.add({ days }), end: end.add({ days }), resourceId },
-        nativeEvent
-      });
-    };
-    function beginAllDayDrag(bar, event, startDay, nativeEvent) {
-      if (nativeEvent.button !== 0)
-        return;
-      if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
-        return;
-      }
-      if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
-        const startGate = host.checkInteraction({
-          action: "move",
-          event,
-          start: event.start,
-          end: event.end,
-          resourceId: event.resourceId ?? null,
-          allDay: true
-        });
-        if (!startGate.ok)
-          return;
-      }
-      tryCapture(bar, nativeEvent.pointerId);
-      const downX = nativeEvent.clientX;
-      const downY = nativeEvent.clientY;
-      let moved = false;
-      let mirror = null;
-      const grabbedColumn = columnIndexAtX(downX);
-      const origin = columns[grabbedColumn < 0 ? startDay : grabbedColumn];
-      let laneKey = grabbedColumn;
-      let laneOk = true;
-      const onMove = (moveEvent) => {
-        if (longPressConsumed)
-          return;
-        if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
-          moved = true;
-        if (!moved)
-          return;
-        const index = allDayColumnAtPoint(moveEvent.clientX, moveEvent.clientY);
-        if (index < 0) {
-          mirror?.remove();
-          return;
-        }
-        if (!mirror) {
-          mirror = bar.cloneNode(true);
-          mirror.classList.add("cv-drag-mirror");
-          mirror.tabIndex = -1;
-          mirror.setAttribute("aria-hidden", "true");
-          bar.classList.add("cv-drag-source");
-        }
-        if (!mirror.isConnected)
-          lane.append(mirror);
-        const droppable = columns[index].resource?.droppable !== false;
-        const days = columns[index].date.since(origin.date).days;
-        const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
-        const spans = daySpans({
-          start: event.start.add({ days }),
-          end: event.end.add({ days }),
-          resourceId
-        }, eventBelongsToColumn);
-        const span = spans.find((entry) => index >= entry.startDay && index < entry.endDay);
-        mirror.style.gridColumn = span ? `${span.startDay + 2} / ${span.endDay + 2}` : `${index + 2}`;
-        mirror.style.gridRow = String(Number.parseFloat(bar.style.gridRow) || 1);
-        if (index !== laneKey) {
-          laneKey = index;
-          const dayDelta = columns[index].date.since(origin.date).days;
-          const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
-          let decision = { ok: true, reason: null };
-          if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
-            decision = host.checkInteraction({
-              action: "move",
-              event,
-              start: event.start.add({ days: dayDelta }),
-              end: event.end.add({ days: dayDelta }),
-              resourceId,
-              allDay: true
-            });
-          }
-          laneOk = decision.ok;
-          if (decision.reason)
-            mirror.dataset.reason = decision.reason;
-          else
-            delete mirror.dataset.reason;
-        }
-        mirror.classList.toggle("cv-invalid", !droppable || !laneOk);
-      };
-      const cleanup = () => {
-        bar.removeEventListener("pointermove", onMove);
-        bar.removeEventListener("pointerup", onUp);
-        bar.removeEventListener("pointercancel", onCancel);
-        bar.removeEventListener("lostpointercapture", onCancel);
-        mirror?.remove();
-        bar.classList.remove("cv-drag-source");
-      };
-      const onUp = (upEvent) => {
-        cleanup();
-        if (longPressConsumed || !moved)
-          return;
-        suppressClick = true;
-        const index = allDayColumnAtPoint(upEvent.clientX, upEvent.clientY);
-        if (index < 0 || columns[index].resource?.droppable === false)
-          return;
-        const dayDelta = columns[index].date.since(origin.date).days;
-        const resourceId = columns[index].resource?.id ?? event.resourceId ?? null;
-        const next = commitAllDayMove(event, dayDelta, resourceId, upEvent);
-        if (next) {
-          host.announce(describeEvent(next, timeZone, labels.untitledEvent));
-          host.refocusEvent(event.id);
-        }
-      };
-      const onCancel = (_cancelEvent) => {
-        cleanup();
-        longPressConsumed = false;
-        suppressClick = false;
-      };
-      bar.addEventListener("pointermove", onMove);
-      bar.addEventListener("pointerup", onUp);
-      bar.addEventListener("pointercancel", onCancel);
-      bar.addEventListener("lostpointercapture", onCancel);
-    }
-    function beginAllDayResize(bar, event, edge, nativeEvent) {
-      if (nativeEvent.button !== 0)
-        return;
-      if (!(event.start instanceof Temporal2.PlainDate) || !(event.end instanceof Temporal2.PlainDate))
-        return;
-      const startDate = event.start;
-      const endDate = event.end;
-      const pressGate = host.checkInteraction({
-        action: "resize",
-        event,
-        start: startDate,
-        end: endDate,
-        resourceId: event.resourceId ?? null,
-        allDay: true
-      });
-      if (!pressGate.ok)
-        return;
-      nativeEvent.stopPropagation();
-      nativeEvent.preventDefault();
-      tryCapture(bar, nativeEvent.pointerId);
-      const savedGridColumn = bar.style.gridColumn;
-      const downX = nativeEvent.clientX;
-      const downY = nativeEvent.clientY;
-      let moved = false;
-      let resizeKey = null;
-      const spanFor = (start, end) => {
-        let first = -1;
-        let last = -1;
-        for (let index = 0;index < columns.length; index += 1) {
-          if (!belongsToEventBlock(columns[index]))
-            continue;
-          const date = columns[index].date;
-          if (first < 0 && Temporal2.PlainDate.compare(date, start) >= 0)
-            first = index;
-          if (Temporal2.PlainDate.compare(date, end) < 0)
-            last = index;
-        }
-        if (first < 0 || last < first)
-          return null;
-        return `${first + 2} / ${last + 3}`;
-      };
-      const belongsToEventBlock = (column) => !resourceView || event.resourceId == null || column.resource?.id === event.resourceId;
-      const lastVisibleBefore = (bound) => {
-        let found = null;
-        for (const column of columns) {
-          if (belongsToEventBlock(column) && Temporal2.PlainDate.compare(column.date, bound) < 0) {
-            found = column.date;
-          }
-        }
-        return found;
-      };
-      const resizeTarget = (pointer) => {
-        const index = allDayColumnAtPoint(pointer.clientX, pointer.clientY);
-        if (index < 0)
-          return null;
-        if (!belongsToEventBlock(columns[index]))
-          return null;
-        const pointerDate = columns[index].date;
-        let nextStart = startDate;
-        let nextEnd = endDate;
-        if (edge === "start") {
-          if (Temporal2.PlainDate.compare(pointerDate, endDate) >= 0) {
-            const last = lastVisibleBefore(endDate);
-            if (!last)
-              return null;
-            nextStart = last;
-          } else {
-            nextStart = pointerDate;
-          }
-        } else {
-          const endFromDay = pointerDate.add({ days: 1 });
-          nextEnd = Temporal2.PlainDate.compare(endFromDay, startDate.add({ days: 1 })) < 0 ? startDate.add({ days: 1 }) : endFromDay;
-        }
-        const span = spanFor(nextStart, nextEnd);
-        if (!span)
-          return null;
-        return { span, range: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null } };
-      };
-      const resetPreview = () => {
-        bar.style.gridColumn = savedGridColumn;
-        bar.classList.remove("cv-invalid");
-        delete bar.dataset.reason;
-        resizeKey = null;
-      };
-      const onMove = (moveEvent) => {
-        if (longPressConsumed)
-          return;
-        if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
-          moved = true;
-        if (!moved)
-          return;
-        const target = resizeTarget(moveEvent);
-        if (!target) {
-          resetPreview();
-          return;
-        }
-        const { span, range } = target;
-        bar.style.gridColumn = span;
-        const key = `${range.start}:${range.end}`;
-        if (key !== resizeKey) {
-          resizeKey = key;
-          const decision = host.checkInteraction({
-            action: "resize",
-            event,
-            ...range,
-            allDay: true
-          });
-          bar.classList.toggle("cv-invalid", !decision.ok);
-          if (decision.reason)
-            bar.dataset.reason = decision.reason;
-          else
-            delete bar.dataset.reason;
-        }
-      };
-      const onUp = (upEvent) => {
-        cleanup();
-        if (longPressConsumed || !moved) {
-          resetPreview();
-          return;
-        }
-        suppressClick = true;
-        const target = resizeTarget(upEvent);
-        resetPreview();
-        if (!target)
-          return;
-        const result = host.commitEventResize({
-          event,
-          previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-          current: target.range,
-          nativeEvent: upEvent
-        });
-        if (!result)
-          return;
-        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-        host.refocusEvent(event.id);
-      };
-      const onCancel = (_cancelEvent) => {
-        cleanup();
-        resetPreview();
-        longPressConsumed = false;
-        suppressClick = false;
-      };
-      const cleanup = () => {
-        bar.removeEventListener("pointermove", onMove);
-        bar.removeEventListener("pointerup", onUp);
-        bar.removeEventListener("pointercancel", onCancel);
-        bar.removeEventListener("lostpointercapture", onCancel);
-      };
-      bar.addEventListener("pointermove", onMove);
-      bar.addEventListener("pointerup", onUp);
-      bar.addEventListener("pointercancel", onCancel);
-      bar.addEventListener("lostpointercapture", onCancel);
-    }
-    const lane = document.createElement("div");
-    lane.className = "cv-allday";
-    lane.style.gridTemplateColumns = gridTemplate;
-    lane.style.gridColumn = "1 / -1";
-    lane.style.gridRow = "2";
-    if (showAllDay) {
-      const corner = document.createElement("span");
-      corner.className = "cv-allday-corner";
-      corner.textContent = labels.allDaySlotLabel;
-      corner.setAttribute("aria-hidden", "true");
-      lane.append(corner);
-      for (const tint of allDayBackgroundSegments) {
-        const node = document.createElement("div");
-        node.className = ["cv-allday-background", ...tint.background.classNames ?? []].join(" ");
-        node.style.gridColumn = `${tint.startDay + 2} / ${tint.endDay + 2}`;
-        node.style.gridRow = "1 / -1";
-        lane.append(node);
-      }
-      for (const segment of layoutDaySegments(allDaySegments)) {
-        const { event, startDay, endDay } = segment;
-        const bar = document.createElement("button");
-        bar.type = "button";
-        bar.className = ["cv-allday-event", ...event.classNames ?? []].join(" ");
-        bar.dataset.eventId = event.id;
-        bar.dataset.focusKey = JSON.stringify([event.id, "allday", event.resourceId ?? null]);
-        const barState = stateOf(event);
-        bar.dataset.temporalState = barState;
-        bar.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-        bar.style.gridColumn = `${startDay + 2} / ${endDay + 2}`;
-        bar.style.gridRow = String(segment.row + 1);
-        const column = columns[startDay];
-        const content = eventContent?.({
-          event,
-          date: column.date,
-          resource: column.resource,
-          temporalState: barState,
-          element: bar
-        });
-        if (!applyContent(bar, content))
-          bar.textContent = event.title ?? labels.untitledEvent;
-        lane.append(bar);
-        allDayBars.push({ bar, event, startDay, endDay });
-        bar.addEventListener("click", (nativeEvent) => {
-          if (suppressClick) {
-            suppressClick = false;
-            longPressConsumed = false;
-            nativeEvent.stopPropagation();
-            nativeEvent.preventDefault();
-            return;
-          }
-          const target = columnAtX(nativeEvent.clientX);
-          bar.dispatchEvent(new CustomEvent("calendar:eventclick", {
-            bubbles: true,
-            composed: true,
-            cancelable: true,
-            detail: { event, date: target.date, resource: target.resource, nativeEvent }
-          }));
-        }, true);
-        bar.addEventListener("contextmenu", (nativeEvent) => {
-          const target = columnAtX(nativeEvent.clientX);
-          dispatchContextMenu(bar, {
-            event,
-            date: target.date,
-            resourceId: target.resource?.id ?? null,
-            clientX: nativeEvent.clientX,
-            clientY: nativeEvent.clientY
-          }, nativeEvent);
-        });
-        watchLongPress(bar, (press) => {
-          const target = columnAtX(press.clientX);
-          dispatchContextMenu(bar, {
-            event,
-            date: target.date,
-            resourceId: target.resource?.id ?? null,
-            clientX: press.clientX,
-            clientY: press.clientY
-          }, press);
-        });
-        const movable = isMovable(event, host.editable);
-        const resizable = isResizable(event, host.editable);
-        bar.addEventListener("keydown", (keyboardEvent) => {
-          if (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
-            return;
-          const key = keyboardEvent.key;
-          if (keyboardEvent.shiftKey) {
-            if (key !== "ArrowLeft" && key !== "ArrowRight")
-              return;
-            if (!movable)
-              return;
-            keyboardEvent.preventDefault();
-            const days = key === "ArrowRight" ? 1 : -1;
-            if (event.start instanceof Temporal2.PlainDate && event.end instanceof Temporal2.PlainDate) {
-              const gate = host.checkInteraction({
-                action: "move",
-                event,
-                start: event.start.add({ days }),
-                end: event.end.add({ days }),
-                resourceId: event.resourceId ?? null,
-                allDay: true
-              });
-              if (!gate.ok) {
-                if (gate.reason)
-                  host.announce(gate.reason);
-                return;
-              }
-            }
-            const next = commitAllDayMove(event, days, event.resourceId ?? null, keyboardEvent);
-            if (next)
-              host.announce(describeEvent(next, timeZone, labels.untitledEvent));
-            return;
-          }
-          if (!keyboardEvent.altKey || !resizable)
-            return;
-          if (!(event.start instanceof Temporal2.PlainDate) || !(event.end instanceof Temporal2.PlainDate))
-            return;
-          const adjustsStart = key === "ArrowUp" || key === "ArrowDown";
-          const adjustsEnd = key === "ArrowLeft" || key === "ArrowRight";
-          if (!adjustsStart && !adjustsEnd)
-            return;
-          keyboardEvent.preventDefault();
-          let nextStart = event.start;
-          let nextEnd = event.end;
-          if (key === "ArrowUp")
-            nextStart = nextStart.subtract({ days: 1 });
-          else if (key === "ArrowDown")
-            nextStart = nextStart.add({ days: 1 });
-          else if (key === "ArrowLeft")
-            nextEnd = nextEnd.subtract({ days: 1 });
-          else
-            nextEnd = nextEnd.add({ days: 1 });
-          if (Temporal2.PlainDate.compare(nextEnd, nextStart) <= 0)
-            return;
-          const gate = host.checkInteraction({
-            action: "resize",
-            event,
-            start: nextStart,
-            end: nextEnd,
-            resourceId: event.resourceId ?? null,
-            allDay: true
-          });
-          if (!gate.ok) {
-            if (gate.reason)
-              host.announce(gate.reason);
-            return;
-          }
-          const result = host.commitEventResize({
-            event,
-            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-            current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
-            nativeEvent: keyboardEvent
-          });
-          if (!result)
-            return;
-          host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-          host.refocusEvent(event.id);
-        });
-        if (resizable) {
-          const resizeAllowed = host.checkInteraction({
-            action: "resize",
-            event,
-            start: event.start,
-            end: event.end,
-            resourceId: event.resourceId ?? null,
-            allDay: true
-          }).ok;
-          const startEdgeVisible = event.start instanceof Temporal2.PlainDate && Temporal2.PlainDate.compare(columns[startDay].date, event.start) === 0;
-          const endEdgeVisible = event.end instanceof Temporal2.PlainDate && Temporal2.PlainDate.compare(columns[endDay - 1].date.add({ days: 1 }), event.end) === 0;
-          if (resizeAllowed) {
-            for (const edge of ["start", "end"]) {
-              if (edge === "start" && !startEdgeVisible)
-                continue;
-              if (edge === "end" && !endEdgeVisible)
-                continue;
-              const handle = document.createElement("div");
-              handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "w" : "e"}`;
-              bar.append(handle);
-              handle.addEventListener("pointerdown", (nativeEvent) => {
-                beginAllDayResize(bar, event, edge, nativeEvent);
-              });
-            }
-          }
-        }
-        if (movable) {
-          bar.addEventListener("pointerdown", (nativeEvent) => beginAllDayDrag(bar, event, startDay, nativeEvent));
-        }
-      }
-    }
+    const allDay = options.allDaySlot === false ? { lane: document.createElement("div"), hasContent: false, dispose: () => {} } : createAllDayLane({
+      columns,
+      dates,
+      events,
+      backgrounds,
+      resourceView,
+      timeZone,
+      labels,
+      gridTemplate,
+      host,
+      eventContent,
+      stateOf,
+      interaction,
+      columnIndexAtX,
+      watchLongPress
+    });
+    const lane = allDay.lane;
+    const showAllDay = options.allDaySlot !== false && allDay.hasContent;
     let headerColumn = 2;
     for (const column of columns) {
       const header = document.createElement("header");
@@ -5991,6 +6114,475 @@
       const hit = columnHit(target.column, target.body, clientX, clientY);
       return hit ? { ...hit, column: index } : null;
     }
+    let eventNodes = new Map;
+    const gestureDisposers = new Map;
+    let previousEvents = events;
+    const segmentKey = (event, column) => JSON.stringify([event.id, column.date.toString(), column.resource?.id ?? null]);
+    function createTimedEventNode(body, column, columnIndex, item) {
+      const { event, geometry } = item;
+      const node = document.createElement("button");
+      node.type = "button";
+      node.className = ["cv-event", ...event.classNames ?? []].join(" ");
+      node.dataset.eventId = event.id;
+      node.dataset.focusKey = JSON.stringify([event.id, column.date.toString(), column.resource?.id ?? null]);
+      const nodeState = stateOf(event);
+      node.dataset.temporalState = nodeState;
+      node.style.top = `${geometry.top}px`;
+      node.style.height = `${geometry.height}px`;
+      node.style.insetInlineStart = `${item.left * 100}%`;
+      node.style.width = `${item.width * 100}%`;
+      node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
+      const content = eventContent?.({
+        event,
+        date: column.date,
+        resource: column.resource,
+        temporalState: nodeState,
+        element: node
+      });
+      if (!applyContent(node, content))
+        node.textContent = event.title ?? labels.untitledEvent;
+      node.addEventListener("click", (nativeEvent) => {
+        if (interaction.suppressClick) {
+          interaction.suppressClick = false;
+          interaction.longPressConsumed = false;
+          nativeEvent.stopPropagation();
+          nativeEvent.preventDefault();
+          return;
+        }
+        emitCalendarEvent(node, "calendar:eventclick", { event, date: column.date, resource: column.resource, nativeEvent }, { cancelable: true });
+      }, true);
+      const movable = isMovable(event, host.editable);
+      const resizable = isResizable(event, host.editable);
+      node.addEventListener("contextmenu", (nativeEvent) => {
+        dispatchContextMenu(node, {
+          event,
+          date: column.date,
+          resourceId: column.resource?.id ?? null,
+          clientX: nativeEvent.clientX,
+          clientY: nativeEvent.clientY
+        }, nativeEvent);
+      });
+      watchLongPress(node, (press) => {
+        dispatchContextMenu(node, {
+          event,
+          date: column.date,
+          resourceId: column.resource?.id ?? null,
+          clientX: press.clientX,
+          clientY: press.clientY
+        }, press);
+      });
+      function onEventKeyDown(keyboardEvent) {
+        if (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
+          return;
+        const key = keyboardEvent.key;
+        const shift = keyboardEvent.shiftKey;
+        const alt = keyboardEvent.altKey;
+        if (!shift && !alt) {
+          if (key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight" || key === "Home" || key === "End") {
+            keyboardEvent.preventDefault();
+            moveEventFocus(key);
+          }
+          return;
+        }
+        if (shift && !alt && key.startsWith("Arrow")) {
+          if (!movable)
+            return;
+          keyboardEvent.preventDefault();
+          keyboardMoveEvent(key, keyboardEvent);
+          return;
+        }
+        if (alt && !shift && key.startsWith("Arrow")) {
+          if (!resizable)
+            return;
+          keyboardEvent.preventDefault();
+          keyboardResizeEvent(key, keyboardEvent);
+        }
+      }
+      function moveEventFocus(key) {
+        const currentBody = node.closest(".cv-day-body");
+        if (!(currentBody instanceof HTMLDivElement))
+          return;
+        if (key === "ArrowUp" || key === "ArrowDown" || key === "Home" || key === "End") {
+          const peers = focusableEvents(currentBody);
+          const index = peers.indexOf(node);
+          if (index < 0)
+            return;
+          const target = key === "Home" ? peers[0] : key === "End" ? peers[peers.length - 1] : peers[index + (key === "ArrowDown" ? 1 : -1)];
+          target?.focus();
+          return;
+        }
+        const bodyIndex = bodies.findIndex((entry) => entry.body === currentBody);
+        const target = bodies[bodyIndex + (key === "ArrowRight" ? 1 : -1)];
+        if (!target)
+          return;
+        const peers = focusableEvents(target.body);
+        if (peers.length === 0)
+          return;
+        const top = Number.parseFloat(node.style.top);
+        let best = peers[0];
+        for (const peer of peers) {
+          if (Math.abs(Number.parseFloat(peer.style.top) - top) < Math.abs(Number.parseFloat(best.style.top) - top)) {
+            best = peer;
+          }
+        }
+        best.focus();
+      }
+      function keyboardMoveEvent(key, nativeEvent) {
+        const startZoned = toZonedDateTime(event.start, timeZone);
+        const endZoned = toZonedDateTime(event.end, timeZone);
+        const previous = { start: event.start, end: event.end, resourceId: event.resourceId ?? null };
+        let current;
+        if (key === "ArrowUp" || key === "ArrowDown") {
+          const delta = key === "ArrowDown" ? snapStep : -snapStep;
+          current = {
+            start: startZoned.add({ minutes: delta }),
+            end: endZoned.add({ minutes: delta }),
+            resourceId: event.resourceId ?? null
+          };
+        } else {
+          const nextStart = startZoned.add({ days: key === "ArrowRight" ? 1 : -1 });
+          const duration = Temporal2.Duration.from({
+            milliseconds: endZoned.epochMilliseconds - startZoned.epochMilliseconds
+          });
+          const nextEnd = nextStart.add(duration);
+          current = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
+        }
+        const moveGate = host.checkInteraction({
+          action: "move",
+          event,
+          start: current.start,
+          end: current.end,
+          resourceId: current.resourceId ?? null,
+          allDay: event.allDay === true
+        });
+        if (!moveGate.ok) {
+          if (moveGate.reason)
+            host.announce(moveGate.reason);
+          return;
+        }
+        const result = host.commitEventMove({ event, previous, current, nativeEvent });
+        if (!result)
+          return;
+        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
+        host.refocusEvent(event.id);
+      }
+      function keyboardResizeEvent(key, nativeEvent) {
+        const startZoned = toZonedDateTime(event.start, timeZone);
+        const endZoned = toZonedDateTime(event.end, timeZone);
+        let nextStart = startZoned;
+        let nextEnd = endZoned;
+        if (key === "ArrowUp")
+          nextStart = startZoned.subtract({ minutes: snapStep });
+        else if (key === "ArrowDown")
+          nextStart = startZoned.add({ minutes: snapStep });
+        else if (key === "ArrowLeft")
+          nextEnd = endZoned.subtract({ minutes: snapStep });
+        else
+          nextEnd = endZoned.add({ minutes: snapStep });
+        if (nextEnd.epochMilliseconds - nextStart.epochMilliseconds < snapStep * 60 * 1000)
+          return;
+        const resizeGate = host.checkInteraction({
+          action: "resize",
+          event,
+          start: nextStart,
+          end: nextEnd,
+          resourceId: event.resourceId ?? null,
+          allDay: event.allDay === true
+        });
+        if (!resizeGate.ok) {
+          if (resizeGate.reason)
+            host.announce(resizeGate.reason);
+          return;
+        }
+        const result = host.commitEventResize({
+          event,
+          previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+          current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
+          nativeEvent
+        });
+        if (!result)
+          return;
+        host.announce(describeEvent(result, timeZone, labels.untitledEvent));
+        host.refocusEvent(event.id);
+      }
+      node.addEventListener("keydown", onEventKeyDown);
+      const resizeAllowed = resizable && host.checkInteraction({
+        action: "resize",
+        event,
+        start: event.start,
+        end: event.end,
+        resourceId: event.resourceId ?? null,
+        allDay: event.allDay === true
+      }).ok;
+      if (resizeAllowed) {
+        for (const edge of ["start", "end"]) {
+          const handle = document.createElement("div");
+          handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "n" : "s"}`;
+          node.append(handle);
+          handle.addEventListener("pointerdown", (nativeEvent) => {
+            beginResize(nativeEvent, edge);
+          });
+        }
+      }
+      if (movable) {
+        node.addEventListener("pointerdown", beginDrag);
+      }
+      function beginResize(nativeEvent, edge) {
+        if (nativeEvent.button !== 0)
+          return;
+        const startZoned = toZonedDateTime(event.start, timeZone);
+        const endZoned = toZonedDateTime(event.end, timeZone);
+        const isFirstDay = Temporal2.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
+        const isLastDay = Temporal2.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
+        if (edge === "start" && !isFirstDay || edge === "end" && !isLastDay)
+          return;
+        const pressGate = host.checkInteraction({
+          action: "resize",
+          event,
+          start: event.start,
+          end: event.end,
+          resourceId: event.resourceId ?? null,
+          allDay: event.allDay === true
+        });
+        if (!pressGate.ok)
+          return;
+        nativeEvent.stopPropagation();
+        nativeEvent.preventDefault();
+        const savedTop = node.style.top;
+        const savedHeight = node.style.height;
+        let resizeKey = null;
+        let resizeRevision = host.getInteractionRevision();
+        const resizeTarget = (pointer) => {
+          const hit = gridHit(pointer.clientX, pointer.clientY);
+          if (hit?.column !== columnIndex)
+            return null;
+          const edges = columnEdges(columnIndex, event.id);
+          let start = item.start;
+          let end = item.end;
+          if (edge === "end") {
+            end = Math.max(magnetOrSnap(hit.minutes, "ceil", edges), start + snapStep);
+          } else {
+            start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
+          }
+          const range = {
+            start: edge === "start" ? zonedDateTimeAt(column.date, start, timeZone) : startZoned,
+            end: edge === "end" ? zonedDateTimeAt(column.date, end, timeZone) : endZoned,
+            resourceId: event.resourceId ?? null
+          };
+          return { start, end, range };
+        };
+        const resetPreview = () => {
+          node.style.top = savedTop;
+          node.style.height = savedHeight;
+          node.classList.remove("cv-invalid");
+          delete node.dataset.reason;
+          resizeKey = null;
+        };
+        const gesture = startPointerGesture({
+          target: node,
+          event: nativeEvent,
+          onMove(moveEvent) {
+            if (interaction.longPressConsumed)
+              return;
+            const target = resizeTarget(moveEvent);
+            if (!target) {
+              resetPreview();
+              return;
+            }
+            const { start, end, range } = target;
+            node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
+            node.style.height = `${(end - start) * pxPerMinute}px`;
+            const key = `${start}:${end}`;
+            const revision = host.getInteractionRevision();
+            if (revision !== resizeRevision) {
+              resizeRevision = revision;
+              resizeKey = null;
+            }
+            if (key !== resizeKey) {
+              resizeKey = key;
+              const decision = host.checkInteraction({
+                action: "resize",
+                event,
+                ...range
+              });
+              node.classList.toggle("cv-invalid", !decision.ok);
+              if (decision.reason)
+                node.dataset.reason = decision.reason;
+              else
+                delete node.dataset.reason;
+            }
+          },
+          onEnd(upEvent, { moved }) {
+            const target = moved && !interaction.longPressConsumed ? resizeTarget(upEvent) : null;
+            resetPreview();
+            if (interaction.longPressConsumed || !moved)
+              return;
+            interaction.suppressClick = true;
+            if (!target || Temporal2.ZonedDateTime.compare(target.range.end, target.range.start) <= 0) {
+              return;
+            }
+            host.commitEventResize({
+              event,
+              previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+              current: target.range,
+              nativeEvent: upEvent
+            });
+          },
+          onCancel() {
+            resetPreview();
+            interaction.longPressConsumed = false;
+            interaction.suppressClick = false;
+          }
+        });
+        gestureDisposers.set(node, () => gesture.dispose());
+      }
+      function beginDrag(nativeEvent) {
+        if (nativeEvent.button !== 0)
+          return;
+        if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
+          return;
+        }
+        const downHit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
+        if (!downHit)
+          return;
+        const startGate = host.checkInteraction({
+          action: "move",
+          event,
+          start: event.start,
+          end: event.end,
+          resourceId: event.resourceId ?? null,
+          allDay: event.allDay === true
+        });
+        if (!startGate.ok)
+          return;
+        const duration = item.end - item.start;
+        const grabOffset = downHit.minutes - item.start;
+        let pointerX = nativeEvent.clientX;
+        let pointerY = nativeEvent.clientY;
+        const scroller = body.closest(".cv-scroller");
+        const autoscroll = scroller ? createAutoscroller(scroller, { onScroll: paintDragTarget }) : null;
+        let mirror = null;
+        let dragKey = `${columnIndex}:${item.start}`;
+        let dragRevision = host.getInteractionRevision();
+        let dragOk = true;
+        function dragTarget(hit) {
+          const raw = hit.minutes - grabOffset;
+          const target = bodies[hit.column];
+          const start = Math.min(Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes), endMinutes - duration);
+          return { ...target, start, droppable: target.column.resource?.droppable !== false };
+        }
+        function paintDragTarget() {
+          if (interaction.longPressConsumed || !mirror)
+            return;
+          const hit = gridHit(pointerX, pointerY);
+          if (hit)
+            node.removeAttribute("data-dropout");
+          else
+            node.setAttribute("data-dropout", "true");
+          if (!hit)
+            return;
+          const target = dragTarget(hit);
+          const { start, droppable } = target;
+          if (mirror.parentNode !== target.body)
+            target.body.append(mirror);
+          mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
+          mirror.style.height = `${duration * pxPerMinute}px`;
+          const key = `${hit.column}:${start}`;
+          const revision = host.getInteractionRevision();
+          if (revision !== dragRevision) {
+            dragRevision = revision;
+            dragKey = null;
+          }
+          if (key !== dragKey) {
+            dragKey = key;
+            const dayDelta = target.column.date.since(column.date).days;
+            const minuteDelta = start - item.start;
+            const decision = host.checkInteraction({
+              action: "move",
+              event,
+              start: toZonedDateTime(event.start, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
+              end: toZonedDateTime(event.end, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
+              resourceId: target.column.resource?.id ?? event.resourceId ?? null
+            });
+            dragOk = decision.ok;
+            if (decision.reason)
+              mirror.dataset.reason = decision.reason;
+            else
+              delete mirror.dataset.reason;
+          }
+          mirror.classList.toggle("cv-invalid", !droppable || !dragOk);
+        }
+        const gesture = startPointerGesture({
+          target: node,
+          event: nativeEvent,
+          onMove(moveEvent) {
+            if (interaction.longPressConsumed)
+              return;
+            if (!mirror) {
+              mirror = node.cloneNode(true);
+              mirror.classList.add("cv-drag-mirror");
+              mirror.classList.remove("cv-drag-source");
+              mirror.tabIndex = -1;
+              mirror.setAttribute("aria-hidden", "true");
+              node.classList.add("cv-drag-source");
+            }
+            pointerX = moveEvent.clientX;
+            pointerY = moveEvent.clientY;
+            autoscroll?.update(pointerX, pointerY);
+            paintDragTarget();
+          },
+          onEnd(upEvent, { moved }) {
+            if (interaction.longPressConsumed)
+              return;
+            if (!moved)
+              return;
+            const hit = gridHit(upEvent.clientX, upEvent.clientY);
+            if (!hit) {
+              interaction.suppressClick = true;
+              root.dispatchEvent(new CustomEvent("calendar:eventdropout", {
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+                detail: { event, eventId: event.id, nativeEvent: upEvent }
+              }));
+              return;
+            }
+            const range = dragTarget(hit);
+            if (!range.droppable) {
+              interaction.suppressClick = true;
+              return;
+            }
+            interaction.suppressClick = true;
+            const dayDelta = range.column.date.since(column.date).days;
+            const minuteDelta = range.start - item.start;
+            const startZoned = toZonedDateTime(event.start, timeZone);
+            const endZoned = toZonedDateTime(event.end, timeZone);
+            host.commitEventMove({
+              event,
+              previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+              current: {
+                start: startZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
+                end: endZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
+                resourceId: range.column.resource?.id ?? event.resourceId ?? null
+              },
+              nativeEvent: upEvent
+            });
+          },
+          onCancel() {
+            interaction.longPressConsumed = false;
+            interaction.suppressClick = false;
+          },
+          onCleanup() {
+            autoscroll?.stop();
+            mirror?.remove();
+            node.classList.remove("cv-drag-source");
+            node.removeAttribute("data-dropout");
+          }
+        });
+        gestureDisposers.set(node, () => gesture.dispose());
+      }
+      return node;
+    }
     for (let columnIndex = 0;columnIndex < columns.length; columnIndex += 1) {
       const column = columns[columnIndex];
       const day = document.createElement("section");
@@ -6024,480 +6616,13 @@
         body.append(node);
       }
       for (const item of model.events) {
-        let onEventKeyDown = function(keyboardEvent) {
-          if (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
-            return;
-          const key = keyboardEvent.key;
-          const shift = keyboardEvent.shiftKey;
-          const alt = keyboardEvent.altKey;
-          if (!shift && !alt) {
-            if (key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight" || key === "Home" || key === "End") {
-              keyboardEvent.preventDefault();
-              moveEventFocus(key);
-            }
-            return;
-          }
-          if (shift && !alt && key.startsWith("Arrow")) {
-            if (!movable)
-              return;
-            keyboardEvent.preventDefault();
-            keyboardMoveEvent(key, keyboardEvent);
-            return;
-          }
-          if (alt && !shift && key.startsWith("Arrow")) {
-            if (!resizable)
-              return;
-            keyboardEvent.preventDefault();
-            keyboardResizeEvent(key, keyboardEvent);
-          }
-        }, moveEventFocus = function(key) {
-          const currentBody = node.closest(".cv-day-body");
-          if (!(currentBody instanceof HTMLDivElement))
-            return;
-          if (key === "ArrowUp" || key === "ArrowDown" || key === "Home" || key === "End") {
-            const peers = focusableEvents(currentBody);
-            const index = peers.indexOf(node);
-            if (index < 0)
-              return;
-            const target = key === "Home" ? peers[0] : key === "End" ? peers[peers.length - 1] : peers[index + (key === "ArrowDown" ? 1 : -1)];
-            target?.focus();
-            return;
-          }
-          const bodyIndex = bodies.findIndex((entry) => entry.body === currentBody);
-          const target = bodies[bodyIndex + (key === "ArrowRight" ? 1 : -1)];
-          if (!target)
-            return;
-          const peers = focusableEvents(target.body);
-          if (peers.length === 0)
-            return;
-          const top = Number.parseFloat(node.style.top);
-          let best = peers[0];
-          for (const peer of peers) {
-            if (Math.abs(Number.parseFloat(peer.style.top) - top) < Math.abs(Number.parseFloat(best.style.top) - top)) {
-              best = peer;
-            }
-          }
-          best.focus();
-        }, keyboardMoveEvent = function(key, nativeEvent) {
-          const startZoned = toZonedDateTime(event.start, timeZone);
-          const endZoned = toZonedDateTime(event.end, timeZone);
-          const previous = { start: event.start, end: event.end, resourceId: event.resourceId ?? null };
-          let current;
-          if (key === "ArrowUp" || key === "ArrowDown") {
-            const delta = key === "ArrowDown" ? snapStep : -snapStep;
-            current = {
-              start: startZoned.add({ minutes: delta }),
-              end: endZoned.add({ minutes: delta }),
-              resourceId: event.resourceId ?? null
-            };
-          } else {
-            const nextStart = startZoned.add({ days: key === "ArrowRight" ? 1 : -1 });
-            const duration = Temporal2.Duration.from({
-              milliseconds: endZoned.epochMilliseconds - startZoned.epochMilliseconds
-            });
-            const nextEnd = nextStart.add(duration);
-            current = { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null };
-          }
-          const moveGate = host.checkInteraction({
-            action: "move",
-            event,
-            start: current.start,
-            end: current.end,
-            resourceId: current.resourceId ?? null,
-            allDay: event.allDay === true
-          });
-          if (!moveGate.ok) {
-            if (moveGate.reason)
-              host.announce(moveGate.reason);
-            return;
-          }
-          const result = host.commitEventMove({ event, previous, current, nativeEvent });
-          if (!result)
-            return;
-          host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-          host.refocusEvent(event.id);
-        }, keyboardResizeEvent = function(key, nativeEvent) {
-          const startZoned = toZonedDateTime(event.start, timeZone);
-          const endZoned = toZonedDateTime(event.end, timeZone);
-          let nextStart = startZoned;
-          let nextEnd = endZoned;
-          if (key === "ArrowUp")
-            nextStart = startZoned.subtract({ minutes: snapStep });
-          else if (key === "ArrowDown")
-            nextStart = startZoned.add({ minutes: snapStep });
-          else if (key === "ArrowLeft")
-            nextEnd = endZoned.subtract({ minutes: snapStep });
-          else
-            nextEnd = endZoned.add({ minutes: snapStep });
-          if (nextEnd.epochMilliseconds - nextStart.epochMilliseconds < snapStep * 60 * 1000)
-            return;
-          const resizeGate = host.checkInteraction({
-            action: "resize",
-            event,
-            start: nextStart,
-            end: nextEnd,
-            resourceId: event.resourceId ?? null,
-            allDay: event.allDay === true
-          });
-          if (!resizeGate.ok) {
-            if (resizeGate.reason)
-              host.announce(resizeGate.reason);
-            return;
-          }
-          const result = host.commitEventResize({
-            event,
-            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-            current: { start: nextStart, end: nextEnd, resourceId: event.resourceId ?? null },
-            nativeEvent
-          });
-          if (!result)
-            return;
-          host.announce(describeEvent(result, timeZone, labels.untitledEvent));
-          host.refocusEvent(event.id);
-        }, beginResize = function(nativeEvent, edge) {
-          if (nativeEvent.button !== 0)
-            return;
-          const startZoned = toZonedDateTime(event.start, timeZone);
-          const endZoned = toZonedDateTime(event.end, timeZone);
-          const isFirstDay = Temporal2.PlainDate.compare(column.date, startZoned.toPlainDate()) === 0;
-          const isLastDay = Temporal2.PlainDate.compare(column.date, endZoned.toPlainDate()) === 0;
-          if (edge === "start" && !isFirstDay || edge === "end" && !isLastDay)
-            return;
-          const pressGate = host.checkInteraction({
-            action: "resize",
-            event,
-            start: event.start,
-            end: event.end,
-            resourceId: event.resourceId ?? null,
-            allDay: event.allDay === true
-          });
-          if (!pressGate.ok)
-            return;
-          nativeEvent.stopPropagation();
-          nativeEvent.preventDefault();
-          tryCapture(node, nativeEvent.pointerId);
-          const savedTop = node.style.top;
-          const savedHeight = node.style.height;
-          const downX = nativeEvent.clientX;
-          const downY = nativeEvent.clientY;
-          let moved = false;
-          let resizeKey = null;
-          const resizeTarget = (pointer) => {
-            const hit = gridHit(pointer.clientX, pointer.clientY);
-            if (hit?.column !== columnIndex)
-              return null;
-            const edges = columnEdges(columnIndex, event.id);
-            let start = item.start;
-            let end = item.end;
-            if (edge === "end") {
-              end = Math.max(magnetOrSnap(hit.minutes, "ceil", edges), start + snapStep);
-            } else {
-              start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
-            }
-            const range = {
-              start: edge === "start" ? zonedDateTimeAt(column.date, start, timeZone) : startZoned,
-              end: edge === "end" ? zonedDateTimeAt(column.date, end, timeZone) : endZoned,
-              resourceId: event.resourceId ?? null
-            };
-            return { start, end, range };
-          };
-          const resetPreview = () => {
-            node.style.top = savedTop;
-            node.style.height = savedHeight;
-            node.classList.remove("cv-invalid");
-            delete node.dataset.reason;
-            resizeKey = null;
-          };
-          const onMove = (moveEvent) => {
-            if (longPressConsumed)
-              return;
-            if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
-              moved = true;
-            if (!moved)
-              return;
-            const target = resizeTarget(moveEvent);
-            if (!target) {
-              resetPreview();
-              return;
-            }
-            const { start, end, range } = target;
-            node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
-            node.style.height = `${(end - start) * pxPerMinute}px`;
-            const key = `${start}:${end}`;
-            if (key !== resizeKey) {
-              resizeKey = key;
-              const decision = host.checkInteraction({
-                action: "resize",
-                event,
-                ...range
-              });
-              node.classList.toggle("cv-invalid", !decision.ok);
-              if (decision.reason)
-                node.dataset.reason = decision.reason;
-              else
-                delete node.dataset.reason;
-            }
-          };
-          const onUp = (upEvent) => {
-            cleanup();
-            const target = moved && !longPressConsumed ? resizeTarget(upEvent) : null;
-            resetPreview();
-            if (longPressConsumed || !moved)
-              return;
-            suppressClick = true;
-            if (!target || Temporal2.ZonedDateTime.compare(target.range.end, target.range.start) <= 0)
-              return;
-            host.commitEventResize({
-              event,
-              previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-              current: target.range,
-              nativeEvent: upEvent
-            });
-          };
-          const cleanup = () => {
-            node.removeEventListener("pointermove", onMove);
-            node.removeEventListener("pointerup", onUp);
-            node.removeEventListener("pointercancel", onCancel);
-            node.removeEventListener("lostpointercapture", onCancel);
-          };
-          const onCancel = (_cancelEvent) => {
-            cleanup();
-            resetPreview();
-            longPressConsumed = false;
-            suppressClick = false;
-          };
-          node.addEventListener("pointermove", onMove);
-          node.addEventListener("pointerup", onUp);
-          node.addEventListener("pointercancel", onCancel);
-          node.addEventListener("lostpointercapture", onCancel);
-        }, beginDrag = function(nativeEvent) {
-          if (nativeEvent.button !== 0)
-            return;
-          if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-resize-handle")) {
-            return;
-          }
-          const downHit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
-          if (!downHit)
-            return;
-          const startGate = host.checkInteraction({
-            action: "move",
-            event,
-            start: event.start,
-            end: event.end,
-            resourceId: event.resourceId ?? null,
-            allDay: event.allDay === true
-          });
-          if (!startGate.ok)
-            return;
-          tryCapture(node, nativeEvent.pointerId);
-          const duration = item.end - item.start;
-          const grabOffset = downHit.minutes - item.start;
-          const downX = nativeEvent.clientX;
-          const downY = nativeEvent.clientY;
-          const scroller = body.closest(".cv-scroller");
-          let pointerX = downX;
-          let pointerY = downY;
-          const autoscroll = scroller ? createAutoscroller(scroller, { onScroll: paintDragTarget }) : null;
-          let moved = false;
-          let mirror = null;
-          let dragKey = `${columnIndex}:${item.start}`;
-          let dragOk = true;
-          function dragTarget(hit) {
-            const raw = hit.minutes - grabOffset;
-            const target = bodies[hit.column];
-            const start = Math.min(Math.max(magnetOrSnap(raw, "floor", columnEdges(hit.column, event.id)), startMinutes), endMinutes - duration);
-            return { ...target, start, droppable: target.column.resource?.droppable !== false };
-          }
-          function paintDragTarget() {
-            if (longPressConsumed || !mirror)
-              return;
-            const hit = gridHit(pointerX, pointerY);
-            if (hit)
-              node.removeAttribute("data-dropout");
-            else
-              node.setAttribute("data-dropout", "true");
-            if (!hit)
-              return;
-            const target = dragTarget(hit);
-            const { start, droppable } = target;
-            if (mirror.parentNode !== target.body)
-              target.body.append(mirror);
-            mirror.style.top = `${(start - startMinutes) * pxPerMinute}px`;
-            mirror.style.height = `${duration * pxPerMinute}px`;
-            const key = `${hit.column}:${start}`;
-            if (key !== dragKey) {
-              dragKey = key;
-              const dayDelta = target.column.date.since(column.date).days;
-              const minuteDelta = start - item.start;
-              const decision = host.checkInteraction({
-                action: "move",
-                event,
-                start: toZonedDateTime(event.start, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
-                end: toZonedDateTime(event.end, timeZone).add({ days: dayDelta }).add({ minutes: minuteDelta }),
-                resourceId: target.column.resource?.id ?? event.resourceId ?? null
-              });
-              dragOk = decision.ok;
-              if (decision.reason)
-                mirror.dataset.reason = decision.reason;
-              else
-                delete mirror.dataset.reason;
-            }
-            mirror.classList.toggle("cv-invalid", !droppable || !dragOk);
-          }
-          const onMove = (moveEvent) => {
-            if (longPressConsumed)
-              return;
-            if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
-              moved = true;
-            if (!moved)
-              return;
-            if (!mirror) {
-              mirror = node.cloneNode(true);
-              mirror.classList.add("cv-drag-mirror");
-              mirror.classList.remove("cv-drag-source");
-              mirror.tabIndex = -1;
-              mirror.setAttribute("aria-hidden", "true");
-              node.classList.add("cv-drag-source");
-            }
-            pointerX = moveEvent.clientX;
-            pointerY = moveEvent.clientY;
-            autoscroll?.update(pointerX, pointerY);
-            paintDragTarget();
-          };
-          const cleanup = () => {
-            node.removeEventListener("pointermove", onMove);
-            node.removeEventListener("pointerup", onUp);
-            node.removeEventListener("pointercancel", onCancel);
-            node.removeEventListener("lostpointercapture", onCancel);
-            autoscroll?.stop();
-            mirror?.remove();
-            node.classList.remove("cv-drag-source");
-            node.removeAttribute("data-dropout");
-          };
-          const onUp = (upEvent) => {
-            const wasMoved = moved;
-            cleanup();
-            if (longPressConsumed)
-              return;
-            if (!wasMoved)
-              return;
-            const hit = gridHit(upEvent.clientX, upEvent.clientY);
-            if (!hit) {
-              suppressClick = true;
-              root.dispatchEvent(new CustomEvent("calendar:eventdropout", {
-                bubbles: true,
-                composed: true,
-                cancelable: true,
-                detail: { event, eventId: event.id, nativeEvent: upEvent }
-              }));
-              return;
-            }
-            const range = dragTarget(hit);
-            if (!range.droppable) {
-              suppressClick = true;
-              return;
-            }
-            suppressClick = true;
-            const dayDelta = range.column.date.since(column.date).days;
-            const minuteDelta = range.start - item.start;
-            const startZoned = toZonedDateTime(event.start, timeZone);
-            const endZoned = toZonedDateTime(event.end, timeZone);
-            host.commitEventMove({
-              event,
-              previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-              current: {
-                start: startZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
-                end: endZoned.add({ days: dayDelta }).add({ minutes: minuteDelta }),
-                resourceId: range.column.resource?.id ?? event.resourceId ?? null
-              },
-              nativeEvent: upEvent
-            });
-          };
-          const onCancel = (_cancelEvent) => {
-            cleanup();
-            longPressConsumed = false;
-            suppressClick = false;
-          };
-          node.addEventListener("pointermove", onMove);
-          node.addEventListener("pointerup", onUp);
-          node.addEventListener("pointercancel", onCancel);
-          node.addEventListener("lostpointercapture", onCancel);
-        };
-        const { event, geometry } = item;
-        const node = document.createElement("button");
-        node.type = "button";
-        node.className = ["cv-event", ...event.classNames ?? []].join(" ");
-        node.dataset.eventId = event.id;
-        node.dataset.focusKey = JSON.stringify([event.id, column.date.toString(), column.resource?.id ?? null]);
-        const nodeState = stateOf(event);
-        node.dataset.temporalState = nodeState;
-        node.style.top = `${geometry.top}px`;
-        node.style.height = `${geometry.height}px`;
-        node.style.insetInlineStart = `${item.left * 100}%`;
-        node.style.width = `${item.width * 100}%`;
-        node.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-        const content = eventContent?.({
-          event,
-          date: column.date,
-          resource: column.resource,
-          temporalState: nodeState,
-          element: node
-        });
-        if (!applyContent(node, content))
-          node.textContent = event.title ?? labels.untitledEvent;
-        node.addEventListener("click", (nativeEvent) => {
-          if (suppressClick) {
-            suppressClick = false;
-            longPressConsumed = false;
-            nativeEvent.stopPropagation();
-            nativeEvent.preventDefault();
-            return;
-          }
-          emitCalendarEvent(node, "calendar:eventclick", { event, date: column.date, resource: column.resource, nativeEvent }, { cancelable: true });
-        }, true);
-        const movable = isMovable(event, host.editable);
-        const resizable = isResizable(event, host.editable);
-        node.addEventListener("contextmenu", (nativeEvent) => {
-          dispatchContextMenu(node, {
-            event,
-            date: column.date,
-            resourceId: column.resource?.id ?? null,
-            clientX: nativeEvent.clientX,
-            clientY: nativeEvent.clientY
-          }, nativeEvent);
-        });
-        watchLongPress(node, (press) => {
-          dispatchContextMenu(node, {
-            event,
-            date: column.date,
-            resourceId: column.resource?.id ?? null,
-            clientX: press.clientX,
-            clientY: press.clientY
-          }, press);
-        });
-        node.addEventListener("keydown", onEventKeyDown);
-        const resizeAllowed = resizable && host.checkInteraction({
-          action: "resize",
-          event,
-          start: event.start,
-          end: event.end,
-          resourceId: event.resourceId ?? null,
-          allDay: event.allDay === true
-        }).ok;
-        if (resizeAllowed) {
-          for (const edge of ["start", "end"]) {
-            const handle = document.createElement("div");
-            handle.className = `cv-resize-handle cv-resize-${edge === "start" ? "n" : "s"}`;
-            node.append(handle);
-            handle.addEventListener("pointerdown", (nativeEvent) => {
-              beginResize(nativeEvent, edge);
-            });
-          }
-        }
-        if (movable) {
-          node.addEventListener("pointerdown", beginDrag);
-        }
+        const node = createTimedEventNode(body, column, columnIndex, item);
         body.append(node);
+        eventNodes.set(segmentKey(item.event, column), {
+          node,
+          event: item.event,
+          state: stateOf(item.event)
+        });
       }
       const canSelect = column.resource?.selectable !== false;
       if (canSelect) {
@@ -6518,6 +6643,7 @@
         let ghost = null;
         let ghostChip = null;
         let selectKey = null;
+        let selectRevision = host.getInteractionRevision();
         const showHover = (nativeEvent) => {
           const target = nativeEvent.target;
           const overEvent = target instanceof Element && target.closest(".cv-event") !== null;
@@ -6595,6 +6721,11 @@
           ghost.style.height = `${(end - start) * pxPerMinute}px`;
           ghostChip.textContent = `${formatClock(start)} - ${formatClock(end)}`;
           const key = `${start}:${end}`;
+          const revision = host.getInteractionRevision();
+          if (revision !== selectRevision) {
+            selectRevision = revision;
+            selectKey = null;
+          }
           if (key !== selectKey) {
             selectKey = key;
             const decision = host.checkInteraction({
@@ -6612,8 +6743,8 @@
           }
         });
         const finishSelection = (nativeEvent, cancelled) => {
-          const wasLongPress = longPressConsumed;
-          longPressConsumed = false;
+          const wasLongPress = interaction.longPressConsumed;
+          interaction.longPressConsumed = false;
           if (!selecting)
             return;
           const { anchor, moved } = selecting;
@@ -6624,7 +6755,7 @@
           if (cancelled || wasLongPress)
             return;
           if (moved)
-            suppressClick = true;
+            interaction.suppressClick = true;
           const hit = gridHit(nativeEvent.clientX, nativeEvent.clientY);
           if (hit?.column !== columnIndex)
             return;
@@ -6639,9 +6770,9 @@
         body.addEventListener("pointercancel", (nativeEvent) => finishSelection(nativeEvent, true));
         body.addEventListener("lostpointercapture", (nativeEvent) => finishSelection(nativeEvent, true));
         body.addEventListener("click", (nativeEvent) => {
-          if (!suppressClick)
+          if (!interaction.suppressClick)
             return;
-          suppressClick = false;
+          interaction.suppressClick = false;
           nativeEvent.stopPropagation();
           nativeEvent.preventDefault();
         });
@@ -6684,6 +6815,100 @@
       day.append(body);
       bodies.push({ column, body });
       root.append(day);
+    }
+    function applyTimedGeometry(node, item) {
+      const top = `${item.geometry.top}px`;
+      const height = `${item.geometry.height}px`;
+      const start = `${item.left * 100}%`;
+      const width = `${item.width * 100}%`;
+      if (node.style.top !== top)
+        node.style.top = top;
+      if (node.style.height !== height)
+        node.style.height = height;
+      if (node.style.insetInlineStart !== start)
+        node.style.insetInlineStart = start;
+      if (node.style.width !== width)
+        node.style.width = width;
+      const state = stateOf(item.event);
+      if (node.dataset.temporalState !== state)
+        node.dataset.temporalState = state;
+      const label = describeEvent(item.event, timeZone, labels.untitledEvent);
+      if (node.getAttribute("aria-label") !== label)
+        node.setAttribute("aria-label", label);
+    }
+    function removeTimedNode(node) {
+      gestureDisposers.get(node)?.();
+      gestureDisposers.delete(node);
+      node.remove();
+    }
+    function reorderTimedNodes(body, nodes, anchor) {
+      let expected = anchor;
+      for (let index = nodes.length - 1;index >= 0; index -= 1) {
+        const node = nodes[index];
+        if (node.nextSibling !== expected)
+          body.insertBefore(node, expected);
+        expected = node;
+      }
+    }
+    function update(nextEvents, nextNow) {
+      const previousAllDay = new Map(previousEvents.filter((item) => item.allDay === true).map((item) => [item.id, item]));
+      const nextAllDay = new Map(nextEvents.filter((item) => item.allDay === true).map((item) => [item.id, item]));
+      if (previousAllDay.size !== nextAllDay.size)
+        return false;
+      for (const [id, item] of nextAllDay) {
+        if (previousAllDay.get(id) !== item)
+          return false;
+      }
+      previousEvents = nextEvents;
+      renderNow = nextNow;
+      const nextNodes = new Map;
+      for (let index = 0;index < columns.length; index += 1) {
+        const column = columns[index];
+        const body = bodies[index].body;
+        const anchor = body.querySelector(":scope > :is(.cv-hover, .cv-select-ghost, .cv-preview, .cv-external-ghost, .cv-drag-mirror)") ?? null;
+        const model = deriveTimedColumn(column, nextEvents, backgrounds, {
+          timeZone,
+          slotMin: startMinutes,
+          slotMax: endMinutes,
+          pxPerMinute
+        });
+        columnSlices[index] = model;
+        const columnNodes = [];
+        for (const item of model.events) {
+          const { event } = item;
+          const key = segmentKey(event, column);
+          const existing = eventNodes.get(key);
+          const state = stateOf(event);
+          let node;
+          if (existing && existing.event === event && existing.state === state) {
+            node = existing.node;
+            applyTimedGeometry(node, item);
+          } else {
+            if (existing)
+              removeTimedNode(existing.node);
+            node = createTimedEventNode(body, column, index, item);
+            if (anchor?.parentNode === body)
+              body.insertBefore(node, anchor);
+            else
+              body.append(node);
+          }
+          columnNodes.push(node);
+          nextNodes.set(key, { node, event, state });
+        }
+        reorderTimedNodes(body, columnNodes, anchor);
+      }
+      for (const [key, entry] of eventNodes) {
+        if (!nextNodes.has(key))
+          removeTimedNode(entry.node);
+      }
+      eventNodes = nextNodes;
+      return true;
+    }
+    function dispose() {
+      for (const disposeGesture of gestureDisposers.values())
+        disposeGesture();
+      gestureDisposers.clear();
+      allDay.dispose?.();
     }
     paintPreview();
     function paintPreview() {
@@ -6739,7 +6964,7 @@
       pxPerMinute
     }));
     fragment.append(root);
-    return fragment;
+    return { fragment, update, dispose };
   }
 
   // src/calendar-view.js
@@ -6795,6 +7020,8 @@
     #renderQueued = false;
     #replaceRender = false;
     #updateMonth = null;
+    #updateTimeGrid = null;
+    #disposeTimeGrid = null;
     #interactionRevision = 0;
     #afterRenderQueue = [];
     #pendingAnnounce = null;
@@ -6815,6 +7042,9 @@
     }
     disconnectedCallback() {
       this.#updateMonth = null;
+      this.#updateTimeGrid = null;
+      this.#disposeTimeGrid?.();
+      this.#disposeTimeGrid = null;
       this.#stopHeaderObservation?.();
       this.#stopHeaderObservation = null;
       this.#stopNowIndicator?.();
@@ -7598,12 +7828,6 @@
       };
     }
     #render(replace) {
-      this.#stopHeaderObservation?.();
-      this.#stopHeaderObservation = null;
-      this.#stopNowIndicator?.();
-      this.#stopNowIndicator = null;
-      this.#externalDropTarget?.clear();
-      this.#externalDropTarget = null;
       if (!isKnownView(this.view) && this.#warnedView !== this.view) {
         this.#warnedView = this.view;
         console.warn(`calendar-view: unknown view "${this.view}", rendering as a rolling range`);
@@ -7620,9 +7844,24 @@
       const focusOwner = active instanceof Element && this.contains(active) ? active.closest("[data-focus-key]") : null;
       const focusKey = focusOwner instanceof HTMLElement ? focusOwner.dataset.focusKey ?? null : null;
       const updateMonth = !replace && renderer === "month" ? this.#updateMonth : null;
+      const updateTimeGrid = !replace && renderer === "timeGrid" ? this.#updateTimeGrid : null;
+      let partial = false;
       if (updateMonth) {
         updateMonth(this.#events, now);
-      } else {
+        partial = true;
+      } else if (updateTimeGrid) {
+        partial = updateTimeGrid(this.#events, now);
+      }
+      if (!partial) {
+        this.#stopHeaderObservation?.();
+        this.#stopHeaderObservation = null;
+        this.#stopNowIndicator?.();
+        this.#stopNowIndicator = null;
+        this.#externalDropTarget?.clear();
+        this.#externalDropTarget = null;
+        this.#disposeTimeGrid?.();
+        this.#disposeTimeGrid = null;
+        this.#updateTimeGrid = null;
         this.#updateMonth = null;
         const scroll = this.querySelector(".cv-scroller");
         const scrollTop = scroll?.scrollTop ?? 0;
@@ -7663,7 +7902,7 @@
             backgroundContent: this.#config.backgroundContent
           }));
         } else {
-          scroller.append(renderTimeGrid({
+          const grid = renderTimeGrid({
             dates: dates2,
             resources,
             resourceGroups: this.#resourceGroups,
@@ -7697,7 +7936,10 @@
             resourceHeaderContent: this.#config.resourceHeaderContent,
             resourceGroupContent: this.#config.resourceGroupContent,
             slotLabelContent: this.#config.slotLabelContent
-          }));
+          });
+          scroller.append(grid.fragment);
+          this.#updateTimeGrid = grid.update;
+          this.#disposeTimeGrid = grid.dispose;
         }
         this.append(scroller);
         this.#stopHeaderObservation = observeStickyHeaders(scroller);
