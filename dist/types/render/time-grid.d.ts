@@ -80,10 +80,7 @@ export type TimeGridHost = {
         reason: string | null;
     } | null;
 };
-export type TimeGridColumn = {
-    date: Temporal.PlainDate;
-    resource: import("../core/model.js").CalendarResource | null;
-};
+export type TimeGridColumn = import("../core/resources.js").TimeGridColumn;
 export type TimeGridOptions = {
     slotMin: string;
     slotMax: string;
@@ -165,11 +162,7 @@ export type ActiveSelection = {
  * @property {(target: ExternalDropTarget) => void} setExternalDropTarget register pointer placement callbacks for this rendered grid
  * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null, reason: string | null } | null} getPreview application-proposed range overlay, or null
  */
-/**
- * @typedef {object} TimeGridColumn
- * @property {Temporal.PlainDate} date
- * @property {import("../core/model.js").CalendarResource | null} resource
- */
+/** @typedef {import("../core/resources.js").TimeGridColumn} TimeGridColumn */
 /**
  * @typedef {object} TimeGridOptions
  * @property {string} slotMin

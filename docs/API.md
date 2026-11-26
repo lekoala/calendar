@@ -283,9 +283,16 @@ one. The query object itself is not guaranteed to be shared: key per-request
 state by `signal`. If either source rejects, the refetch publishes neither
 collection.
 
+Pending work is also invalidated when configured sources, the time zone,
+the effective range or the selected resource IDs change. Outside
+navigation methods, use `refetchEvents()` to load the new scope.
+
 ## Navigation
 
-Without a `date` attribute, the element anchors on today's date (`Temporal.Now.plainDateISO`) in the configured time zone.
+Without a `date` attribute, the element anchors on today in the configured
+time zone and reflects that date on connection. A zone change recomputes
+this implicit anchor. Providing a `date` attribute or calling `gotoDate()`
+pins the civil date until the attribute is removed.
 
 ```js
 calendar.setView("week")
@@ -345,7 +352,7 @@ Reveal is view-agnostic: time grids scroll precisely (`scrollToTime`, then
 `scrollIntoView`), the all-day lane, month and list scroll the node into
 view with `{ block: "nearest", inline: "nearest" }`. The highlight is a
 temporary `.cv-reveal` + `data-revealed="true"` on the node, cleared after
-~2 s or sooner by any re-render (full replacement removes the node). A
+~2 s or when the node is removed. A
 successful reveal announces the event through the live region even with
 `focus: false`. There is no refusal taxonomy: `false` covers every miss
 (unknown event, date outside the rendered range).
@@ -642,7 +649,9 @@ Rules:
 
 ## DOM events
 
-All interaction events are `bubbles: true` and `composed: true`. Intents an application can refuse are also `cancelable: true`; observations (`calendar:loading`, `calendar:render`) are not.
+Calendar events have `bubbles: true` and `composed: true`. Intents an
+application can refuse also have `cancelable: true`. Navigation, loading,
+source errors and rendering events are observations.
 
 Namespaced working names:
 
@@ -777,6 +786,11 @@ eventContent({ event, date, resource, temporalState, element }) {
 ```
 
 Hooks: `eventContent`, `dayHeaderContent`, `resourceHeaderContent`, `resourceGroupContent`, `slotLabelContent`, `moreLinkContent`, `backgroundContent`. Do not add further hooks before a use case requires them. Do not add `innerHTML`/`allowHtml` configuration.
+
+When a month render is triggered only by `updateEvent()`, unchanged chips
+keep their existing DOM and custom content while they stay visible and their
+temporal state stays the same. Use `configure()` to refresh hooks that also
+depend on application state.
 
 Every rendered event node carries `data-temporal-state="past|current|future"`, derived from its canonical range against the render's `now` (`end <= now` is past, `start <= now < end` is current). `eventContent` receives the same value as `info.temporalState`. The fact ages live without refetch: the render arms a single one-shot timer to the next visible start/end boundary, which triggers the next render. The core never derives `editable`/`movable`/`resizable` from it; policy stays application-side. Style the fact from the application with plain attribute selectors (`[data-temporal-state="past"]`); the core ships no temporal styling.
 

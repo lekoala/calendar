@@ -31,7 +31,7 @@ import { Temporal } from "temporal-polyfill";
  *   resourceId: string | null,
  *   allDay?: boolean,
  * }) => import("../core/policy.js").PolicyDecision} [input.checkInteraction] synchronous policy gate for the day selection
- * @returns {DocumentFragment}
+ * @returns {{ fragment: DocumentFragment, update: (events: import("../core/model.js").NormalizedEvent[], now: Temporal.ZonedDateTime) => void }}
  */
 export declare function renderMonthGrid({ weeks, month, events, options, now, eventContent, moreLinkContent, getRangeContext, checkInteraction, }: {
     weeks: Temporal.PlainDate[][];
@@ -60,5 +60,8 @@ export declare function renderMonthGrid({ weeks, month, events, options, now, ev
         resourceId: string | null;
         allDay?: boolean;
     }) => import("../core/policy.js").PolicyDecision;
-}): DocumentFragment;
+}): {
+    fragment: DocumentFragment;
+    update: (events: import("../core/model.js").NormalizedEvent[], now: Temporal.ZonedDateTime) => void;
+};
 //# sourceMappingURL=month-grid.d.ts.map

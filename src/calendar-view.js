@@ -2,6 +2,7 @@ import { Temporal } from "temporal-polyfill";
 import {
   getMonthWeeks,
   getViewRange,
+  getViewRenderer,
   getVisibleDates,
   isKnownView,
   isResourceView,
@@ -30,8 +31,10 @@ import { queryOverlaps, queryRangeContext } from "./core/overlaps.js";
 import { normalizePolicyDecision } from "./core/policy.js";
 import { describeEvent, toZonedDateTime } from "./core/slicing.js";
 import { nextStateChangeMs } from "./core/temporal.js";
+import { emitCalendarEvent } from "./render/dom.js";
 import { renderList } from "./render/list.js";
 import { renderMonthGrid } from "./render/month-grid.js";
+import { observeStickyHeaders } from "./render/sticky-headers.js";
 import { renderTimeGrid } from "./render/time-grid.js";
 
 /**
@@ -42,6 +45,30 @@ import { renderTimeGrid } from "./render/time-grid.js";
  * @property {AbortSignal} signal
  * @property {CalendarViewElement} calendar
  */
+
+/**
+ * @typedef {Pick<EventSourceQuery, "start" | "end" | "resourceIds"> & {
+ *   timeZone: string,
+ *   eventSource: CalendarConfig["eventSource"],
+ *   backgroundSource: CalendarConfig["backgroundSource"],
+ * }} SourceScope
+ */
+
+/**
+ * @param {SourceScope} a
+ * @param {SourceScope} b
+ */
+function sameSourceScope(a, b) {
+  return (
+    a.eventSource === b.eventSource &&
+    a.backgroundSource === b.backgroundSource &&
+    a.timeZone === b.timeZone &&
+    a.start.equals(b.start) &&
+    a.end.equals(b.end) &&
+    a.resourceIds.length === b.resourceIds.length &&
+    a.resourceIds.every((id, index) => id === b.resourceIds[index])
+  );
+}
 
 /**
  * @typedef {object} CalendarConfig
@@ -222,22 +249,21 @@ export class CalendarViewElement extends HTMLElement {
   #preview = null;
   /** @type {CalendarConfig} */
   #config = {};
-  /** @type {AbortController | null} */
-  #abortController = null;
-  #requestVersion = 0;
-  /**
-   * True while a source request is in flight. A disconnect during that window
-   * arms `#refetchOnReconnect` so `connectedCallback` restarts the load the
-   * disconnect aborted instead of leaving the calendar empty.
-   */
-  #loadInFlight = false;
+  /** @type {{ controller: AbortController, scope: SourceScope } | null} */
+  #sourceRequest = null;
   #refetchOnReconnect = false;
+  #dateIsImplicit = false;
+  /** @type {(() => void) | null} */
+  #stopHeaderObservation = null;
   /** Raw `date` attribute value already reported as invalid; warns once each. @type {string | null} */
   #warnedDate = null;
   /** View name already reported as unknown; warns once each. @type {string | null} */
   #warnedView = null;
   #batchDepth = 0;
   #renderQueued = false;
+  #replaceRender = false;
+  /** @type {ReturnType<typeof renderMonthGrid>["update"] | null} */
+  #updateMonth = null;
   #interactionRevision = 0;
   /**
    * Post-render callbacks, drained once the pending render inserted its
@@ -271,10 +297,7 @@ export class CalendarViewElement extends HTMLElement {
 
   connectedCallback() {
     this.classList.add("calendar-view");
-    if (!this.hasAttribute("date")) {
-      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
-      this.setAttribute("date", Temporal.Now.plainDateISO(timeZone).toString());
-    }
+    if (!this.hasAttribute("date")) this.#reflectImplicitDate();
     this.#queueRender();
     // A disconnect that aborted an in-flight load leaves `#refetchOnReconnect`
     // armed; restart it so moving the element (layout reorder, framework
@@ -286,13 +309,16 @@ export class CalendarViewElement extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.#updateMonth = null;
+    this.#stopHeaderObservation?.();
+    this.#stopHeaderObservation = null;
     this.#stopNowIndicator?.();
     this.#stopNowIndicator = null;
     this.#cancelExternalPointer?.();
     this.#clearExternalDrag();
     this.#externalDropTarget = null;
-    if (this.#loadInFlight) this.#refetchOnReconnect = true;
-    this.#abortController?.abort();
+    if (this.#sourceRequest) this.#refetchOnReconnect = true;
+    this.#cancelSourceRequest();
     // No work survives a disconnect: drop queued post-render callbacks and
     // cancel the single pending announce frame, if any. Dropping is not
     // silent - a queued callback an awaiting caller depends on gets its
@@ -316,8 +342,15 @@ export class CalendarViewElement extends HTMLElement {
     }
   }
 
-  attributeChangedCallback() {
+  /** @param {string} name */
+  attributeChangedCallback(name) {
+    if (name === "date") this.#dateIsImplicit = false;
     if (this.isConnected) this.#queueRender();
+    if ((name === "date" || name === "view") && this.#sourceRequest) {
+      // Navigation methods replace the request in the same call. A direct
+      // attribute write only invalidates it, without starting a new load.
+      queueMicrotask(() => this.#invalidateSourceScope());
+    }
   }
 
   /**
@@ -325,13 +358,12 @@ export class CalendarViewElement extends HTMLElement {
    * @returns {this}
    */
   configure(options = {}) {
-    if (
-      ("eventSource" in options && options.eventSource !== this.#config.eventSource) ||
-      ("backgroundSource" in options && options.backgroundSource !== this.#config.backgroundSource)
-    ) {
-      this.#cancelSourceRequest();
-    }
+    const previousZone = this.#config.timeZone ?? DEFAULTS.timeZone;
     this.#config = { ...this.#config, ...options };
+    if (this.#dateIsImplicit && previousZone !== (this.#config.timeZone ?? DEFAULTS.timeZone)) {
+      this.#reflectImplicitDate();
+    }
+    this.#invalidateSourceScope();
     this.#queueRender();
     return this;
   }
@@ -345,6 +377,14 @@ export class CalendarViewElement extends HTMLElement {
     this.setView(value);
   }
 
+  #reflectImplicitDate() {
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    const date = Temporal.Now.plainDateISO(timeZone);
+    this.setAttribute("date", date.toString());
+    // Setting the attribute invoked attributeChangedCallback synchronously.
+    this.#dateIsImplicit = true;
+  }
+
   /**
    * Anchor date as a `Temporal.PlainDate`. A malformed `date` attribute falls
    * back to today in the configured zone and warns once instead of throwing
@@ -354,12 +394,13 @@ export class CalendarViewElement extends HTMLElement {
    */
   get date() {
     const raw = this.getAttribute("date");
+    const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+    if (raw === null) return Temporal.Now.plainDateISO(timeZone);
     try {
-      return toPlainDate(/** @type {string} */ (raw));
+      return toPlainDate(raw);
     } catch {
-      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
       const fallback = Temporal.Now.plainDateISO(timeZone);
-      if (raw !== null && this.#warnedDate !== raw) {
+      if (this.#warnedDate !== raw) {
         this.#warnedDate = raw;
         console.warn(`calendar-view: invalid date attribute "${raw}", using ${fallback}`);
       }
@@ -391,6 +432,7 @@ export class CalendarViewElement extends HTMLElement {
   /** @param {import("./core/model.js").ResourceInput[] | null | undefined} value */
   set resources(value) {
     this.#resources = Array.from(value ?? [], normalizeResource);
+    this.#invalidateSourceScope();
     this.#queueRender();
   }
 
@@ -422,7 +464,7 @@ export class CalendarViewElement extends HTMLElement {
     const oldView = this.view;
     if (oldView === view) return;
     this.setAttribute("view", view);
-    this.dispatchEvent(new CustomEvent("calendar:viewchange", { detail: { oldView, view } }));
+    emitCalendarEvent(this, "calendar:viewchange", { oldView, view });
     this.#announce(`${view}, ${this.date}`);
     void this.refetchEvents();
   }
@@ -439,9 +481,10 @@ export class CalendarViewElement extends HTMLElement {
   async gotoDate(value) {
     const next = toPlainDate(value).toString();
     const previous = this.getAttribute("date");
+    this.#dateIsImplicit = false;
     if (previous === next) return;
     this.setAttribute("date", next);
-    this.dispatchEvent(new CustomEvent("calendar:datechange", { detail: { date: toPlainDate(next) } }));
+    emitCalendarEvent(this, "calendar:datechange", { date: toPlainDate(next) });
     this.#announce(`${this.view}, ${next}`);
     return this.refetchEvents();
   }
@@ -924,23 +967,20 @@ export class CalendarViewElement extends HTMLElement {
       if (!live || this.#placementTickets.get(String(id)) !== ticket || !sameRange(live, optimistic)) return;
       apply(restored);
     };
-    const accepted = this.dispatchEvent(
-      new CustomEvent(name, {
-        bubbles: true,
-        composed: true,
-        cancelable: true,
-        // `context` is a snapshot of canonical state at dispatch time. For
-        // move/resize the optimistic mutation is already applied, so the
-        // mutated event may appear in `context.events.overlapping`.
-        detail: {
-          event: this.getEventById(id),
-          previous,
-          current,
-          context: this.getRangeContext(optimistic),
-          nativeEvent,
-          revert,
-        },
-      }),
+    // For move/resize the optimistic mutation is already applied, so the
+    // mutated event may appear in `context.events.overlapping`.
+    const accepted = emitCalendarEvent(
+      this,
+      name,
+      {
+        event: this.getEventById(id),
+        previous,
+        current,
+        context: this.getRangeContext(optimistic),
+        nativeEvent,
+        revert,
+      },
+      { cancelable: true },
     );
     if (!accepted) revert();
     return reverted ? null : this.getEventById(id);
@@ -1068,7 +1108,7 @@ export class CalendarViewElement extends HTMLElement {
     // An echo or a partial edit outranks any undo still waiting on a server.
     this.#stampPlacement(id);
     this.#events = this.#events.map((item, i) => (i === index ? next : item));
-    this.#queueRender();
+    this.#queueRender(true);
     return next;
   }
 
@@ -1263,44 +1303,58 @@ export class CalendarViewElement extends HTMLElement {
     }
   }
 
-  #cancelSourceRequest() {
-    this.#abortController?.abort();
-    this.#abortController = null;
-    this.#requestVersion += 1;
-    this.removeAttribute("aria-busy");
-    if (this.#loadInFlight) {
-      this.#loadInFlight = false;
-      this.#announceLoading(false);
+  /** @returns {SourceScope} */
+  #sourceScope() {
+    return {
+      ...this.getVisibleRange(),
+      // Solo views can have selected resources too. An empty list means no filter.
+      resourceIds: this.#resources.map((resource) => resource.id),
+      timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
+      eventSource: this.#config.eventSource,
+      backgroundSource: this.#config.backgroundSource,
+    };
+  }
+
+  #invalidateSourceScope() {
+    if (this.#sourceRequest && !sameSourceScope(this.#sourceRequest.scope, this.#sourceScope())) {
+      this.#cancelSourceRequest();
     }
   }
 
+  #cancelSourceRequest() {
+    const request = this.#sourceRequest;
+    this.#sourceRequest = null;
+    this.removeAttribute("aria-busy");
+    request?.controller.abort();
+    if (request && !this.#sourceRequest) this.#announceLoading(false);
+  }
+
   async refetchEvents() {
-    const eventSource = this.#config.eventSource;
-    const backgroundSource = this.#config.backgroundSource;
+    const { eventSource, backgroundSource } = this.#config;
     if (!eventSource && !backgroundSource) {
       this.#cancelSourceRequest();
       return;
     }
+    const scope = this.#sourceScope();
+    const { start, end, resourceIds } = scope;
 
-    this.#abortController?.abort();
+    const previous = this.#sourceRequest;
     const controller = new AbortController();
-    this.#abortController = controller;
-    const version = ++this.#requestVersion;
-    const { start, end } = this.getVisibleRange();
-    // Source scope follows selected resources, not the renderer type:
-    // solo with an active resource sends ["resource-a"], [] means no filter.
-    const resourceIds = this.#resources.map((resource) => resource.id);
-    const context = { start, end, resourceIds, signal: controller.signal, calendar: this };
+    const request = { controller, scope };
+    this.#sourceRequest = request;
+    previous?.controller.abort();
+    if (this.#sourceRequest !== request) return;
+    const context = { start, end, resourceIds: [...resourceIds], signal: controller.signal, calendar: this };
 
     this.setAttribute("aria-busy", "true");
     this.#announceLoading(true);
-    this.#loadInFlight = true;
+    if (this.#sourceRequest !== request) return;
     try {
       const [events, backgrounds] = await Promise.all([
         eventSource ? eventSource(context) : null,
         backgroundSource ? backgroundSource(context) : null,
       ]);
-      if (controller.signal.aborted || version !== this.#requestVersion) return;
+      if (this.#sourceRequest !== request || !sameSourceScope(scope, this.#sourceScope())) return;
       // Normalize both collections before touching state: a malformed payload
       // must leave the previous events *and* backgrounds intact, so a rejected
       // refetch never publishes a half-updated calendar.
@@ -1325,13 +1379,13 @@ export class CalendarViewElement extends HTMLElement {
       if (nextBackgrounds) this.#backgrounds = nextBackgrounds;
       this.#queueRender();
     } catch (error) {
-      if (controller.signal.aborted) return;
-      this.dispatchEvent(new CustomEvent("calendar:loaderror", { detail: { error } }));
+      if (this.#sourceRequest !== request || !sameSourceScope(scope, this.#sourceScope())) return;
+      emitCalendarEvent(this, "calendar:loaderror", { error });
     } finally {
       // Only the newest request settles busy state. Explicit cancellation
       // settles it itself when no replacement request is started.
-      if (version === this.#requestVersion) {
-        this.#loadInFlight = false;
+      if (this.#sourceRequest === request) {
+        this.#sourceRequest = null;
         this.removeAttribute("aria-busy");
         this.#announceLoading(false);
       }
@@ -1346,25 +1400,23 @@ export class CalendarViewElement extends HTMLElement {
    * @returns {void}
    */
   #announceLoading(loading) {
-    this.dispatchEvent(
-      new CustomEvent("calendar:loading", {
-        bubbles: true,
-        composed: true,
-        detail: { loading },
-      }),
-    );
+    emitCalendarEvent(this, "calendar:loading", { loading });
   }
 
-  #queueRender() {
+  /** @param {boolean} [eventUpdateOnly] */
+  #queueRender(eventUpdateOnly = false) {
     this.#interactionRevision += 1;
+    if (!eventUpdateOnly) this.#replaceRender = true;
     if (this.#batchDepth || this.#renderQueued) return;
     this.#renderQueued = true;
     requestAnimationFrame(() => {
       this.#renderQueued = false;
+      const replace = this.#replaceRender;
+      this.#replaceRender = false;
       // A state change made while detached is covered by the next
       // `connectedCallback`, so no work survives a disconnect.
       if (!this.isConnected) return;
-      this.#render();
+      this.#render(replace);
     });
   }
 
@@ -1478,7 +1530,10 @@ export class CalendarViewElement extends HTMLElement {
     };
   }
 
-  #render() {
+  /** @param {boolean} replace */
+  #render(replace) {
+    this.#stopHeaderObservation?.();
+    this.#stopHeaderObservation = null;
     this.#stopNowIndicator?.();
     this.#stopNowIndicator = null;
     this.#externalDropTarget?.clear();
@@ -1488,6 +1543,7 @@ export class CalendarViewElement extends HTMLElement {
       console.warn(`calendar-view: unknown view "${this.view}", rendering as a rolling range`);
     }
     const options = this.#options();
+    const renderer = getViewRenderer(this.view);
 
     const dateOptions = this.#dateOptions();
     const dates = getVisibleDates(this.date, this.view, dateOptions);
@@ -1498,38 +1554,35 @@ export class CalendarViewElement extends HTMLElement {
     // service; interaction decisions take their own `now` when they run.
     const now = Temporal.Now.zonedDateTimeISO(options.timeZone);
 
-    const scroll = this.querySelector(".cv-scroller");
-    const scrollTop = scroll?.scrollTop ?? 0;
-    const scrollLeft = scroll?.scrollLeft ?? 0;
-    // A render replaces the whole subtree. Remember which rendered segment
-    // owned focus so an external update cannot drop keyboard users on the
-    // document body; only focus that was already inside the calendar moves.
+    // A rebuilt view can restore focus on the same rendered segment.
     const active = document.activeElement;
     const focusOwner =
       active instanceof Element && this.contains(active) ? active.closest("[data-focus-key]") : null;
     const focusKey = focusOwner instanceof HTMLElement ? (focusOwner.dataset.focusKey ?? null) : null;
-    // The live region outlives the grid so announcements scheduled before a
-    // render are never lost when the subtree is replaced.
-    const status = this.querySelector(":scope > .cv-status") ?? document.createElement("p");
-    status.className = "cv-status";
-    status.setAttribute("role", "status");
+    const updateMonth = !replace && renderer === "month" ? this.#updateMonth : null;
+    if (updateMonth) {
+      updateMonth(this.#events, now);
+    } else {
+      this.#updateMonth = null;
+      const scroll = this.querySelector(".cv-scroller");
+      const scrollTop = scroll?.scrollTop ?? 0;
+      const scrollLeft = scroll?.scrollLeft ?? 0;
+      // The live region outlives the grid so announcements scheduled before a
+      // render are never lost when the subtree is replaced.
+      const status = this.querySelector(":scope > .cv-status") ?? document.createElement("p");
+      status.className = "cv-status";
+      status.setAttribute("role", "status");
 
-    this.replaceChildren();
-    this.dataset.view = this.view;
+      this.replaceChildren();
+      this.dataset.view = this.view;
 
-    const scroller = document.createElement("div");
-    scroller.className = "cv-scroller";
-    scroller.setAttribute("role", "region");
-    scroller.setAttribute("aria-label", options.labels.calendarRegion);
-    // Civil half-open scope of what this render paints; the aging timer only
-    // watches boundaries inside it. Month weeks spill past the month, so the
-    // scope follows the rendered weeks/dates, not the view range.
-    /** @type {{ start: unknown, end: unknown } | null} */
-    let visibleScope = null;
-    if (this.view === "month") {
-      const weeks = getMonthWeeks(this.date, dateOptions);
-      scroller.append(
-        renderMonthGrid({
+      const scroller = document.createElement("div");
+      scroller.className = "cv-scroller";
+      scroller.setAttribute("role", "region");
+      scroller.setAttribute("aria-label", options.labels.calendarRegion);
+      if (renderer === "month") {
+        const weeks = getMonthWeeks(this.date, dateOptions);
+        const month = renderMonthGrid({
           weeks,
           month: this.date.month,
           events: this.#events,
@@ -1540,78 +1593,72 @@ export class CalendarViewElement extends HTMLElement {
           getRangeContext: (range) => this.getRangeContext(range),
           checkInteraction: (/** @type {Parameters<CalendarViewElement["checkInteraction"]>[0]} */ input) =>
             this.checkInteraction(input),
-        }),
-      );
-      visibleScope = {
-        start: weeks[0][0],
-        end: weeks[weeks.length - 1][weeks[weeks.length - 1].length - 1].add({ days: 1 }),
-      };
-    } else if (this.view === "list") {
-      if (dates.length > 0) {
-        visibleScope = { start: dates[0], end: dates[dates.length - 1].add({ days: 1 }) };
-      }
-      scroller.append(
-        renderList({
-          dates,
-          events: this.#events,
-          backgrounds: listedBackgrounds(this.#backgrounds, this.#config.listBackgrounds),
-          options,
-          now,
-          eventContent: this.#config.eventContent,
-          dayHeaderContent: this.#config.dayHeaderContent,
-          backgroundContent: this.#config.backgroundContent,
-        }),
-      );
-    } else {
-      if (dates.length > 0) {
-        visibleScope = { start: dates[0], end: dates[dates.length - 1].add({ days: 1 }) };
-      }
-      scroller.append(
-        renderTimeGrid({
-          dates,
-          resources,
-          resourceGroups: this.#resourceGroups,
-          view: this.view,
-          events: this.#events,
-          backgrounds: this.#backgrounds,
-          options,
-          now,
-          host: {
-            editable: this.#config.editable,
-            isConnected: () => this.isConnected,
-            announce: (message) => this.#announce(message),
-            refocusEvent: (id) => this.#refocusEvent(id),
-            getRangeContext: (range) => this.getRangeContext(range),
-            checkInteraction: (/** @type {Parameters<CalendarViewElement["checkInteraction"]>[0]} */ input) =>
-              this.checkInteraction(input),
-            commitEventMove: (input) => this.#commitEventMove(input),
-            commitEventResize: (input) => this.#commitEventResize(input),
-            getExternalDrag: () => this.#dragExternal,
-            clearExternalDrag: () => this.#clearExternalDrag(),
-            getInteractionRevision: () => this.#interactionRevision,
-            setExternalDropTarget: (target) => {
-              this.#externalDropTarget = target;
+        });
+        scroller.append(month.fragment);
+        this.#updateMonth = month.update;
+      } else if (renderer === "list") {
+        scroller.append(
+          renderList({
+            dates,
+            events: this.#events,
+            backgrounds: listedBackgrounds(this.#backgrounds, this.#config.listBackgrounds),
+            options,
+            now,
+            eventContent: this.#config.eventContent,
+            dayHeaderContent: this.#config.dayHeaderContent,
+            backgroundContent: this.#config.backgroundContent,
+          }),
+        );
+      } else {
+        scroller.append(
+          renderTimeGrid({
+            dates,
+            resources,
+            resourceGroups: this.#resourceGroups,
+            view: this.view,
+            events: this.#events,
+            backgrounds: this.#backgrounds,
+            options,
+            now,
+            host: {
+              editable: this.#config.editable,
+              isConnected: () => this.isConnected,
+              announce: (message) => this.#announce(message),
+              refocusEvent: (id) => this.#refocusEvent(id),
+              getRangeContext: (range) => this.getRangeContext(range),
+              checkInteraction: (
+                /** @type {Parameters<CalendarViewElement["checkInteraction"]>[0]} */ input,
+              ) => this.checkInteraction(input),
+              commitEventMove: (input) => this.#commitEventMove(input),
+              commitEventResize: (input) => this.#commitEventResize(input),
+              getExternalDrag: () => this.#dragExternal,
+              clearExternalDrag: () => this.#clearExternalDrag(),
+              getInteractionRevision: () => this.#interactionRevision,
+              setExternalDropTarget: (target) => {
+                this.#externalDropTarget = target;
+              },
+              getPreview: () => this.#preview,
+              setNowIndicatorCleanup: (cleanup) => {
+                this.#stopNowIndicator = cleanup;
+              },
             },
-            getPreview: () => this.#preview,
-            setNowIndicatorCleanup: (cleanup) => {
-              this.#stopNowIndicator = cleanup;
-            },
-          },
-          eventContent: this.#config.eventContent,
-          dayHeaderContent: this.#config.dayHeaderContent,
-          resourceHeaderContent: this.#config.resourceHeaderContent,
-          resourceGroupContent: this.#config.resourceGroupContent,
-          slotLabelContent: this.#config.slotLabelContent,
-        }),
-      );
+            eventContent: this.#config.eventContent,
+            dayHeaderContent: this.#config.dayHeaderContent,
+            resourceHeaderContent: this.#config.resourceHeaderContent,
+            resourceGroupContent: this.#config.resourceGroupContent,
+            slotLabelContent: this.#config.slotLabelContent,
+          }),
+        );
+      }
+      this.append(scroller);
+      this.#stopHeaderObservation = observeStickyHeaders(scroller);
+      scroller.scrollTop = scrollTop;
+      scroller.scrollLeft = scrollLeft;
+
+      this.append(status);
     }
-    this.append(scroller);
-    scroller.scrollTop = scrollTop;
-    scroller.scrollLeft = scrollLeft;
 
-    this.append(status);
-
-    if (focusKey) {
+    if (focusKey && document.activeElement !== active) {
       const target = /** @type {HTMLElement | undefined} */ (
         [...this.querySelectorAll("[data-focus-key]")].find(
           (node) => /** @type {HTMLElement} */ (node).dataset.focusKey === focusKey,
@@ -1623,13 +1670,7 @@ export class CalendarViewElement extends HTMLElement {
     // Dispatched once the whole subtree exists, so applications can decorate
     // rendered columns without observing mutations. Listeners that mutate
     // state simply queue the next frame, like any other mutation.
-    this.dispatchEvent(
-      new CustomEvent("calendar:render", {
-        bubbles: true,
-        composed: true,
-        detail: { view: this.view, dates, resources },
-      }),
-    );
+    emitCalendarEvent(this, "calendar:render", { view: this.view, dates, resources });
 
     // Post-render work (focus, announcements, future reveal highlight) runs
     // after app decorators so it sees the final subtree. Snapshot-and-clear:
@@ -1646,6 +1687,9 @@ export class CalendarViewElement extends HTMLElement {
       clearTimeout(this.#agingTimer);
       this.#agingTimer = null;
     }
+    // Follow painted dates, including the leading/trailing days in month view.
+    const visibleScope =
+      dates.length > 0 ? { start: dates[0], end: dates[dates.length - 1].add({ days: 1 }) } : null;
     const nextBoundary = nextStateChangeMs(
       this.#events,
       now.epochMilliseconds,
@@ -1662,9 +1706,5 @@ export class CalendarViewElement extends HTMLElement {
         }, delay);
       }
     }
-
-    // Rendering is full replacement by design in 0.x: every hook re-runs and
-    // app-applied DOM state is lost per render, which keyed reconciliation
-    // would address once a use case demands it.
   }
 }

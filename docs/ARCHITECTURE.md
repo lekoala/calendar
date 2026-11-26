@@ -42,7 +42,13 @@ Application
 
 Nothing in the core scheduling model requires React/Svelte/Vue. A framework can make state reconciliation convenient, but a calendar with a bounded visible set can use explicit state + keyed DOM reconciliation.
 
-The prototype currently full-renders on changes. That is only a spike. The intended implementation should preserve stable event/header nodes by key where practical.
+The timed grid derives each column's clipped segments and positions before
+rendering it. Pointer and native external placement share a controller that
+uses the grid's hit tests.
+
+Month chips reconcile in place when only an existing event is updated.
+Time grids, list and month changes that affect the whole view still rebuild
+their DOM. The element restores focus by segment key when a node is replaced.
 
 ## View state
 

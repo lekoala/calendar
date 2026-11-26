@@ -96,6 +96,68 @@ for (const resourceView of [false, true]) {
   });
 }
 
+for (const change of ["resources", "range", "attribute", "timeZone"]) {
+  test(`a pending source cannot publish after a ${change} change`, async ({ page }) => {
+    await openDemo(page, "basic");
+    const outcome = await page.evaluate(async (change) => {
+      const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+        document.querySelector("calendar-view")
+      );
+      const entry = { allDay: true, start: "2026-09-03", end: "2026-09-04" };
+      calendar.setView("day");
+      calendar.events = [{ ...entry, id: "current" }];
+      calendar.backgrounds = [{ ...entry, id: "current-background" }];
+      calendar.resources = [{ id: "a" }];
+      /** @type {import("../../src/calendar-view.js").EventSourceQuery | undefined} */
+      let query;
+      let calls = 0;
+      /** @type {(entries: unknown[]) => void} */
+      let resolve = () => {
+        throw new Error("Source not started");
+      };
+      /** @type {Promise<unknown[]>} */
+      const pending = new Promise((done) => {
+        resolve = done;
+      });
+      calendar.configure({
+        eventSource: (scope) => {
+          calls += 1;
+          query = scope;
+          return pending;
+        },
+        backgroundSource: async () => [{ ...entry, id: "stale-background" }],
+      });
+      const load = calendar.refetchEvents();
+      calendar.resources = [{ id: "a", title: "Renamed" }];
+      const keptAfterRename = query?.signal.aborted === false;
+      if (change === "resources") calendar.resources = [{ id: "b" }];
+      if (change === "range") calendar.configure({ dayCount: 2 });
+      if (change === "timeZone") calendar.configure({ timeZone: "Pacific/Kiritimati" });
+      if (change === "attribute") calendar.setAttribute("date", "2026-09-04");
+      resolve([{ ...entry, id: "stale" }]);
+      await load;
+      return {
+        keptAfterRename,
+        aborted: query?.signal.aborted,
+        requested: query?.resourceIds,
+        calls,
+        busy: calendar.hasAttribute("aria-busy"),
+        events: calendar.events.map((event) => event.id),
+        backgrounds: calendar.backgrounds.map((background) => background.id),
+      };
+    }, change);
+    expect(outcome).toEqual({
+      keptAfterRename: true,
+      aborted: true,
+      requested: ["a"],
+      calls: 1,
+      busy: false,
+      events: ["current"],
+      backgrounds: ["current-background"],
+    });
+  });
+}
+
 for (const source of ["eventSource", "backgroundSource"]) {
   for (const replacement of [false, true]) {
     test(`${source} invalidates pending work on ${replacement ? "replacement" : "removal"}`, async ({

@@ -306,21 +306,26 @@ test("geometry seams resize the axis and sticky header rows together", async ({ 
       return { width: style.width, top: style.top, minHeight: style.minHeight };
     };
     const grid = document.querySelector("#seams .cv-grid");
+    const groupHeight = document.querySelector("#seams .cv-group-row")?.getBoundingClientRect().height ?? 0;
+    const resourceHeight =
+      document.querySelector("#seams .cv-resource-row")?.getBoundingClientRect().height ?? 0;
     return {
       axis: probe(document.querySelector("#seams .cv-axis")).width,
       gridTrack: grid ? getComputedStyle(grid).gridTemplateColumns.split(" ")[0] : "",
       resourceRow: probe(document.querySelector("#seams .cv-resource-header")).minHeight,
       groupRow: probe(document.querySelector("#seams .cv-group-header")).minHeight,
-      groupOffset: probe(document.querySelector("#seams .cv-resource-row")).top,
-      stackedOffset: probe(document.querySelector("#seams .cv-day-header")).top,
+      groupOffset: Number.parseFloat(probe(document.querySelector("#seams .cv-resource-row")).top),
+      stackedOffset: Number.parseFloat(probe(document.querySelector("#seams .cv-day-header")).top),
+      groupHeight,
+      resourceHeight,
     };
   });
   expect(geometry.axis).toBe("40px");
   expect(geometry.gridTrack).toBe("40px");
   expect(geometry.resourceRow).toBe("32px");
   expect(geometry.groupRow).toBe("20px");
-  expect(geometry.groupOffset).toBe("20px");
-  expect(geometry.stackedOffset).toBe("52px");
+  expect(geometry.groupOffset).toBeCloseTo(geometry.groupHeight);
+  expect(geometry.stackedOffset).toBeCloseTo(geometry.groupHeight + geometry.resourceHeight);
   await page.evaluate(() => document.getElementById("seams")?.remove());
 });
 

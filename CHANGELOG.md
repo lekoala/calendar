@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+* Pending event and background requests are invalidated when the visible
+  range, selected resources, time zone, or configured source changes. A
+  stale response cannot replace the current data, even if its source ignores
+  cancellation. Use `refetchEvents()` to load the new scope after changes
+  outside the navigation methods.
+* The implicit anchor date follows the configured time zone, including when
+  the application configures the calendar after mounting it. Explicit dates
+  stay pinned.
+* `calendar:viewchange`, `calendar:datechange`, and `calendar:loaderror` now
+  bubble and cross shadow boundaries.
+* Sticky resource, group, and day headers stack using the rendered row
+  heights, including when custom header content grows after render.
+
+### Changed
+
+* In month view, `updateEvent()` preserves the DOM, custom content, and
+  keyboard focus of unchanged chips that stay visible with the same
+  temporal state.
+* Time grids calculate timed segments and overlap geometry before rendering.
+  Pointer and native drag-and-drop share the external placement controller.
+
 ## 0.4.0 - 2026-11-06
 
 See [docs/MIGRATION-0.4.md](docs/MIGRATION-0.4.md) for the consumer-facing

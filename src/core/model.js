@@ -140,33 +140,25 @@ export function isInvalidCivilRange(start, end) {
 }
 
 /**
- * @param {EventInput} event
- * @returns {NormalizedEvent}
+ * @param {EventInput | BackgroundInput} item
+ * @param {"Event" | "Background"} kind
  */
-export function normalizeEvent(event) {
-  if (!event || event.id == null || event.start == null || event.end == null) {
-    throw new TypeError("Event requires id, start and end");
+function normalizeRangeItem(item, kind) {
+  if (!item || item.id == null || item.start == null || item.end == null) {
+    throw new TypeError(`${kind} requires id, start and end`);
   }
-  const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = event;
-  const normalizedStart = /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (
-    normalizeRangeBound(start, allDay)
-  );
-  const normalizedEnd = /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (
-    normalizeRangeBound(end, allDay)
-  );
+  const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = item;
+  const normalizedStart = normalizeRangeBound(start, allDay);
+  const normalizedEnd = normalizeRangeBound(end, allDay);
   if (isInvertedRange(normalizedStart, normalizedEnd)) {
-    throw new TypeError("Event end must not precede start");
+    throw new TypeError(`${kind} end must not precede start`);
   }
   if (allDay && isInvalidCivilRange(normalizedStart, normalizedEnd)) {
     throw new TypeError("All-day ranges must cover at least one day (exclusive end)");
   }
-  // No `editable` default here on purpose: an injected `true` would outrank
-  // `configure({ editable: false })` in `isMovable`/`isResizable`, which
-  // resolve the event flags *then* the calendar default. An event that omits
-  // the flag stays undecided so the calendar keeps the last word.
-  return /** @type {NormalizedEvent} */ ({
+  return {
     ...rest,
-    id: String(event.id),
+    id: String(item.id),
     // An absent reference stays optional; explicit null means unassigned.
     ...(resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) }),
     allDay,
@@ -174,7 +166,17 @@ export function normalizeEvent(event) {
     end: normalizedEnd,
     classNames: Array.from(classNames ?? []),
     extendedProps: { ...(extendedProps ?? {}) },
-  });
+  };
+}
+
+/**
+ * An omitted `editable` stays undecided so the calendar default still applies.
+ *
+ * @param {EventInput} event
+ * @returns {NormalizedEvent}
+ */
+export function normalizeEvent(event) {
+  return normalizeRangeItem(event, "Event");
 }
 
 /**
@@ -318,30 +320,5 @@ export function normalizeResourceGroup(resourceGroup) {
  * @returns {NormalizedBackground}
  */
 export function normalizeBackground(background) {
-  if (!background || background.id == null || background.start == null || background.end == null) {
-    throw new TypeError("Background requires id, start and end");
-  }
-  const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = background;
-  const normalizedStart = /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (
-    normalizeRangeBound(start, allDay)
-  );
-  const normalizedEnd = /** @type {Temporal.ZonedDateTime | Temporal.PlainDate} */ (
-    normalizeRangeBound(end, allDay)
-  );
-  if (isInvertedRange(normalizedStart, normalizedEnd)) {
-    throw new TypeError("Background end must not precede start");
-  }
-  if (allDay && isInvalidCivilRange(normalizedStart, normalizedEnd)) {
-    throw new TypeError("All-day ranges must cover at least one day (exclusive end)");
-  }
-  return /** @type {NormalizedBackground} */ ({
-    ...rest,
-    id: String(background.id),
-    ...(resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) }),
-    allDay,
-    start: normalizedStart,
-    end: normalizedEnd,
-    classNames: Array.from(classNames ?? []),
-    extendedProps: { ...(extendedProps ?? {}) },
-  });
+  return /** @type {NormalizedBackground} */ (normalizeRangeItem(background, "Background"));
 }

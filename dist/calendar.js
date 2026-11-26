@@ -3769,13 +3769,19 @@
     day: { range: "rolling", defaultDayCount: 1 },
     threeDays: { range: "rolling", defaultDayCount: 3 },
     week: { range: "week" },
-    resourceDay: { range: "rolling", defaultDayCount: 1 },
-    resourceThreeDays: { range: "rolling", defaultDayCount: 3 },
-    list: { range: "rolling", defaultDayCount: 7 }
+    resourceDay: { range: "rolling", defaultDayCount: 1, resource: true },
+    resourceThreeDays: { range: "rolling", defaultDayCount: 3, resource: true },
+    list: { range: "rolling", defaultDayCount: 7, renderer: "list" },
+    month: { range: "month", renderer: "month" }
   };
-  var WEEK_ANCHORED_VIEWS = new Set(["week"]);
+  function getViewDefinition(view) {
+    return Object.hasOwn(VIEW_DEFS, view) ? VIEW_DEFS[view] : undefined;
+  }
   function isKnownView(view) {
-    return view === "month" || Object.hasOwn(VIEW_DEFS, view);
+    return getViewDefinition(view) !== undefined;
+  }
+  function getViewRenderer(view) {
+    return getViewDefinition(view)?.renderer ?? "timeGrid";
   }
   function isoWeekday(value) {
     const day = Number(value);
@@ -3801,7 +3807,7 @@
     return value instanceof Temporal2.PlainDate ? value : Temporal2.PlainDate.from(value);
   }
   function getDayCount(view, options = {}) {
-    const def = VIEW_DEFS[view];
+    const def = getViewDefinition(view);
     if (def?.range !== "rolling")
       return null;
     const count = Number(options.dayCount);
@@ -3810,7 +3816,7 @@
     return def.defaultDayCount ?? 1;
   }
   function isWeekAnchoredView(view) {
-    return WEEK_ANCHORED_VIEWS.has(view);
+    return getViewDefinition(view)?.range === "week";
   }
   function startOfWeek(date, firstDay = 1) {
     const anchor = toPlainDate(date);
@@ -3872,10 +3878,10 @@
     return earliest;
   }
   function isResourceView(view) {
-    return view === "resourceDay" || view === "resourceThreeDays";
+    return getViewDefinition(view)?.resource === true;
   }
   function isMonthView(view) {
-    return view === "month";
+    return getViewDefinition(view)?.range === "month";
   }
   function fullMonthWeeks(date, firstDay) {
     const anchor = toPlainDate(date);
@@ -4186,22 +4192,22 @@
   function isInvalidCivilRange(start, end) {
     return start instanceof Temporal2.PlainDate && end instanceof Temporal2.PlainDate && Temporal2.PlainDate.compare(end, start) <= 0;
   }
-  function normalizeEvent(event) {
-    if (!event || event.id == null || event.start == null || event.end == null) {
-      throw new TypeError("Event requires id, start and end");
+  function normalizeRangeItem(item, kind) {
+    if (!item || item.id == null || item.start == null || item.end == null) {
+      throw new TypeError(`${kind} requires id, start and end`);
     }
-    const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = event;
+    const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = item;
     const normalizedStart = normalizeRangeBound(start, allDay);
     const normalizedEnd = normalizeRangeBound(end, allDay);
     if (isInvertedRange(normalizedStart, normalizedEnd)) {
-      throw new TypeError("Event end must not precede start");
+      throw new TypeError(`${kind} end must not precede start`);
     }
     if (allDay && isInvalidCivilRange(normalizedStart, normalizedEnd)) {
       throw new TypeError("All-day ranges must cover at least one day (exclusive end)");
     }
     return {
       ...rest,
-      id: String(event.id),
+      id: String(item.id),
       ...resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) },
       allDay,
       start: normalizedStart,
@@ -4209,6 +4215,9 @@
       classNames: Array.from(classNames ?? []),
       extendedProps: { ...extendedProps ?? {} }
     };
+  }
+  function normalizeEvent(event) {
+    return normalizeRangeItem(event, "Event");
   }
   function sameBound(a, b) {
     if (a === b)
@@ -4255,28 +4264,7 @@
     };
   }
   function normalizeBackground(background) {
-    if (!background || background.id == null || background.start == null || background.end == null) {
-      throw new TypeError("Background requires id, start and end");
-    }
-    const { classNames, extendedProps, start, end, allDay = false, resourceId, ...rest } = background;
-    const normalizedStart = normalizeRangeBound(start, allDay);
-    const normalizedEnd = normalizeRangeBound(end, allDay);
-    if (isInvertedRange(normalizedStart, normalizedEnd)) {
-      throw new TypeError("Background end must not precede start");
-    }
-    if (allDay && isInvalidCivilRange(normalizedStart, normalizedEnd)) {
-      throw new TypeError("All-day ranges must cover at least one day (exclusive end)");
-    }
-    return {
-      ...rest,
-      id: String(background.id),
-      ...resourceId === undefined ? {} : { resourceId: normalizeResourceId(resourceId) },
-      allDay,
-      start: normalizedStart,
-      end: normalizedEnd,
-      classNames: Array.from(classNames ?? []),
-      extendedProps: { ...extendedProps ?? {} }
-    };
+    return normalizeRangeItem(background, "Background");
   }
 
   // src/core/overlaps.js
@@ -4423,6 +4411,20 @@
     return next;
   }
 
+  // src/render/dom.js
+  function applyContent(element, content) {
+    if (content == null)
+      return false;
+    if (content instanceof Node)
+      element.append(content);
+    else
+      element.textContent = String(content);
+    return true;
+  }
+  function emitCalendarEvent(target, name, detail, { cancelable = false } = {}) {
+    return target.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true, cancelable }));
+  }
+
   // src/render/list.js
   function renderList({
     dates,
@@ -4448,11 +4450,7 @@
       const header = document.createElement("header");
       header.className = "cv-list-day-header";
       const headerContent = dayHeaderContent?.({ date, resource: null, element: header });
-      if (headerContent instanceof Node)
-        header.append(headerContent);
-      else if (headerContent != null)
-        header.textContent = String(headerContent);
-      else
+      if (!applyContent(header, headerContent))
         header.textContent = formatDayHeader(date, locale);
       group.append(header);
       const rows = listDayRows({ date, events, backgrounds, timeZone });
@@ -4471,22 +4469,12 @@
         item.dataset.temporalState = state;
         item.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
         const content = eventContent?.({ event, date, resource: null, temporalState: state, element: item });
-        if (content instanceof Node) {
-          item.append(content);
-        } else if (content != null) {
-          item.textContent = String(content);
-        } else if (event.start instanceof Temporal2.PlainDate) {
-          item.textContent = event.title ?? labels.untitledEvent;
-        } else {
-          item.textContent = `${formatClock(wallMinutes(instantRangeOf(event.start, event.end, timeZone).start))} ${event.title ?? labels.untitledEvent}`;
+        if (!applyContent(item, content)) {
+          const title = event.title ?? labels.untitledEvent;
+          item.textContent = event.start instanceof Temporal2.PlainDate ? title : `${formatClock(wallMinutes(instantRangeOf(event.start, event.end, timeZone).start))} ${title}`;
         }
         item.addEventListener("click", (nativeEvent) => {
-          item.dispatchEvent(new CustomEvent("calendar:eventclick", {
-            bubbles: true,
-            composed: true,
-            cancelable: true,
-            detail: { event, date, resource: null, nativeEvent }
-          }));
+          emitCalendarEvent(item, "calendar:eventclick", { event, date, resource: null, nativeEvent }, { cancelable: true });
         });
         group.append(item);
       }
@@ -4514,11 +4502,7 @@
       allDay: row.allDay,
       element
     });
-    if (content instanceof Node)
-      element.append(content);
-    else if (content != null)
-      element.textContent = String(content);
-    else
+    if (!applyContent(element, content))
       element.textContent = backgroundSpanText(row, labels);
     return element;
   }
@@ -4565,6 +4549,7 @@
       head.append(cell);
     }
     root.append(head);
+    const updateDays = [];
     for (const week of weeks) {
       const row = document.createElement("div");
       row.className = "cv-month-week";
@@ -4578,52 +4563,68 @@
         label.className = "cv-month-day-number";
         label.textContent = String(date.day);
         cell.append(label);
-        const dayEvents = orderMonthEvents(events.filter((event) => eventOverlapsDate(event, date, timeZone)), timeZone, options.monthEventOrder);
-        for (const event of dayEvents.slice(0, limit)) {
-          const chip = document.createElement("button");
-          chip.type = "button";
-          chip.className = ["cv-month-event", ...event.classNames ?? []].join(" ");
-          chip.dataset.eventId = event.id;
-          chip.dataset.focusKey = JSON.stringify([event.id, date.toString(), "month"]);
-          const state = temporalState(event.start, event.end, renderNow, timeZone);
-          chip.dataset.temporalState = state;
-          chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-          const content = eventContent?.({ event, date, resource: null, temporalState: state, element: chip });
-          if (content instanceof Node)
-            chip.append(content);
-          else
-            chip.textContent = content == null ? event.title ?? labels.untitledEvent : String(content);
-          chip.addEventListener("click", (nativeEvent) => {
-            chip.dispatchEvent(new CustomEvent("calendar:eventclick", {
-              bubbles: true,
-              composed: true,
-              cancelable: true,
-              detail: { event, date, resource: null, nativeEvent }
-            }));
-          });
-          cell.append(chip);
-        }
-        if (dayEvents.length > limit) {
-          const hidden = dayEvents.length - limit;
-          const more = document.createElement("button");
-          more.type = "button";
-          more.className = "cv-month-more";
-          more.dataset.date = date.toString();
-          const content = moreLinkContent?.({ date, events: dayEvents, hidden, element: more });
-          if (content instanceof Node)
-            more.append(content);
-          else
-            more.textContent = content == null ? formatLabel(labels.more, { hidden }) : String(content);
-          more.addEventListener("click", (nativeEvent) => {
-            more.dispatchEvent(new CustomEvent("calendar:moreclick", {
-              bubbles: true,
-              composed: true,
-              cancelable: true,
-              detail: { date, events: dayEvents, hidden, nativeEvent }
-            }));
-          });
-          cell.append(more);
-        }
+        let chips = new Map;
+        let more = null;
+        updateDays.push((events, now) => {
+          const dayEvents = orderMonthEvents(events.filter((event) => eventOverlapsDate(event, date, timeZone)), timeZone, options.monthEventOrder);
+          const nextChips = new Map;
+          for (const event of dayEvents.slice(0, limit)) {
+            const state = temporalState(event.start, event.end, now, timeZone);
+            const previous = chips.get(event);
+            if (previous?.dataset.temporalState === state) {
+              nextChips.set(event, previous);
+              continue;
+            }
+            const chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = ["cv-month-event", ...event.classNames ?? []].join(" ");
+            chip.dataset.eventId = event.id;
+            chip.dataset.focusKey = JSON.stringify([event.id, date.toString(), "month"]);
+            chip.dataset.temporalState = state;
+            chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
+            const content = eventContent?.({
+              event,
+              date,
+              resource: null,
+              temporalState: state,
+              element: chip
+            });
+            if (!applyContent(chip, content))
+              chip.textContent = event.title ?? labels.untitledEvent;
+            chip.addEventListener("click", (nativeEvent) => {
+              emitCalendarEvent(chip, "calendar:eventclick", { event, date, resource: null, nativeEvent }, { cancelable: true });
+            });
+            nextChips.set(event, chip);
+          }
+          for (const [event, chip] of chips) {
+            if (nextChips.get(event) !== chip)
+              chip.remove();
+          }
+          let previousNode = label;
+          for (const chip of nextChips.values()) {
+            if (previousNode.nextSibling !== chip)
+              cell.insertBefore(chip, previousNode.nextSibling);
+            previousNode = chip;
+          }
+          chips = nextChips;
+          more?.remove();
+          more = null;
+          if (dayEvents.length > limit) {
+            const hidden = dayEvents.length - limit;
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "cv-month-more";
+            button.dataset.date = date.toString();
+            const content = moreLinkContent?.({ date, events: dayEvents, hidden, element: button });
+            if (!applyContent(button, content))
+              button.textContent = formatLabel(labels.more, { hidden });
+            button.addEventListener("click", (nativeEvent) => {
+              emitCalendarEvent(button, "calendar:moreclick", { date, events: dayEvents, hidden, nativeEvent }, { cancelable: true });
+            });
+            more = button;
+            cell.append(button);
+          }
+        });
         cell.addEventListener("click", (nativeEvent) => {
           if (nativeEvent.target instanceof Element && nativeEvent.target.closest(".cv-month-event, .cv-month-more")) {
             return;
@@ -4657,8 +4658,31 @@
       }
       root.append(row);
     }
+    const update = (events, now) => {
+      for (const updateDay of updateDays)
+        updateDay(events, now);
+    };
+    update(events, renderNow);
     fragment.append(root);
-    return fragment;
+    return { fragment, update };
+  }
+
+  // src/render/sticky-headers.js
+  function observeStickyHeaders(scroller) {
+    const resourceRow = scroller.querySelector(":scope > .cv-resource-row");
+    if (!resourceRow)
+      return null;
+    const groupRow = scroller.querySelector(":scope > .cv-group-row");
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const property = entry.target === groupRow ? "--cv-group-row-height" : "--cv-resource-row-height";
+        scroller.style.setProperty(property, `${entry.borderBoxSize[0].blockSize}px`);
+      }
+    });
+    observer.observe(resourceRow, { box: "border-box" });
+    if (groupRow)
+      observer.observe(groupRow, { box: "border-box" });
+    return () => observer.disconnect();
   }
 
   // src/core/geometry.js
@@ -4835,6 +4859,46 @@
     return spans;
   }
 
+  // src/core/time-grid-model.js
+  function deriveTimedColumn(column, events, backgrounds, options) {
+    const dayEvents = [];
+    for (const event of events) {
+      if (event.allDay === true || !eventBelongsToColumn(event, column))
+        continue;
+      const slice = sliceTimedEventForDay(event, column.date, options);
+      if (slice)
+        dayEvents.push({ event, ...slice });
+    }
+    const dayBackgrounds = [];
+    for (const background of backgrounds) {
+      if (background.allDay === true || !backgroundAppliesToColumn(background, column))
+        continue;
+      const slice = sliceTimedEventForDay(background, column.date, options);
+      if (!slice)
+        continue;
+      const geometry = eventGeometry({
+        startMinutes: slice.start,
+        endMinutes: slice.end,
+        dayStartMinutes: options.slotMin,
+        pxPerMinute: options.pxPerMinute,
+        gap: 0
+      });
+      dayBackgrounds.push({ background, ...slice, geometry });
+    }
+    return {
+      events: layoutEvents(dayEvents).map((item) => ({
+        ...item,
+        geometry: eventGeometry({
+          startMinutes: item.start,
+          endMinutes: item.end,
+          dayStartMinutes: options.slotMin,
+          pxPerMinute: options.pxPerMinute
+        })
+      })),
+      backgrounds: dayBackgrounds
+    };
+  }
+
   // src/render/autoscroll.js
   function createAutoscroller(scroller, { edge = 48, speed = 12 } = {}) {
     let deltaX = 0;
@@ -4876,6 +4940,258 @@
         deltaX = 0;
         deltaY = 0;
         cancel();
+      }
+    };
+  }
+
+  // src/render/external-placement.js
+  function bindExternalPlacement({
+    root,
+    lane,
+    columns,
+    bodies,
+    columnIndexAtX,
+    gridHit,
+    startMinutes,
+    endMinutes,
+    pxPerMinute,
+    defaultDuration,
+    snapStep,
+    timeZone,
+    host
+  }) {
+    let externalGhost = null;
+    let externalPreview = null;
+    function removeExternalGhost() {
+      externalGhost?.node.remove();
+      externalGhost = null;
+      externalPreview = null;
+    }
+    function externalTargetValidity(date, time, resourceId, allDay, droppable) {
+      if (!droppable)
+        return { ok: false, reason: null };
+      const external = host.getExternalDrag();
+      const result = external?.meta.validate?.({ date, time, resourceId, allDay });
+      if (result === false)
+        return { ok: false, reason: null };
+      if (typeof result === "string")
+        return { ok: false, reason: result };
+      return { ok: true, reason: null };
+    }
+    function resolveExternal(clientX, clientY, refresh = false) {
+      const external = host.getExternalDrag();
+      if (!external)
+        return null;
+      const meta = external.meta;
+      const revision = host.getInteractionRevision();
+      const cached = (key) => !refresh && externalGhost?.node.isConnected && externalPreview?.source === external && externalPreview.revision === revision && externalPreview.key === key ? externalPreview.placement : null;
+      const remember = (key, placement) => {
+        externalPreview = { source: external, revision, key, placement };
+        return placement;
+      };
+      if (meta.allDay === true || columnIndexAtX(clientX) >= 0 && isOverLane(clientY)) {
+        const index = columnIndexAtX(clientX);
+        if (index < 0)
+          return null;
+        const key = `lane:${index}`;
+        const previous = cached(key);
+        if (previous)
+          return previous;
+        const column = columns[index];
+        const resourceId = column.resource?.id ?? null;
+        const policy = host.checkInteraction({
+          action: "external",
+          event: null,
+          start: column.date,
+          end: column.date.add({ days: 1 }),
+          resourceId,
+          allDay: true
+        });
+        if (!policy.ok) {
+          return remember(key, {
+            kind: "lane",
+            index,
+            target: { date: column.date, time: null, resourceId, allDay: true },
+            ok: false,
+            reason: policy.reason
+          });
+        }
+        const validity = externalTargetValidity(column.date, null, resourceId, true, column.resource?.droppable !== false);
+        return remember(key, {
+          kind: "lane",
+          index,
+          target: { date: column.date, time: null, resourceId, allDay: true },
+          ok: validity.ok,
+          reason: validity.reason
+        });
+      }
+      const hit = gridHit(clientX, clientY);
+      if (!hit)
+        return null;
+      const rawDuration = meta.duration;
+      const duration = rawDuration == null ? defaultDuration : durationMinutes(typeof rawDuration === "number" ? { minutes: rawDuration } : rawDuration);
+      if (duration > endMinutes - startMinutes)
+        return null;
+      const start = Math.max(startMinutes, Math.min(snapMinutes(hit.minutes, snapStep, "floor"), endMinutes - duration));
+      if (start < startMinutes)
+        return null;
+      const end = start + duration;
+      const key = `grid:${hit.column}:${start}:${end}`;
+      const previous = cached(key);
+      if (previous)
+        return previous;
+      const column = columns[hit.column];
+      const time = zonedDateTimeAt(column.date, start, timeZone);
+      const resourceId = column.resource?.id ?? null;
+      const policy = host.checkInteraction({
+        action: "external",
+        event: null,
+        start: time,
+        end: time.add({ minutes: duration }),
+        resourceId
+      });
+      if (!policy.ok) {
+        return remember(key, {
+          kind: "grid",
+          index: hit.column,
+          start,
+          end,
+          time,
+          target: { date: column.date, time, resourceId, allDay: false },
+          ok: false,
+          reason: policy.reason
+        });
+      }
+      const validity = externalTargetValidity(column.date, time, resourceId, false, column.resource?.droppable !== false);
+      return remember(key, {
+        kind: "grid",
+        index: hit.column,
+        start,
+        end,
+        time,
+        target: { date: column.date, time, resourceId, allDay: false },
+        ok: validity.ok,
+        reason: validity.reason
+      });
+    }
+    function isOverLane(clientY) {
+      const rect = lane.getBoundingClientRect();
+      return rect.height > 0 && clientY >= rect.top && clientY <= rect.bottom;
+    }
+    function paintExternalGhost(placement) {
+      if (!placement) {
+        removeExternalGhost();
+        return;
+      }
+      const external = host.getExternalDrag();
+      let node = externalGhost?.node;
+      if (!node?.isConnected || externalGhost?.kind !== placement.kind) {
+        node?.remove();
+        node = document.createElement("div");
+        node.className = "cv-external-ghost";
+        node.setAttribute("aria-hidden", "true");
+        const label = document.createElement("span");
+        label.className = "cv-external-ghost-label";
+        node.append(label);
+        externalGhost = { kind: placement.kind, node };
+      }
+      const label = node.firstElementChild;
+      const title = external?.meta.title ?? "";
+      if (label.textContent !== title)
+        label.textContent = title;
+      if (placement.kind === "grid") {
+        node.style.top = `${(placement.start - startMinutes) * pxPerMinute}px`;
+        node.style.height = `${(placement.end - placement.start) * pxPerMinute}px`;
+        const body = bodies[placement.index].body;
+        if (node.parentNode !== body)
+          body.append(node);
+      } else {
+        node.classList.add("cv-external-ghost-lane");
+        label.className = "";
+        node.style.gridColumn = `${placement.index + 2} / ${placement.index + 3}`;
+        node.style.gridRow = "1 / -1";
+        if (node.parentNode !== lane)
+          lane.append(node);
+      }
+      node.classList.toggle("cv-invalid", !placement.ok);
+      if (placement.reason)
+        node.dataset.reason = placement.reason;
+      else
+        delete node.dataset.reason;
+    }
+    root.addEventListener("dragover", (event) => {
+      if (!host.getExternalDrag())
+        return;
+      event.preventDefault();
+      if (event.dataTransfer)
+        event.dataTransfer.dropEffect = "copy";
+      paintExternalGhost(resolveExternal(event.clientX, event.clientY));
+    });
+    root.addEventListener("dragleave", (event) => {
+      if (!host.getExternalDrag())
+        return;
+      const related = event.relatedTarget;
+      if (related instanceof Node && root.contains(related))
+        return;
+      removeExternalGhost();
+    });
+    function dropExternal(event) {
+      const external = host.getExternalDrag();
+      if (!external)
+        return;
+      event.preventDefault();
+      const placement = resolveExternal(event.clientX, event.clientY, true);
+      removeExternalGhost();
+      if (!placement?.ok)
+        return;
+      const contextRange = placement.kind === "grid" ? {
+        start: placement.time,
+        end: placement.time.add({ minutes: placement.end - placement.start }),
+        resourceId: placement.target.resourceId
+      } : {
+        start: placement.target.date,
+        end: placement.target.date.add({ days: 1 }),
+        resourceId: placement.target.resourceId
+      };
+      root.dispatchEvent(new CustomEvent("calendar:externaldrop", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        detail: {
+          payload: external.payload,
+          date: placement.target.date,
+          ...placement.kind === "grid" ? { time: placement.target.time, resourceId: placement.target.resourceId } : { resourceId: placement.target.resourceId, allDay: true },
+          context: host.getRangeContext(contextRange),
+          nativeEvent: event
+        }
+      }));
+    }
+    root.addEventListener("drop", dropExternal);
+    let externalAutoscroll = null;
+    function pointerOverGrid(x, y) {
+      const element = document.elementFromPoint(x, y);
+      return element !== null && root.contains(element);
+    }
+    return {
+      move(x, y) {
+        if (!pointerOverGrid(x, y)) {
+          externalAutoscroll?.stop();
+          removeExternalGhost();
+          return;
+        }
+        const scroller = root.closest(".cv-scroller");
+        if (!externalAutoscroll && scroller)
+          externalAutoscroll = createAutoscroller(scroller);
+        externalAutoscroll?.update(x, y);
+        paintExternalGhost(resolveExternal(x, y));
+      },
+      drop(event) {
+        if (pointerOverGrid(event.clientX, event.clientY))
+          dropExternal(event);
+      },
+      clear() {
+        externalAutoscroll?.stop();
+        removeExternalGhost();
       }
     };
   }
@@ -4956,11 +5272,7 @@
           header.dataset.groupId = group.id;
           header.style.gridColumn = `span ${Math.max(1, section.resources.length * dates.length)}`;
           const custom = resourceGroupContent?.({ group, resources: section.resources, element: header });
-          if (custom instanceof Node)
-            header.append(custom);
-          else if (custom != null)
-            header.textContent = String(custom);
-          else
+          if (!applyContent(header, custom))
             header.textContent = group.title ?? group.id;
           groupRow.append(header);
         }
@@ -4979,11 +5291,7 @@
         header.dataset.resourceId = resource.id;
         header.style.gridColumn = `span ${Math.max(1, dates.length)}`;
         const custom = resourceHeaderContent?.({ resource, dates, element: header });
-        if (custom instanceof Node)
-          header.append(custom);
-        else if (custom != null)
-          header.textContent = String(custom);
-        else
+        if (!applyContent(header, custom))
           header.textContent = resource.title ?? resource.id;
         resourceRow.append(header);
       }
@@ -5113,10 +5421,8 @@
         minutes: minute,
         element: label
       });
-      if (content instanceof Node)
-        label.append(content);
-      else
-        label.textContent = content == null ? formatSlotLabel(minute, locale) : String(content);
+      if (!applyContent(label, content))
+        label.textContent = formatSlotLabel(minute, locale);
       axis.append(label);
     }
     root.style.gridTemplateColumns = gridTemplate;
@@ -5471,11 +5777,7 @@
           temporalState: barState,
           element: bar
         });
-        if (content instanceof Node)
-          bar.append(content);
-        else if (content != null)
-          bar.textContent = String(content);
-        else
+        if (!applyContent(bar, content))
           bar.textContent = event.title ?? labels.untitledEvent;
         lane.append(bar);
         allDayBars.push({ bar, event, startDay, endDay });
@@ -5636,11 +5938,7 @@
         resource: column.resource,
         element: header
       });
-      if (content instanceof Node)
-        header.append(content);
-      else if (content != null)
-        header.textContent = String(content);
-      else
+      if (!applyContent(header, content))
         header.textContent = formatDayHeader(column.date, locale);
       root.append(header);
     }
@@ -5699,43 +5997,21 @@
         line.style.top = `${(minute - startMinutes) * pxPerMinute}px`;
         body.append(line);
       }
-      const sliceOptions = { timeZone, slotMin: startMinutes, slotMax: endMinutes };
-      const backgroundSlices = [];
-      for (const background of backgrounds) {
-        if (background.allDay === true)
-          continue;
-        if (!backgroundAppliesToColumn(background, column))
-          continue;
-        const slice = sliceTimedEventForDay(background, column.date, sliceOptions);
-        if (!slice)
-          continue;
-        backgroundSlices.push(slice);
-        const geometry = eventGeometry({
-          startMinutes: slice.start,
-          endMinutes: slice.end,
-          dayStartMinutes: startMinutes,
-          pxPerMinute,
-          gap: 0
-        });
+      const model = deriveTimedColumn(column, events, backgrounds, {
+        timeZone,
+        slotMin: startMinutes,
+        slotMax: endMinutes,
+        pxPerMinute
+      });
+      columnSlices.push(model);
+      for (const { background, geometry } of model.backgrounds) {
         const node = document.createElement("div");
         node.className = ["cv-background", ...background.classNames ?? []].join(" ");
         node.style.top = `${geometry.top}px`;
         node.style.height = `${geometry.height}px`;
         body.append(node);
       }
-      const dayEvents = [];
-      for (const event of events) {
-        if (event.allDay === true)
-          continue;
-        if (!eventBelongsToColumn(event, column))
-          continue;
-        const slice = sliceTimedEventForDay(event, column.date, sliceOptions);
-        if (!slice)
-          continue;
-        dayEvents.push({ event, start: slice.start, end: slice.end });
-      }
-      columnSlices.push({ events: dayEvents, backgrounds: backgroundSlices });
-      for (const item of layoutEvents(dayEvents)) {
+      for (const item of model.events) {
         let onEventKeyDown = function(keyboardEvent) {
           if (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
             return;
@@ -6124,13 +6400,7 @@
           node.addEventListener("pointercancel", onCancel);
           node.addEventListener("lostpointercapture", onCancel);
         };
-        const { event } = item;
-        const geometry = eventGeometry({
-          startMinutes: item.start,
-          endMinutes: item.end,
-          dayStartMinutes: startMinutes,
-          pxPerMinute
-        });
+        const { event, geometry } = item;
         const node = document.createElement("button");
         node.type = "button";
         node.className = ["cv-event", ...event.classNames ?? []].join(" ");
@@ -6150,10 +6420,8 @@
           temporalState: nodeState,
           element: node
         });
-        if (content instanceof Node)
-          node.append(content);
-        else
-          node.textContent = content == null ? event.title ?? labels.untitledEvent : String(content);
+        if (!applyContent(node, content))
+          node.textContent = event.title ?? labels.untitledEvent;
         node.addEventListener("click", (nativeEvent) => {
           if (suppressClick) {
             suppressClick = false;
@@ -6162,12 +6430,7 @@
             nativeEvent.preventDefault();
             return;
           }
-          node.dispatchEvent(new CustomEvent("calendar:eventclick", {
-            bubbles: true,
-            composed: true,
-            cancelable: true,
-            detail: { event, date: column.date, resource: column.resource, nativeEvent }
-          }));
+          emitCalendarEvent(node, "calendar:eventclick", { event, date: column.date, resource: column.resource, nativeEvent }, { cancelable: true });
         }, true);
         const movable = isMovable(event, host.editable);
         const resizable = isResizable(event, host.editable);
@@ -6422,240 +6685,21 @@
         body.append(node);
       }
     }
-    let externalGhost = null;
-    let externalPreview = null;
-    function removeExternalGhost() {
-      externalGhost?.node.remove();
-      externalGhost = null;
-      externalPreview = null;
-    }
-    function externalTargetValidity(date, time, resourceId, allDay, droppable) {
-      if (!droppable)
-        return { ok: false, reason: null };
-      const external = host.getExternalDrag();
-      const result = external?.meta.validate?.({ date, time, resourceId, allDay });
-      if (result === false)
-        return { ok: false, reason: null };
-      if (typeof result === "string")
-        return { ok: false, reason: result };
-      return { ok: true, reason: null };
-    }
-    function resolveExternal(clientX, clientY, refresh = false) {
-      const external = host.getExternalDrag();
-      if (!external)
-        return null;
-      const meta = external.meta;
-      const revision = host.getInteractionRevision();
-      const cached = (key) => !refresh && externalGhost?.node.isConnected && externalPreview?.source === external && externalPreview.revision === revision && externalPreview.key === key ? externalPreview.placement : null;
-      const remember = (key, placement) => {
-        externalPreview = { source: external, revision, key, placement };
-        return placement;
-      };
-      if (meta.allDay === true || columnIndexAtX(clientX) >= 0 && isOverLane(clientY)) {
-        const index = columnIndexAtX(clientX);
-        if (index < 0)
-          return null;
-        const key = `lane:${index}`;
-        const previous = cached(key);
-        if (previous)
-          return previous;
-        const column = columns[index];
-        const resourceId = column.resource?.id ?? null;
-        const policy = host.checkInteraction({
-          action: "external",
-          event: null,
-          start: column.date,
-          end: column.date.add({ days: 1 }),
-          resourceId,
-          allDay: true
-        });
-        if (!policy.ok) {
-          return remember(key, {
-            kind: "lane",
-            index,
-            target: { date: column.date, time: null, resourceId, allDay: true },
-            ok: false,
-            reason: policy.reason
-          });
-        }
-        const validity = externalTargetValidity(column.date, null, resourceId, true, column.resource?.droppable !== false);
-        return remember(key, {
-          kind: "lane",
-          index,
-          target: { date: column.date, time: null, resourceId, allDay: true },
-          ok: validity.ok,
-          reason: validity.reason
-        });
-      }
-      const hit = gridHit(clientX, clientY);
-      if (!hit)
-        return null;
-      const rawDuration = meta.duration ?? options.defaultTimedEventDuration ?? { minutes: 30 };
-      const duration = durationMinutes(typeof rawDuration === "number" ? { minutes: rawDuration } : rawDuration);
-      if (duration > endMinutes - startMinutes)
-        return null;
-      const start = Math.max(startMinutes, Math.min(snapMinutes(hit.minutes, snapStep, "floor"), endMinutes - duration));
-      if (start < startMinutes)
-        return null;
-      const end = start + duration;
-      const key = `grid:${hit.column}:${start}:${end}`;
-      const previous = cached(key);
-      if (previous)
-        return previous;
-      const column = columns[hit.column];
-      const time = zonedDateTimeAt(column.date, start, timeZone);
-      const resourceId = column.resource?.id ?? null;
-      const policy = host.checkInteraction({
-        action: "external",
-        event: null,
-        start: time,
-        end: time.add({ minutes: duration }),
-        resourceId
-      });
-      if (!policy.ok) {
-        return remember(key, {
-          kind: "grid",
-          index: hit.column,
-          start,
-          end,
-          time,
-          target: { date: column.date, time, resourceId, allDay: false },
-          ok: false,
-          reason: policy.reason
-        });
-      }
-      const validity = externalTargetValidity(column.date, time, resourceId, false, column.resource?.droppable !== false);
-      return remember(key, {
-        kind: "grid",
-        index: hit.column,
-        start,
-        end,
-        time,
-        target: { date: column.date, time, resourceId, allDay: false },
-        ok: validity.ok,
-        reason: validity.reason
-      });
-    }
-    function isOverLane(clientY) {
-      const rect = lane.getBoundingClientRect();
-      return rect.height > 0 && clientY >= rect.top && clientY <= rect.bottom;
-    }
-    function paintExternalGhost(placement) {
-      if (!placement) {
-        removeExternalGhost();
-        return;
-      }
-      const external = host.getExternalDrag();
-      let node = externalGhost?.node;
-      if (!node?.isConnected || externalGhost?.kind !== placement.kind) {
-        node?.remove();
-        node = document.createElement("div");
-        node.className = "cv-external-ghost";
-        node.setAttribute("aria-hidden", "true");
-        const label = document.createElement("span");
-        label.className = "cv-external-ghost-label";
-        node.append(label);
-        externalGhost = { kind: placement.kind, node };
-      }
-      const label = node.firstElementChild;
-      const title = external?.meta.title ?? "";
-      if (label.textContent !== title)
-        label.textContent = title;
-      if (placement.kind === "grid") {
-        node.style.top = `${(placement.start - startMinutes) * pxPerMinute}px`;
-        node.style.height = `${(placement.end - placement.start) * pxPerMinute}px`;
-        const body = bodies[placement.index].body;
-        if (node.parentNode !== body)
-          body.append(node);
-      } else {
-        node.classList.add("cv-external-ghost-lane");
-        label.className = "";
-        node.style.gridColumn = `${placement.index + 2} / ${placement.index + 3}`;
-        node.style.gridRow = "1 / -1";
-        if (node.parentNode !== lane)
-          lane.append(node);
-      }
-      node.classList.toggle("cv-invalid", !placement.ok);
-      if (placement.reason)
-        node.dataset.reason = placement.reason;
-      else
-        delete node.dataset.reason;
-    }
-    root.addEventListener("dragover", (event) => {
-      if (!host.getExternalDrag())
-        return;
-      event.preventDefault();
-      if (event.dataTransfer)
-        event.dataTransfer.dropEffect = "copy";
-      paintExternalGhost(resolveExternal(event.clientX, event.clientY));
-    });
-    root.addEventListener("dragleave", (event) => {
-      if (!host.getExternalDrag())
-        return;
-      const related = event.relatedTarget;
-      if (related instanceof Node && root.contains(related))
-        return;
-      removeExternalGhost();
-    });
-    function dropExternal(event) {
-      const external = host.getExternalDrag();
-      if (!external)
-        return;
-      event.preventDefault();
-      const placement = resolveExternal(event.clientX, event.clientY, true);
-      removeExternalGhost();
-      if (!placement?.ok)
-        return;
-      const contextRange = placement.kind === "grid" ? {
-        start: placement.time,
-        end: placement.time.add({ minutes: placement.end - placement.start }),
-        resourceId: placement.target.resourceId
-      } : {
-        start: placement.target.date,
-        end: placement.target.date.add({ days: 1 }),
-        resourceId: placement.target.resourceId
-      };
-      root.dispatchEvent(new CustomEvent("calendar:externaldrop", {
-        bubbles: true,
-        composed: true,
-        cancelable: true,
-        detail: {
-          payload: external.payload,
-          date: placement.target.date,
-          ...placement.kind === "grid" ? { time: placement.target.time, resourceId: placement.target.resourceId } : { resourceId: placement.target.resourceId, allDay: true },
-          context: host.getRangeContext(contextRange),
-          nativeEvent: event
-        }
-      }));
-    }
-    root.addEventListener("drop", dropExternal);
-    let externalAutoscroll = null;
-    function pointerOverGrid(x, y) {
-      const element = document.elementFromPoint(x, y);
-      return element !== null && root.contains(element);
-    }
-    host.setExternalDropTarget({
-      move(x, y) {
-        if (!pointerOverGrid(x, y)) {
-          externalAutoscroll?.stop();
-          removeExternalGhost();
-          return;
-        }
-        const scroller = root.closest(".cv-scroller");
-        if (!externalAutoscroll && scroller)
-          externalAutoscroll = createAutoscroller(scroller);
-        externalAutoscroll?.update(x, y);
-        paintExternalGhost(resolveExternal(x, y));
-      },
-      drop(event) {
-        if (pointerOverGrid(event.clientX, event.clientY))
-          dropExternal(event);
-      },
-      clear() {
-        externalAutoscroll?.stop();
-        removeExternalGhost();
-      }
-    });
+    host.setExternalDropTarget(bindExternalPlacement({
+      root,
+      lane,
+      columns,
+      bodies,
+      columnIndexAtX,
+      gridHit,
+      startMinutes,
+      endMinutes,
+      pxPerMinute,
+      defaultDuration,
+      snapStep,
+      timeZone,
+      host
+    }));
     host.setNowIndicatorCleanup(startNowIndicator({
       bodies,
       timeZone,
@@ -6668,6 +6712,9 @@
   }
 
   // src/calendar-view.js
+  function sameSourceScope(a, b) {
+    return a.eventSource === b.eventSource && a.backgroundSource === b.backgroundSource && a.timeZone === b.timeZone && a.start.equals(b.start) && a.end.equals(b.end) && a.resourceIds.length === b.resourceIds.length && a.resourceIds.every((id, index) => id === b.resourceIds[index]);
+  }
   var DEFAULTS = {
     view: "week",
     timeZone: "UTC",
@@ -6707,14 +6754,16 @@
     #suppressExternalClick = false;
     #preview = null;
     #config = {};
-    #abortController = null;
-    #requestVersion = 0;
-    #loadInFlight = false;
+    #sourceRequest = null;
     #refetchOnReconnect = false;
+    #dateIsImplicit = false;
+    #stopHeaderObservation = null;
     #warnedDate = null;
     #warnedView = null;
     #batchDepth = 0;
     #renderQueued = false;
+    #replaceRender = false;
+    #updateMonth = null;
     #interactionRevision = 0;
     #afterRenderQueue = [];
     #pendingAnnounce = null;
@@ -6725,10 +6774,8 @@
     #revealTimer = null;
     connectedCallback() {
       this.classList.add("calendar-view");
-      if (!this.hasAttribute("date")) {
-        const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
-        this.setAttribute("date", Temporal2.Now.plainDateISO(timeZone).toString());
-      }
+      if (!this.hasAttribute("date"))
+        this.#reflectImplicitDate();
       this.#queueRender();
       if (this.#refetchOnReconnect) {
         this.#refetchOnReconnect = false;
@@ -6736,14 +6783,17 @@
       }
     }
     disconnectedCallback() {
+      this.#updateMonth = null;
+      this.#stopHeaderObservation?.();
+      this.#stopHeaderObservation = null;
       this.#stopNowIndicator?.();
       this.#stopNowIndicator = null;
       this.#cancelExternalPointer?.();
       this.#clearExternalDrag();
       this.#externalDropTarget = null;
-      if (this.#loadInFlight)
+      if (this.#sourceRequest)
         this.#refetchOnReconnect = true;
-      this.#abortController?.abort();
+      this.#cancelSourceRequest();
       const dropped = this.#afterRenderQueue;
       this.#afterRenderQueue = [];
       for (const entry of dropped)
@@ -6763,15 +6813,22 @@
         this.#revealTimer = null;
       }
     }
-    attributeChangedCallback() {
+    attributeChangedCallback(name) {
+      if (name === "date")
+        this.#dateIsImplicit = false;
       if (this.isConnected)
         this.#queueRender();
+      if ((name === "date" || name === "view") && this.#sourceRequest) {
+        queueMicrotask(() => this.#invalidateSourceScope());
+      }
     }
     configure(options = {}) {
-      if ("eventSource" in options && options.eventSource !== this.#config.eventSource || "backgroundSource" in options && options.backgroundSource !== this.#config.backgroundSource) {
-        this.#cancelSourceRequest();
-      }
+      const previousZone = this.#config.timeZone ?? DEFAULTS.timeZone;
       this.#config = { ...this.#config, ...options };
+      if (this.#dateIsImplicit && previousZone !== (this.#config.timeZone ?? DEFAULTS.timeZone)) {
+        this.#reflectImplicitDate();
+      }
+      this.#invalidateSourceScope();
       this.#queueRender();
       return this;
     }
@@ -6781,14 +6838,22 @@
     set view(value) {
       this.setView(value);
     }
+    #reflectImplicitDate() {
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      const date = Temporal2.Now.plainDateISO(timeZone);
+      this.setAttribute("date", date.toString());
+      this.#dateIsImplicit = true;
+    }
     get date() {
       const raw = this.getAttribute("date");
+      const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
+      if (raw === null)
+        return Temporal2.Now.plainDateISO(timeZone);
       try {
         return toPlainDate(raw);
       } catch {
-        const timeZone = this.#config.timeZone ?? DEFAULTS.timeZone;
         const fallback = Temporal2.Now.plainDateISO(timeZone);
-        if (raw !== null && this.#warnedDate !== raw) {
+        if (this.#warnedDate !== raw) {
           this.#warnedDate = raw;
           console.warn(`calendar-view: invalid date attribute "${raw}", using ${fallback}`);
         }
@@ -6811,6 +6876,7 @@
     }
     set resources(value) {
       this.#resources = Array.from(value ?? [], normalizeResource);
+      this.#invalidateSourceScope();
       this.#queueRender();
     }
     get resourceGroups() {
@@ -6832,17 +6898,18 @@
       if (oldView === view)
         return;
       this.setAttribute("view", view);
-      this.dispatchEvent(new CustomEvent("calendar:viewchange", { detail: { oldView, view } }));
+      emitCalendarEvent(this, "calendar:viewchange", { oldView, view });
       this.#announce(`${view}, ${this.date}`);
       this.refetchEvents();
     }
     async gotoDate(value) {
       const next = toPlainDate(value).toString();
       const previous = this.getAttribute("date");
+      this.#dateIsImplicit = false;
       if (previous === next)
         return;
       this.setAttribute("date", next);
-      this.dispatchEvent(new CustomEvent("calendar:datechange", { detail: { date: toPlainDate(next) } }));
+      emitCalendarEvent(this, "calendar:datechange", { date: toPlainDate(next) });
       this.#announce(`${this.view}, ${next}`);
       return this.refetchEvents();
     }
@@ -7107,19 +7174,14 @@
           return;
         apply(restored);
       };
-      const accepted = this.dispatchEvent(new CustomEvent(name, {
-        bubbles: true,
-        composed: true,
-        cancelable: true,
-        detail: {
-          event: this.getEventById(id),
-          previous,
-          current,
-          context: this.getRangeContext(optimistic),
-          nativeEvent,
-          revert
-        }
-      }));
+      const accepted = emitCalendarEvent(this, name, {
+        event: this.getEventById(id),
+        previous,
+        current,
+        context: this.getRangeContext(optimistic),
+        nativeEvent,
+        revert
+      }, { cancelable: true });
       if (!accepted)
         revert();
       return reverted ? null : this.getEventById(id);
@@ -7187,7 +7249,7 @@
       const next = merged;
       this.#stampPlacement(id);
       this.#events = this.#events.map((item, i) => i === index ? next : item);
-      this.#queueRender();
+      this.#queueRender(true);
       return next;
     }
     removeEvent(id) {
@@ -7347,39 +7409,54 @@
           this.#queueRender();
       }
     }
-    #cancelSourceRequest() {
-      this.#abortController?.abort();
-      this.#abortController = null;
-      this.#requestVersion += 1;
-      this.removeAttribute("aria-busy");
-      if (this.#loadInFlight) {
-        this.#loadInFlight = false;
-        this.#announceLoading(false);
+    #sourceScope() {
+      return {
+        ...this.getVisibleRange(),
+        resourceIds: this.#resources.map((resource) => resource.id),
+        timeZone: this.#config.timeZone ?? DEFAULTS.timeZone,
+        eventSource: this.#config.eventSource,
+        backgroundSource: this.#config.backgroundSource
+      };
+    }
+    #invalidateSourceScope() {
+      if (this.#sourceRequest && !sameSourceScope(this.#sourceRequest.scope, this.#sourceScope())) {
+        this.#cancelSourceRequest();
       }
     }
+    #cancelSourceRequest() {
+      const request = this.#sourceRequest;
+      this.#sourceRequest = null;
+      this.removeAttribute("aria-busy");
+      request?.controller.abort();
+      if (request && !this.#sourceRequest)
+        this.#announceLoading(false);
+    }
     async refetchEvents() {
-      const eventSource = this.#config.eventSource;
-      const backgroundSource = this.#config.backgroundSource;
+      const { eventSource, backgroundSource } = this.#config;
       if (!eventSource && !backgroundSource) {
         this.#cancelSourceRequest();
         return;
       }
-      this.#abortController?.abort();
+      const scope = this.#sourceScope();
+      const { start, end, resourceIds } = scope;
+      const previous = this.#sourceRequest;
       const controller = new AbortController;
-      this.#abortController = controller;
-      const version = ++this.#requestVersion;
-      const { start, end } = this.getVisibleRange();
-      const resourceIds = this.#resources.map((resource) => resource.id);
-      const context = { start, end, resourceIds, signal: controller.signal, calendar: this };
+      const request = { controller, scope };
+      this.#sourceRequest = request;
+      previous?.controller.abort();
+      if (this.#sourceRequest !== request)
+        return;
+      const context = { start, end, resourceIds: [...resourceIds], signal: controller.signal, calendar: this };
       this.setAttribute("aria-busy", "true");
       this.#announceLoading(true);
-      this.#loadInFlight = true;
+      if (this.#sourceRequest !== request)
+        return;
       try {
         const [events, backgrounds] = await Promise.all([
           eventSource ? eventSource(context) : null,
           backgroundSource ? backgroundSource(context) : null
         ]);
-        if (controller.signal.aborted || version !== this.#requestVersion)
+        if (this.#sourceRequest !== request || !sameSourceScope(scope, this.#sourceScope()))
           return;
         const nextEvents = eventSource ? Array.from(events ?? [], normalizeEvent) : null;
         const nextBackgrounds = backgroundSource ? Array.from(backgrounds ?? [], normalizeBackground) : null;
@@ -7391,34 +7468,34 @@
           this.#backgrounds = nextBackgrounds;
         this.#queueRender();
       } catch (error) {
-        if (controller.signal.aborted)
+        if (this.#sourceRequest !== request || !sameSourceScope(scope, this.#sourceScope()))
           return;
-        this.dispatchEvent(new CustomEvent("calendar:loaderror", { detail: { error } }));
+        emitCalendarEvent(this, "calendar:loaderror", { error });
       } finally {
-        if (version === this.#requestVersion) {
-          this.#loadInFlight = false;
+        if (this.#sourceRequest === request) {
+          this.#sourceRequest = null;
           this.removeAttribute("aria-busy");
           this.#announceLoading(false);
         }
       }
     }
     #announceLoading(loading) {
-      this.dispatchEvent(new CustomEvent("calendar:loading", {
-        bubbles: true,
-        composed: true,
-        detail: { loading }
-      }));
+      emitCalendarEvent(this, "calendar:loading", { loading });
     }
-    #queueRender() {
+    #queueRender(eventUpdateOnly = false) {
       this.#interactionRevision += 1;
+      if (!eventUpdateOnly)
+        this.#replaceRender = true;
       if (this.#batchDepth || this.#renderQueued)
         return;
       this.#renderQueued = true;
       requestAnimationFrame(() => {
         this.#renderQueued = false;
+        const replace = this.#replaceRender;
+        this.#replaceRender = false;
         if (!this.isConnected)
           return;
-        this.#render();
+        this.#render(replace);
       });
     }
     #afterRender(callback, onCancel) {
@@ -7483,7 +7560,9 @@
         allDaySlot: this.#config.allDaySlot ?? true
       };
     }
-    #render() {
+    #render(replace) {
+      this.#stopHeaderObservation?.();
+      this.#stopHeaderObservation = null;
       this.#stopNowIndicator?.();
       this.#stopNowIndicator = null;
       this.#externalDropTarget?.clear();
@@ -7493,110 +7572,105 @@
         console.warn(`calendar-view: unknown view "${this.view}", rendering as a rolling range`);
       }
       const options = this.#options();
+      const renderer = getViewRenderer(this.view);
       const dateOptions = this.#dateOptions();
       const dates2 = getVisibleDates(this.date, this.view, dateOptions);
       const resources = isResourceView(this.view) ? this.#resources : [];
       const now = Temporal2.Now.zonedDateTimeISO(options.timeZone);
-      const scroll = this.querySelector(".cv-scroller");
-      const scrollTop = scroll?.scrollTop ?? 0;
-      const scrollLeft = scroll?.scrollLeft ?? 0;
       const active = document.activeElement;
       const focusOwner = active instanceof Element && this.contains(active) ? active.closest("[data-focus-key]") : null;
       const focusKey = focusOwner instanceof HTMLElement ? focusOwner.dataset.focusKey ?? null : null;
-      const status = this.querySelector(":scope > .cv-status") ?? document.createElement("p");
-      status.className = "cv-status";
-      status.setAttribute("role", "status");
-      this.replaceChildren();
-      this.dataset.view = this.view;
-      const scroller = document.createElement("div");
-      scroller.className = "cv-scroller";
-      scroller.setAttribute("role", "region");
-      scroller.setAttribute("aria-label", options.labels.calendarRegion);
-      let visibleScope = null;
-      if (this.view === "month") {
-        const weeks = getMonthWeeks(this.date, dateOptions);
-        scroller.append(renderMonthGrid({
-          weeks,
-          month: this.date.month,
-          events: this.#events,
-          options,
-          now,
-          eventContent: this.#config.eventContent,
-          moreLinkContent: this.#config.moreLinkContent,
-          getRangeContext: (range) => this.getRangeContext(range),
-          checkInteraction: (input) => this.checkInteraction(input)
-        }));
-        visibleScope = {
-          start: weeks[0][0],
-          end: weeks[weeks.length - 1][weeks[weeks.length - 1].length - 1].add({ days: 1 })
-        };
-      } else if (this.view === "list") {
-        if (dates2.length > 0) {
-          visibleScope = { start: dates2[0], end: dates2[dates2.length - 1].add({ days: 1 }) };
-        }
-        scroller.append(renderList({
-          dates: dates2,
-          events: this.#events,
-          backgrounds: listedBackgrounds(this.#backgrounds, this.#config.listBackgrounds),
-          options,
-          now,
-          eventContent: this.#config.eventContent,
-          dayHeaderContent: this.#config.dayHeaderContent,
-          backgroundContent: this.#config.backgroundContent
-        }));
+      const updateMonth = !replace && renderer === "month" ? this.#updateMonth : null;
+      if (updateMonth) {
+        updateMonth(this.#events, now);
       } else {
-        if (dates2.length > 0) {
-          visibleScope = { start: dates2[0], end: dates2[dates2.length - 1].add({ days: 1 }) };
-        }
-        scroller.append(renderTimeGrid({
-          dates: dates2,
-          resources,
-          resourceGroups: this.#resourceGroups,
-          view: this.view,
-          events: this.#events,
-          backgrounds: this.#backgrounds,
-          options,
-          now,
-          host: {
-            editable: this.#config.editable,
-            isConnected: () => this.isConnected,
-            announce: (message) => this.#announce(message),
-            refocusEvent: (id) => this.#refocusEvent(id),
+        this.#updateMonth = null;
+        const scroll = this.querySelector(".cv-scroller");
+        const scrollTop = scroll?.scrollTop ?? 0;
+        const scrollLeft = scroll?.scrollLeft ?? 0;
+        const status = this.querySelector(":scope > .cv-status") ?? document.createElement("p");
+        status.className = "cv-status";
+        status.setAttribute("role", "status");
+        this.replaceChildren();
+        this.dataset.view = this.view;
+        const scroller = document.createElement("div");
+        scroller.className = "cv-scroller";
+        scroller.setAttribute("role", "region");
+        scroller.setAttribute("aria-label", options.labels.calendarRegion);
+        if (renderer === "month") {
+          const weeks = getMonthWeeks(this.date, dateOptions);
+          const month = renderMonthGrid({
+            weeks,
+            month: this.date.month,
+            events: this.#events,
+            options,
+            now,
+            eventContent: this.#config.eventContent,
+            moreLinkContent: this.#config.moreLinkContent,
             getRangeContext: (range) => this.getRangeContext(range),
-            checkInteraction: (input) => this.checkInteraction(input),
-            commitEventMove: (input) => this.#commitEventMove(input),
-            commitEventResize: (input) => this.#commitEventResize(input),
-            getExternalDrag: () => this.#dragExternal,
-            clearExternalDrag: () => this.#clearExternalDrag(),
-            getInteractionRevision: () => this.#interactionRevision,
-            setExternalDropTarget: (target) => {
-              this.#externalDropTarget = target;
+            checkInteraction: (input) => this.checkInteraction(input)
+          });
+          scroller.append(month.fragment);
+          this.#updateMonth = month.update;
+        } else if (renderer === "list") {
+          scroller.append(renderList({
+            dates: dates2,
+            events: this.#events,
+            backgrounds: listedBackgrounds(this.#backgrounds, this.#config.listBackgrounds),
+            options,
+            now,
+            eventContent: this.#config.eventContent,
+            dayHeaderContent: this.#config.dayHeaderContent,
+            backgroundContent: this.#config.backgroundContent
+          }));
+        } else {
+          scroller.append(renderTimeGrid({
+            dates: dates2,
+            resources,
+            resourceGroups: this.#resourceGroups,
+            view: this.view,
+            events: this.#events,
+            backgrounds: this.#backgrounds,
+            options,
+            now,
+            host: {
+              editable: this.#config.editable,
+              isConnected: () => this.isConnected,
+              announce: (message) => this.#announce(message),
+              refocusEvent: (id) => this.#refocusEvent(id),
+              getRangeContext: (range) => this.getRangeContext(range),
+              checkInteraction: (input) => this.checkInteraction(input),
+              commitEventMove: (input) => this.#commitEventMove(input),
+              commitEventResize: (input) => this.#commitEventResize(input),
+              getExternalDrag: () => this.#dragExternal,
+              clearExternalDrag: () => this.#clearExternalDrag(),
+              getInteractionRevision: () => this.#interactionRevision,
+              setExternalDropTarget: (target) => {
+                this.#externalDropTarget = target;
+              },
+              getPreview: () => this.#preview,
+              setNowIndicatorCleanup: (cleanup) => {
+                this.#stopNowIndicator = cleanup;
+              }
             },
-            getPreview: () => this.#preview,
-            setNowIndicatorCleanup: (cleanup) => {
-              this.#stopNowIndicator = cleanup;
-            }
-          },
-          eventContent: this.#config.eventContent,
-          dayHeaderContent: this.#config.dayHeaderContent,
-          resourceHeaderContent: this.#config.resourceHeaderContent,
-          resourceGroupContent: this.#config.resourceGroupContent,
-          slotLabelContent: this.#config.slotLabelContent
-        }));
+            eventContent: this.#config.eventContent,
+            dayHeaderContent: this.#config.dayHeaderContent,
+            resourceHeaderContent: this.#config.resourceHeaderContent,
+            resourceGroupContent: this.#config.resourceGroupContent,
+            slotLabelContent: this.#config.slotLabelContent
+          }));
+        }
+        this.append(scroller);
+        this.#stopHeaderObservation = observeStickyHeaders(scroller);
+        scroller.scrollTop = scrollTop;
+        scroller.scrollLeft = scrollLeft;
+        this.append(status);
       }
-      this.append(scroller);
-      scroller.scrollTop = scrollTop;
-      scroller.scrollLeft = scrollLeft;
-      this.append(status);
-      if (focusKey) {
+      if (focusKey && document.activeElement !== active) {
         const target = [...this.querySelectorAll("[data-focus-key]")].find((node) => node.dataset.focusKey === focusKey);
         target?.focus({ preventScroll: true });
       }
-      this.dispatchEvent(new CustomEvent("calendar:render", {
-        bubbles: true,
-        composed: true,
-        detail: { view: this.view, dates: dates2, resources }
-      }));
+      emitCalendarEvent(this, "calendar:render", { view: this.view, dates: dates2, resources });
       const pending = this.#afterRenderQueue;
       this.#afterRenderQueue = [];
       for (const entry of pending)
@@ -7605,6 +7679,7 @@
         clearTimeout(this.#agingTimer);
         this.#agingTimer = null;
       }
+      const visibleScope = dates2.length > 0 ? { start: dates2[0], end: dates2[dates2.length - 1].add({ days: 1 }) } : null;
       const nextBoundary = nextStateChangeMs(this.#events, now.epochMilliseconds, options.timeZone, visibleScope);
       if (nextBoundary !== null) {
         const delay = Math.min(Math.max(0, nextBoundary - now.epochMilliseconds), MAX_TIMEOUT_MS);

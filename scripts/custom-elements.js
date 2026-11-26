@@ -9,7 +9,7 @@
  * - events come from the literal `calendar:*` names dispatched in src/
  * - CSS custom properties come from the `--calendar-*` tokens in calendar.css
  */
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 
 const OUT = "custom-elements.json";
 const SCHEMA_VERSION = "2.1.0";
@@ -178,8 +178,11 @@ async function main() {
   const elementSource = await read(MODULE);
   const indexSource = await read("src/index.js");
   const cssSource = await read("src/calendar.css");
+  const renderFiles = await readdir("src/render", { withFileTypes: true });
   const renderSources = await Promise.all(
-    ["src/render/time-grid.js", "src/render/month-grid.js", "src/render/list.js"].map(read),
+    renderFiles
+      .filter((file) => file.isFile() && file.name.endsWith(".js"))
+      .map((file) => read(`src/render/${file.name}`)),
   );
 
   const attributes = extractAttributes(elementSource);

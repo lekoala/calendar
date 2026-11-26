@@ -87,6 +87,67 @@ test("crowded days collapse behind +n more, honoring monthEventLimit", async ({ 
   await expect(cell.locator(".cv-month-more")).toHaveCount(0);
 });
 
+test("a month event update preserves another chip, its content and keyboard focus", async ({ page }) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      document.querySelector("calendar-view")
+    );
+    calendar.setView("month");
+    calendar.events = [
+      { id: "change", title: "Before", start: "2026-09-03T07:00:00Z[UTC]", end: "2026-09-03T08:00:00Z[UTC]" },
+      { id: "keep", title: "Keep", start: "2026-09-03T09:00:00Z[UTC]", end: "2026-09-03T10:00:00Z[UTC]" },
+    ];
+    calendar.configure({
+      eventContent: (info) => {
+        const { event } = /** @type {{ event: import("../../src/core/model.js").NormalizedEvent }} */ (info);
+        const node = document.createElement("span");
+        node.textContent = event.title ?? "";
+        return node;
+      },
+    });
+  });
+  const chip = page.locator('.cv-month-event[data-event-id="keep"]');
+  await chip.focus();
+  const result = await chip.evaluate(async (node) => {
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      node.closest("calendar-view")
+    );
+    const content = node.firstElementChild;
+    const rendered = new Promise((resolve) =>
+      calendar.addEventListener("calendar:render", resolve, { once: true }),
+    );
+    calendar.updateEvent({
+      id: "change",
+      title: "After",
+      start: "2026-09-03T11:00:00Z[UTC]",
+      end: "2026-09-03T12:00:00Z[UTC]",
+    });
+    await rendered;
+    return {
+      keptNode: calendar.querySelector('.cv-month-event[data-event-id="keep"]') === node,
+      keptContent: node.firstElementChild === content,
+      keptFocus: document.activeElement === node,
+      order: [...calendar.querySelectorAll(".cv-month-event")].map((item) => item.textContent),
+    };
+  });
+  expect(result).toEqual({ keptNode: true, keptContent: true, keptFocus: true, order: ["Keep", "After"] });
+  const pressed = page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        document.addEventListener(
+          "calendar:eventclick",
+          (event) => {
+            resolve(/** @type {CustomEvent} */ (event).detail.event.id);
+          },
+          { once: true },
+        );
+      }),
+  );
+  await page.keyboard.press("Enter");
+  expect(await pressed).toBe("keep");
+});
+
 test("month chips activate like events", async ({ page }) => {
   await openDemo(page, "basic");
   await gotoMonth(page);

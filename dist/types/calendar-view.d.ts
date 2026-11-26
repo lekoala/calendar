@@ -6,6 +6,11 @@ export type EventSourceQuery = {
     signal: AbortSignal;
     calendar: CalendarViewElement;
 };
+export type SourceScope = Pick<EventSourceQuery, "start" | "end" | "resourceIds"> & {
+    timeZone: string;
+    eventSource: CalendarConfig["eventSource"];
+    backgroundSource: CalendarConfig["backgroundSource"];
+};
 export type CalendarConfig = {
     timeZone?: string;
     /**
@@ -186,7 +191,8 @@ export declare class CalendarViewElement extends HTMLElement {
     };
     connectedCallback(): void;
     disconnectedCallback(): void;
-    attributeChangedCallback(): void;
+    /** @param {string} name */
+    attributeChangedCallback(name: string): void;
     /**
      * @param {Partial<CalendarConfig>} [options]
      * @returns {this}

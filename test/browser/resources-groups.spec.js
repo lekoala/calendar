@@ -165,42 +165,63 @@ test("solo views never render a group or resource row", async ({ page }) => {
   await expect(page.locator(".cv-resource-header")).toHaveCount(0);
 });
 
-test("sticky offsets shift down exactly when a real group row exists", async ({ page }) => {
-  await openDemo(page, "resources");
-  // No real group: resource row sticks at 0, day headers at 3rem.
-  await page.evaluate(() => {
-    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    calendar.resources = [{ id: "r1", title: "Room A" }];
-    calendar.resourceGroups = [{ id: "ghost", title: "Ghost" }];
+for (const grouped of [false, true]) {
+  test(`sticky headers follow custom row heights with groups ${grouped}`, async ({ page }) => {
+    await openDemo(page, "resources");
+    await page.evaluate((grouped) => {
+      const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+        document.querySelector("calendar-view")
+      );
+      calendar.resources = [{ id: "r1", groupId: grouped ? "a" : undefined }];
+      calendar.resourceGroups = [{ id: "a", title: "Group A" }];
+      calendar.configure({
+        resourceHeaderContent: () => {
+          const node = document.createElement("div");
+          node.className = "test-resource-content";
+          node.textContent = "Resource A";
+          return node;
+        },
+        resourceGroupContent: () => {
+          const node = document.createElement("div");
+          node.style.height = "60px";
+          return node;
+        },
+      });
+    }, grouped);
+    await flushRender(page);
+    // Grow the same node after the render, as asynchronously loaded content would.
+    await page.locator(".test-resource-content").evaluate((node) => {
+      node.style.height = "96px";
+    });
+    await page.locator(".cv-scroller").evaluate((node) => {
+      node.scrollTop = 340;
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const scroller = document.querySelector(".cv-scroller");
+          const group = document.querySelector(".cv-group-row")?.getBoundingClientRect();
+          const resource = document.querySelector(".cv-resource-row")?.getBoundingClientRect();
+          const day = document.querySelector(".cv-day-header")?.getBoundingClientRect();
+          if (!scroller || !resource || !day) throw new Error("Missing headers");
+          return {
+            grouped: group != null,
+            scrolled: scroller.scrollTop > 0,
+            resourceExpanded: resource.height >= 96,
+            groupExpanded: group == null || group.height >= 60,
+            resourceAligned:
+              Math.abs(resource.top - (group?.bottom ?? scroller.getBoundingClientRect().top)) < 1,
+            dayAligned: Math.abs(day.top - resource.bottom) < 1,
+          };
+        }),
+      )
+      .toEqual({
+        grouped,
+        scrolled: true,
+        resourceExpanded: true,
+        groupExpanded: true,
+        resourceAligned: true,
+        dayAligned: true,
+      });
   });
-  await flushRender(page);
-  const groupedOffsets = await page.evaluate(() => {
-    const resourceRow = document.querySelector(".cv-resource-row");
-    const dayHeader = document.querySelector(".cv-day-header");
-    return {
-      resourceTop: resourceRow ? getComputedStyle(resourceRow).top : null,
-      dayTop: dayHeader ? getComputedStyle(dayHeader).top : null,
-    };
-  });
-  expect(groupedOffsets.resourceTop).toBe("0px");
-  expect(groupedOffsets.dayTop).toBe("48px");
-
-  // Real group row present: resource row sticks below it (3rem), day
-  // headers below both (6rem).
-  await page.evaluate(() => {
-    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
-    calendar.resources = [{ id: "r1", groupId: "a" }];
-    calendar.resourceGroups = [{ id: "a", title: "Alpha" }];
-  });
-  await flushRender(page);
-  const shifted = await page.evaluate(() => {
-    const resourceRow = document.querySelector(".cv-resource-row");
-    const dayHeader = document.querySelector(".cv-day-header");
-    return {
-      resourceTop: resourceRow ? getComputedStyle(resourceRow).top : null,
-      dayTop: dayHeader ? getComputedStyle(dayHeader).top : null,
-    };
-  });
-  expect(shifted.resourceTop).toBe("48px");
-  expect(shifted.dayTop).toBe("96px");
-});
+}

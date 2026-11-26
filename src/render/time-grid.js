@@ -11,7 +11,7 @@ import {
 import { defaultSnapThreshold, eventGeometry, findSnapTarget, snapMinutes } from "../core/geometry.js";
 import { hitTest } from "../core/hit.js";
 import { DEFAULT_LABELS } from "../core/labels.js";
-import { layoutDaySegments, layoutEvents } from "../core/layout.js";
+import { layoutDaySegments } from "../core/layout.js";
 import { isMovable, isResizable } from "../core/model.js";
 import {
   backgroundAppliesToColumn,
@@ -23,7 +23,10 @@ import {
 } from "../core/resources.js";
 import { describeEvent, eventOverlapsDate, sliceTimedEventForDay, toZonedDateTime } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
+import { deriveTimedColumn } from "../core/time-grid-model.js";
 import { createAutoscroller } from "./autoscroll.js";
+import { applyContent, emitCalendarEvent } from "./dom.js";
+import { bindExternalPlacement } from "./external-placement.js";
 import { startNowIndicator } from "./now-indicator.js";
 
 /**
@@ -72,11 +75,7 @@ import { startNowIndicator } from "./now-indicator.js";
  * @property {() => { start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null, reason: string | null } | null} getPreview application-proposed range overlay, or null
  */
 
-/**
- * @typedef {object} TimeGridColumn
- * @property {Temporal.PlainDate} date
- * @property {import("../core/model.js").CalendarResource | null} resource
- */
+/** @typedef {import("../core/resources.js").TimeGridColumn} TimeGridColumn */
 
 /**
  * @typedef {object} TimeGridOptions
@@ -183,9 +182,7 @@ export function renderTimeGrid({
         header.dataset.groupId = group.id;
         header.style.gridColumn = `span ${Math.max(1, section.resources.length * dates.length)}`;
         const custom = resourceGroupContent?.({ group, resources: section.resources, element: header });
-        if (custom instanceof Node) header.append(custom);
-        else if (custom != null) header.textContent = String(custom);
-        else header.textContent = group.title ?? group.id;
+        if (!applyContent(header, custom)) header.textContent = group.title ?? group.id;
         groupRow.append(header);
       }
       fragment.append(groupRow);
@@ -203,9 +200,7 @@ export function renderTimeGrid({
       header.dataset.resourceId = resource.id;
       header.style.gridColumn = `span ${Math.max(1, dates.length)}`;
       const custom = resourceHeaderContent?.({ resource, dates, element: header });
-      if (custom instanceof Node) header.append(custom);
-      else if (custom != null) header.textContent = String(custom);
-      else header.textContent = resource.title ?? resource.id;
+      if (!applyContent(header, custom)) header.textContent = resource.title ?? resource.id;
       resourceRow.append(header);
     }
     fragment.append(resourceRow);
@@ -410,8 +405,7 @@ export function renderTimeGrid({
       minutes: minute,
       element: label,
     });
-    if (content instanceof Node) label.append(content);
-    else label.textContent = content == null ? formatSlotLabel(minute, locale) : String(content);
+    if (!applyContent(label, content)) label.textContent = formatSlotLabel(minute, locale);
     axis.append(label);
   }
 
@@ -869,9 +863,7 @@ export function renderTimeGrid({
         temporalState: barState,
         element: bar,
       });
-      if (content instanceof Node) bar.append(content);
-      else if (content != null) bar.textContent = String(content);
-      else bar.textContent = event.title ?? labels.untitledEvent;
+      if (!applyContent(bar, content)) bar.textContent = event.title ?? labels.untitledEvent;
       lane.append(bar);
       allDayBars.push({ bar, event, startDay, endDay });
 
@@ -1051,9 +1043,7 @@ export function renderTimeGrid({
       resource: column.resource,
       element: header,
     });
-    if (content instanceof Node) header.append(content);
-    else if (content != null) header.textContent = String(content);
-    else header.textContent = formatDayHeader(column.date, locale);
+    if (!applyContent(header, content)) header.textContent = formatDayHeader(column.date, locale);
     root.append(header);
   }
 
@@ -1069,7 +1059,7 @@ export function renderTimeGrid({
   // Per-column slice boundaries feeding neighbor snapping. Parallel to
   // `columns`/`bodies`; filled during the column loop, consumed by pointer
   // handlers that all run after the loop finished.
-  /** @type {Array<{ events: Array<{ event: import("../core/model.js").NormalizedEvent, start: number, end: number }>, backgrounds: Array<{ start: number, end: number }> }>} */
+  /** @type {Array<ReturnType<typeof deriveTimedColumn>>} */
   const columnSlices = [];
 
   /**
@@ -1147,23 +1137,15 @@ export function renderTimeGrid({
       body.append(line);
     }
 
-    const sliceOptions = { timeZone, slotMin: startMinutes, slotMax: endMinutes };
+    const model = deriveTimedColumn(column, events, backgrounds, {
+      timeZone,
+      slotMin: startMinutes,
+      slotMax: endMinutes,
+      pxPerMinute,
+    });
+    columnSlices.push(model);
 
-    /** @type {Array<{ start: number, end: number }>} */
-    const backgroundSlices = [];
-    for (const background of backgrounds) {
-      if (background.allDay === true) continue;
-      if (!backgroundAppliesToColumn(background, column)) continue;
-      const slice = sliceTimedEventForDay(background, column.date, sliceOptions);
-      if (!slice) continue;
-      backgroundSlices.push(slice);
-      const geometry = eventGeometry({
-        startMinutes: slice.start,
-        endMinutes: slice.end,
-        dayStartMinutes: startMinutes,
-        pxPerMinute,
-        gap: 0,
-      });
+    for (const { background, geometry } of model.backgrounds) {
       const node = document.createElement("div");
       node.className = ["cv-background", ...(background.classNames ?? [])].join(" ");
       node.style.top = `${geometry.top}px`;
@@ -1171,24 +1153,8 @@ export function renderTimeGrid({
       body.append(node);
     }
 
-    const dayEvents = [];
-    for (const event of events) {
-      if (event.allDay === true) continue;
-      if (!eventBelongsToColumn(event, column)) continue;
-      const slice = sliceTimedEventForDay(event, column.date, sliceOptions);
-      if (!slice) continue;
-      dayEvents.push({ event, start: slice.start, end: slice.end });
-    }
-    columnSlices.push({ events: dayEvents, backgrounds: backgroundSlices });
-
-    for (const item of layoutEvents(dayEvents)) {
-      const { event } = item;
-      const geometry = eventGeometry({
-        startMinutes: item.start,
-        endMinutes: item.end,
-        dayStartMinutes: startMinutes,
-        pxPerMinute,
-      });
+    for (const item of model.events) {
+      const { event, geometry } = item;
       const node = document.createElement("button");
       node.type = "button";
       node.className = ["cv-event", ...(event.classNames ?? [])].join(" ");
@@ -1209,8 +1175,7 @@ export function renderTimeGrid({
         temporalState: nodeState,
         element: node,
       });
-      if (content instanceof Node) node.append(content);
-      else node.textContent = content == null ? (event.title ?? labels.untitledEvent) : String(content);
+      if (!applyContent(node, content)) node.textContent = event.title ?? labels.untitledEvent;
 
       // Native <button> activation covers pointer click and Enter/Space equally.
       // A single capture-phase handler both dispatches eventclick and drops
@@ -1225,13 +1190,11 @@ export function renderTimeGrid({
             nativeEvent.preventDefault();
             return;
           }
-          node.dispatchEvent(
-            new CustomEvent("calendar:eventclick", {
-              bubbles: true,
-              composed: true,
-              cancelable: true,
-              detail: { event, date: column.date, resource: column.resource, nativeEvent },
-            }),
+          emitCalendarEvent(
+            node,
+            "calendar:eventclick",
+            { event, date: column.date, resource: column.resource, nativeEvent },
+            { cancelable: true },
           );
         },
         true,
@@ -2035,319 +1998,23 @@ export function renderTimeGrid({
     }
   }
 
-  // --- External placement (drag from an application source) ----------------
-  // The core knows geometry, never policy: it resolves the structural target
-  // from the pointer, draws a ghost with the real duration, and hands the
-  // anchor to the application on drop. `meta.validate` may forbid the target.
-  /** @type {{ kind: "grid" | "lane", node: HTMLElement } | null} */
-  let externalGhost = null;
-  /** @type {{ source: ReturnType<TimeGridHost["getExternalDrag"]>, revision: number, key: string, placement: ReturnType<typeof resolveExternal> } | null} */
-  let externalPreview = null;
-
-  /** @returns {void} */
-  function removeExternalGhost() {
-    externalGhost?.node.remove();
-    externalGhost = null;
-    externalPreview = null;
-  }
-
-  /**
-   * Structural + application-policy validity of one external target. Only
-   * incontestable geometry is judged by the core; `meta.validate` adds the
-   * application's own refusal (`false` or a reason string).
-   *
-   * @param {Temporal.PlainDate} date
-   * @param {Temporal.ZonedDateTime | null} time
-   * @param {string | null} resourceId
-   * @param {boolean} allDay
-   * @param {boolean} droppable
-   * @returns {{ ok: boolean, reason: string | null }}
-   */
-  function externalTargetValidity(date, time, resourceId, allDay, droppable) {
-    if (!droppable) return { ok: false, reason: null };
-    const external = host.getExternalDrag();
-    const result = external?.meta.validate?.({ date, time, resourceId, allDay });
-    if (result === false) return { ok: false, reason: null };
-    if (typeof result === "string") return { ok: false, reason: result };
-    return { ok: true, reason: null };
-  }
-
-  /**
-   * Resolve an external placement from pointer coordinates.
-   *
-   * @param {number} clientX
-   * @param {number} clientY
-   * @param {boolean} [refresh] force a fresh decision at drop, even for the last previewed slot
-   * @returns {{
-   *   kind: "grid",
-   *   index: number,
-   *   start: number,
-   *   end: number,
-   *   time: Temporal.ZonedDateTime,
-   *   target: { date: Temporal.PlainDate, time: Temporal.ZonedDateTime, resourceId: string | null, allDay: boolean },
-   *   ok: boolean,
-   *   reason: string | null,
-   * } | {
-   *   kind: "lane",
-   *   index: number,
-   *   target: { date: Temporal.PlainDate, time: null, resourceId: string | null, allDay: boolean },
-   *   ok: boolean,
-   *   reason: string | null,
-   * } | null}
-   */
-  function resolveExternal(clientX, clientY, refresh = false) {
-    const external = host.getExternalDrag();
-    if (!external) return null;
-    const meta = external.meta;
-    const revision = host.getInteractionRevision();
-    /** @param {string} key */
-    const cached = (key) =>
-      !refresh &&
-      externalGhost?.node.isConnected &&
-      externalPreview?.source === external &&
-      externalPreview.revision === revision &&
-      externalPreview.key === key
-        ? externalPreview.placement
-        : null;
-    /** @param {string} key @param {NonNullable<ReturnType<typeof resolveExternal>>} placement */
-    const remember = (key, placement) => {
-      externalPreview = { source: external, revision, key, placement };
-      return placement;
-    };
-    if (meta.allDay === true || (columnIndexAtX(clientX) >= 0 && isOverLane(clientY))) {
-      const index = columnIndexAtX(clientX);
-      if (index < 0) return null;
-      const key = `lane:${index}`;
-      const previous = cached(key);
-      if (previous) return previous;
-      const column = columns[index];
-      const resourceId = column.resource?.id ?? null;
-      // Global interaction policy first, source-specific `validate` second;
-      // the first refusal wins. A lane drop covers its civil day.
-      const policy = host.checkInteraction({
-        action: "external",
-        event: null,
-        start: column.date,
-        end: column.date.add({ days: 1 }),
-        resourceId,
-        allDay: true,
-      });
-      if (!policy.ok) {
-        return remember(key, {
-          kind: "lane",
-          index,
-          target: { date: column.date, time: null, resourceId, allDay: true },
-          ok: false,
-          reason: policy.reason,
-        });
-      }
-      const validity = externalTargetValidity(
-        column.date,
-        null,
-        resourceId,
-        true,
-        column.resource?.droppable !== false,
-      );
-      return remember(key, {
-        kind: "lane",
-        index,
-        target: { date: column.date, time: null, resourceId, allDay: true },
-        ok: validity.ok,
-        reason: validity.reason,
-      });
-    }
-    const hit = gridHit(clientX, clientY);
-    if (!hit) return null;
-    const rawDuration = meta.duration ?? options.defaultTimedEventDuration ?? { minutes: 30 };
-    const duration = durationMinutes(
-      typeof rawDuration === "number" ? { minutes: rawDuration } : rawDuration,
-    );
-    if (duration > endMinutes - startMinutes) return null;
-    const start = Math.max(
+  host.setExternalDropTarget(
+    bindExternalPlacement({
+      root,
+      lane,
+      columns,
+      bodies,
+      columnIndexAtX,
+      gridHit,
       startMinutes,
-      Math.min(snapMinutes(hit.minutes, snapStep, "floor"), endMinutes - duration),
-    );
-    if (start < startMinutes) return null;
-    const end = start + duration;
-    const key = `grid:${hit.column}:${start}:${end}`;
-    const previous = cached(key);
-    if (previous) return previous;
-    const column = columns[hit.column];
-    const time = zonedDateTimeAt(column.date, start, timeZone);
-    const resourceId = column.resource?.id ?? null;
-    // Same chain as the lane: global policy, then source `validate`.
-    const policy = host.checkInteraction({
-      action: "external",
-      event: null,
-      start: time,
-      end: time.add({ minutes: duration }),
-      resourceId,
-    });
-    if (!policy.ok) {
-      return remember(key, {
-        kind: "grid",
-        index: hit.column,
-        start,
-        end,
-        time,
-        target: { date: column.date, time, resourceId, allDay: false },
-        ok: false,
-        reason: policy.reason,
-      });
-    }
-    const validity = externalTargetValidity(
-      column.date,
-      time,
-      resourceId,
-      false,
-      column.resource?.droppable !== false,
-    );
-    return remember(key, {
-      kind: "grid",
-      index: hit.column,
-      start,
-      end,
-      time,
-      target: { date: column.date, time, resourceId, allDay: false },
-      ok: validity.ok,
-      reason: validity.reason,
-    });
-  }
-
-  /** @param {number} clientY */
-  function isOverLane(clientY) {
-    const rect = lane.getBoundingClientRect();
-    return rect.height > 0 && clientY >= rect.top && clientY <= rect.bottom;
-  }
-
-  /**
-   * Paint (or clear) the placement ghost. Structural or policy invalidity
-   * marks it `cv-invalid` instead of hiding the target.
-   *
-   * @param {ReturnType<typeof resolveExternal>} placement
-   * @returns {void}
-   */
-  function paintExternalGhost(placement) {
-    if (!placement) {
-      removeExternalGhost();
-      return;
-    }
-    const external = host.getExternalDrag();
-    let node = externalGhost?.node;
-    if (!node?.isConnected || externalGhost?.kind !== placement.kind) {
-      node?.remove();
-      node = document.createElement("div");
-      node.className = "cv-external-ghost";
-      node.setAttribute("aria-hidden", "true");
-      const label = document.createElement("span");
-      label.className = "cv-external-ghost-label";
-      node.append(label);
-      externalGhost = { kind: placement.kind, node };
-    }
-    const label = /** @type {HTMLElement} */ (node.firstElementChild);
-    const title = external?.meta.title ?? "";
-    if (label.textContent !== title) label.textContent = title;
-    if (placement.kind === "grid") {
-      node.style.top = `${(placement.start - startMinutes) * pxPerMinute}px`;
-      node.style.height = `${(placement.end - placement.start) * pxPerMinute}px`;
-      const body = bodies[placement.index].body;
-      if (node.parentNode !== body) body.append(node);
-    } else {
-      node.classList.add("cv-external-ghost-lane");
-      label.className = "";
-      node.style.gridColumn = `${placement.index + 2} / ${placement.index + 3}`;
-      node.style.gridRow = "1 / -1";
-      if (node.parentNode !== lane) lane.append(node);
-    }
-    node.classList.toggle("cv-invalid", !placement.ok);
-    if (placement.reason) node.dataset.reason = placement.reason;
-    else delete node.dataset.reason;
-  }
-
-  root.addEventListener("dragover", (event) => {
-    if (!host.getExternalDrag()) return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-    paintExternalGhost(resolveExternal(event.clientX, event.clientY));
-  });
-
-  root.addEventListener("dragleave", (event) => {
-    if (!host.getExternalDrag()) return;
-    const related = event.relatedTarget;
-    if (related instanceof Node && root.contains(related)) return;
-    removeExternalGhost();
-  });
-
-  /** @param {DragEvent | PointerEvent} event */
-  function dropExternal(event) {
-    const external = host.getExternalDrag();
-    if (!external) return;
-    event.preventDefault();
-    const placement = resolveExternal(event.clientX, event.clientY, true);
-    removeExternalGhost();
-    if (!placement?.ok) return;
-    // `context` covers the range the ghost previewed and validated: the real
-    // external duration for timed drops, the civil day for lane drops. If a
-    // lane drop ever gains a multi-day civil duration, this follows that
-    // preview instead of staying one day.
-    const contextRange =
-      placement.kind === "grid"
-        ? {
-            start: placement.time,
-            end: placement.time.add({ minutes: placement.end - placement.start }),
-            resourceId: placement.target.resourceId,
-          }
-        : {
-            start: placement.target.date,
-            end: placement.target.date.add({ days: 1 }),
-            resourceId: placement.target.resourceId,
-          };
-    root.dispatchEvent(
-      new CustomEvent("calendar:externaldrop", {
-        bubbles: true,
-        composed: true,
-        cancelable: true,
-        detail: {
-          payload: external.payload,
-          date: placement.target.date,
-          ...(placement.kind === "grid"
-            ? { time: placement.target.time, resourceId: placement.target.resourceId }
-            : { resourceId: placement.target.resourceId, allDay: true }),
-          context: host.getRangeContext(contextRange),
-          nativeEvent: event,
-        },
-      }),
-    );
-  }
-  root.addEventListener("drop", dropExternal);
-
-  /** @type {ReturnType<typeof createAutoscroller> | null} */
-  let externalAutoscroll = null;
-  /** @param {number} x @param {number} y */
-  function pointerOverGrid(x, y) {
-    const element = document.elementFromPoint(x, y);
-    return element !== null && root.contains(element);
-  }
-  host.setExternalDropTarget({
-    move(x, y) {
-      if (!pointerOverGrid(x, y)) {
-        externalAutoscroll?.stop();
-        removeExternalGhost();
-        return;
-      }
-      const scroller = root.closest(".cv-scroller");
-      if (!externalAutoscroll && scroller) externalAutoscroll = createAutoscroller(scroller);
-      externalAutoscroll?.update(x, y);
-      paintExternalGhost(resolveExternal(x, y));
-    },
-    drop(event) {
-      if (pointerOverGrid(event.clientX, event.clientY)) dropExternal(event);
-    },
-    clear() {
-      externalAutoscroll?.stop();
-      removeExternalGhost();
-    },
-  });
+      endMinutes,
+      pxPerMinute,
+      defaultDuration,
+      snapStep,
+      timeZone,
+      host,
+    }),
+  );
 
   host.setNowIndicatorCleanup(
     startNowIndicator({

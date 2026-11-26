@@ -3,6 +3,7 @@ import { orderMonthEvents } from "../core/event-order.js";
 import { DEFAULT_LABELS, formatLabel } from "../core/labels.js";
 import { describeEvent, eventOverlapsDate } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
+import { applyContent, emitCalendarEvent } from "./dom.js";
 
 /**
  * Summary month grid. Weeks are full weeks covering the anchor month, from
@@ -36,7 +37,7 @@ import { temporalState } from "../core/temporal.js";
  *   resourceId: string | null,
  *   allDay?: boolean,
  * }) => import("../core/policy.js").PolicyDecision} [input.checkInteraction] synchronous policy gate for the day selection
- * @returns {DocumentFragment}
+ * @returns {{ fragment: DocumentFragment, update: (events: import("../core/model.js").NormalizedEvent[], now: Temporal.ZonedDateTime) => void }}
  */
 export function renderMonthGrid({
   weeks,
@@ -72,6 +73,8 @@ export function renderMonthGrid({
   }
   root.append(head);
 
+  /** @type {Array<(events: import("../core/model.js").NormalizedEvent[], now: Temporal.ZonedDateTime) => void>} */
+  const updateDays = [];
   for (const week of weeks) {
     const row = document.createElement("div");
     row.className = "cv-month-week";
@@ -86,61 +89,87 @@ export function renderMonthGrid({
       label.textContent = String(date.day);
       cell.append(label);
 
-      const dayEvents = orderMonthEvents(
-        events.filter((event) => eventOverlapsDate(event, date, timeZone)),
-        timeZone,
-        options.monthEventOrder,
-      );
+      /** @type {Map<import("../core/model.js").NormalizedEvent, HTMLButtonElement>} */
+      let chips = new Map();
+      /** @type {HTMLButtonElement | null} */
+      let more = null;
+      updateDays.push((events, now) => {
+        const dayEvents = orderMonthEvents(
+          events.filter((event) => eventOverlapsDate(event, date, timeZone)),
+          timeZone,
+          options.monthEventOrder,
+        );
 
-      for (const event of dayEvents.slice(0, limit)) {
-        const chip = document.createElement("button");
-        chip.type = "button";
-        chip.className = ["cv-month-event", ...(event.classNames ?? [])].join(" ");
-        chip.dataset.eventId = event.id;
-        chip.dataset.focusKey = JSON.stringify([event.id, date.toString(), "month"]);
-        const state = temporalState(event.start, event.end, renderNow, timeZone);
-        chip.dataset.temporalState = state;
-        chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
-        const content = eventContent?.({ event, date, resource: null, temporalState: state, element: chip });
-        if (content instanceof Node) chip.append(content);
-        else chip.textContent = content == null ? (event.title ?? labels.untitledEvent) : String(content);
-        // Native <button> activation covers pointer click and Enter/Space equally.
-        chip.addEventListener("click", (nativeEvent) => {
-          chip.dispatchEvent(
-            new CustomEvent("calendar:eventclick", {
-              bubbles: true,
-              composed: true,
-              cancelable: true,
-              detail: { event, date, resource: null, nativeEvent },
-            }),
-          );
-        });
-        cell.append(chip);
-      }
+        const nextChips = new Map();
+        for (const event of dayEvents.slice(0, limit)) {
+          const state = temporalState(event.start, event.end, now, timeZone);
+          const previous = chips.get(event);
+          if (previous?.dataset.temporalState === state) {
+            nextChips.set(event, previous);
+            continue;
+          }
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = ["cv-month-event", ...(event.classNames ?? [])].join(" ");
+          chip.dataset.eventId = event.id;
+          chip.dataset.focusKey = JSON.stringify([event.id, date.toString(), "month"]);
+          chip.dataset.temporalState = state;
+          chip.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
+          const content = eventContent?.({
+            event,
+            date,
+            resource: null,
+            temporalState: state,
+            element: chip,
+          });
+          if (!applyContent(chip, content)) chip.textContent = event.title ?? labels.untitledEvent;
+          // Native <button> activation covers pointer click and Enter/Space equally.
+          chip.addEventListener("click", (nativeEvent) => {
+            emitCalendarEvent(
+              chip,
+              "calendar:eventclick",
+              { event, date, resource: null, nativeEvent },
+              { cancelable: true },
+            );
+          });
+          nextChips.set(event, chip);
+        }
+        // Remove old chips first, so an unchanged chip keeps its position
+        // and focus when a preceding chip is updated or disappears.
+        for (const [event, chip] of chips) {
+          if (nextChips.get(event) !== chip) chip.remove();
+        }
+        let previousNode = label;
+        for (const chip of nextChips.values()) {
+          if (previousNode.nextSibling !== chip) cell.insertBefore(chip, previousNode.nextSibling);
+          previousNode = chip;
+        }
+        chips = nextChips;
+        more?.remove();
+        more = null;
 
-      if (dayEvents.length > limit) {
-        const hidden = dayEvents.length - limit;
-        const more = document.createElement("button");
-        more.type = "button";
-        more.className = "cv-month-more";
-        more.dataset.date = date.toString();
-        const content = moreLinkContent?.({ date, events: dayEvents, hidden, element: more });
-        if (content instanceof Node) more.append(content);
-        else more.textContent = content == null ? formatLabel(labels.more, { hidden }) : String(content);
-        // The application decides what "show the rest" means: a popover, a
-        // day view, a raised chip limit. The core only reports the intent.
-        more.addEventListener("click", (nativeEvent) => {
-          more.dispatchEvent(
-            new CustomEvent("calendar:moreclick", {
-              bubbles: true,
-              composed: true,
-              cancelable: true,
-              detail: { date, events: dayEvents, hidden, nativeEvent },
-            }),
-          );
-        });
-        cell.append(more);
-      }
+        if (dayEvents.length > limit) {
+          const hidden = dayEvents.length - limit;
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "cv-month-more";
+          button.dataset.date = date.toString();
+          const content = moreLinkContent?.({ date, events: dayEvents, hidden, element: button });
+          if (!applyContent(button, content)) button.textContent = formatLabel(labels.more, { hidden });
+          // The application decides what "show the rest" means: a popover, a
+          // day view, a raised chip limit. The core only reports the intent.
+          button.addEventListener("click", (nativeEvent) => {
+            emitCalendarEvent(
+              button,
+              "calendar:moreclick",
+              { date, events: dayEvents, hidden, nativeEvent },
+              { cancelable: true },
+            );
+          });
+          more = button;
+          cell.append(button);
+        }
+      });
 
       // Empty-cell click selects the civil day as an all-day range; chips and
       // the `+n more` button carry their own intent and must not fall through
@@ -187,6 +216,14 @@ export function renderMonthGrid({
     root.append(row);
   }
 
+  /**
+   * @param {import("../core/model.js").NormalizedEvent[]} events
+   * @param {Temporal.ZonedDateTime} now
+   */
+  const update = (events, now) => {
+    for (const updateDay of updateDays) updateDay(events, now);
+  };
+  update(events, renderNow);
   fragment.append(root);
-  return fragment;
+  return { fragment, update };
 }

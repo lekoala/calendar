@@ -141,6 +141,8 @@ export declare function isInvertedRange(start: unknown, end: unknown): boolean;
  */
 export declare function isInvalidCivilRange(start: unknown, end: unknown): boolean;
 /**
+ * An omitted `editable` stays undecided so the calendar default still applies.
+ *
  * @param {EventInput} event
  * @returns {NormalizedEvent}
  */

@@ -78,8 +78,10 @@ Mon | Tue | Wed | Mon | Tue | Wed    | Mon | Tue | Wed
 The axis strip and the sticky header rows are authored CSS custom properties, not hard-coded geometry:
 
 - `--calendar-axis-size` (default `3.5rem`) — the time-axis track the column list repeats after; the renderer names the same variable in its grid template, and the sticky axis/corner cells take their width from it;
-- `--calendar-resource-row-size` (default `3rem`) — the resource header row height and the sticky offset that pushes day headers below it;
-- `--calendar-group-row-size` (default falls back to the resource row size) — the group header row height and the offsets that stack the resource row and day headers below it.
+- `--calendar-resource-row-size` (default `3rem`) sets the minimum resource header height.
+- `--calendar-group-row-size` (defaults to the resource row size) sets the minimum group header height.
+
+Sticky offsets follow the rendered row heights, including borders and any extra height from custom header content.
 
 Overriding one variable moves the whole coupled set; an application compressing the header rows re-points nothing itself.
 

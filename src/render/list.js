@@ -4,6 +4,7 @@ import { DEFAULT_LABELS } from "../core/labels.js";
 import { listDayRows } from "../core/list-rows.js";
 import { describeEvent, instantRangeOf, wallMinutes } from "../core/slicing.js";
 import { temporalState } from "../core/temporal.js";
+import { applyContent, emitCalendarEvent } from "./dom.js";
 
 /**
  * Minimal chronological list over the visible dates. Each day is a group
@@ -58,9 +59,7 @@ export function renderList({
     const header = document.createElement("header");
     header.className = "cv-list-day-header";
     const headerContent = dayHeaderContent?.({ date, resource: null, element: header });
-    if (headerContent instanceof Node) header.append(headerContent);
-    else if (headerContent != null) header.textContent = String(headerContent);
-    else header.textContent = formatDayHeader(date, locale);
+    if (!applyContent(header, headerContent)) header.textContent = formatDayHeader(date, locale);
     group.append(header);
 
     const rows = listDayRows({ date, events, backgrounds, timeZone });
@@ -80,24 +79,20 @@ export function renderList({
       item.dataset.temporalState = state;
       item.setAttribute("aria-label", describeEvent(event, timeZone, labels.untitledEvent));
       const content = eventContent?.({ event, date, resource: null, temporalState: state, element: item });
-      if (content instanceof Node) {
-        item.append(content);
-      } else if (content != null) {
-        item.textContent = String(content);
-      } else if (event.start instanceof Temporal.PlainDate) {
-        item.textContent = event.title ?? labels.untitledEvent;
-      } else {
-        item.textContent = `${formatClock(wallMinutes(instantRangeOf(event.start, event.end, timeZone).start))} ${event.title ?? labels.untitledEvent}`;
+      if (!applyContent(item, content)) {
+        const title = event.title ?? labels.untitledEvent;
+        item.textContent =
+          event.start instanceof Temporal.PlainDate
+            ? title
+            : `${formatClock(wallMinutes(instantRangeOf(event.start, event.end, timeZone).start))} ${title}`;
       }
       // Native <button> activation covers pointer click and Enter/Space equally.
       item.addEventListener("click", (nativeEvent) => {
-        item.dispatchEvent(
-          new CustomEvent("calendar:eventclick", {
-            bubbles: true,
-            composed: true,
-            cancelable: true,
-            detail: { event, date, resource: null, nativeEvent },
-          }),
+        emitCalendarEvent(
+          item,
+          "calendar:eventclick",
+          { event, date, resource: null, nativeEvent },
+          { cancelable: true },
         );
       });
       group.append(item);
@@ -144,9 +139,7 @@ function renderBackgroundRow(row, date, labels, backgroundContent) {
     allDay: row.allDay,
     element,
   });
-  if (content instanceof Node) element.append(content);
-  else if (content != null) element.textContent = String(content);
-  else element.textContent = backgroundSpanText(row, labels);
+  if (!applyContent(element, content)) element.textContent = backgroundSpanText(row, labels);
   return element;
 }
 

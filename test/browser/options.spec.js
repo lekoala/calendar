@@ -391,6 +391,79 @@ test("an event refetch keeps the backgrounds set while it was in flight", async 
   expect(outcome.backgrounds).toEqual(["bg", "bg-mid-flight"]);
 });
 
+test("the implicit anchor uses the configured zone and explicit navigation pins it", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-09-03T12:00:00Z"));
+  await openDemo(page, "basic");
+  const dates = await page.evaluate(async () => {
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      document.createElement("calendar-view")
+    );
+    document.body.append(calendar);
+    await new Promise(requestAnimationFrame);
+    const utc = String(calendar.date);
+    calendar.configure({ timeZone: "Pacific/Kiritimati" });
+    const zoned = String(calendar.date);
+    const implicitAttribute = calendar.getAttribute("date");
+    await calendar.gotoDate(zoned);
+    calendar.configure({ timeZone: "UTC" });
+    const pinned = String(calendar.date);
+    calendar.removeAttribute("date");
+    return { utc, zoned, implicitAttribute, pinned, restored: String(calendar.date) };
+  });
+  expect(dates).toEqual({
+    utc: "2026-09-03",
+    zoned: "2026-09-04",
+    implicitAttribute: "2026-09-04",
+    pinned: "2026-09-04",
+    restored: "2026-09-03",
+  });
+});
+
+test("navigation and source errors bubble through a shadow host", async ({ page }) => {
+  await openDemo(page, "basic");
+  const observed = await page.evaluate(async () => {
+    const host = document.createElement("div");
+    const root = host.attachShadow({ mode: "open" });
+    const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+      document.createElement("calendar-view")
+    );
+    root.append(calendar);
+    document.body.append(host);
+    const names = ["calendar:viewchange", "calendar:datechange", "calendar:loaderror"];
+    /** @type {Array<{ type: string, targetIsHost: boolean, cancelable: boolean }>} */
+    const events = [];
+    for (const name of names) {
+      host.parentElement?.addEventListener(
+        name,
+        (event) => {
+          events.push({
+            type: event.type,
+            targetIsHost: event.target === host,
+            cancelable: event.cancelable,
+          });
+        },
+        { once: true },
+      );
+    }
+    calendar.setView("day");
+    await calendar.gotoDate("2026-09-03");
+    calendar.configure({
+      eventSource: async () => {
+        throw new Error("Source failed");
+      },
+    });
+    await calendar.refetchEvents();
+    return events;
+  });
+  expect(observed).toEqual(
+    ["calendar:viewchange", "calendar:datechange", "calendar:loaderror"].map((type) => ({
+      type,
+      targetIsHost: true,
+      cancelable: false,
+    })),
+  );
+});
+
 test("an unconfigured calendar renders in UTC, not in a product zone", async ({ page }) => {
   await openDemo(page, "basic");
   await page.evaluate(() => {

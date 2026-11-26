@@ -41,7 +41,7 @@ Shipped in 0.1:
 
 Deliberately deferred (revisit only with a concrete use case):
 
-- keyed DOM reconciliation — 0.x renders by full replacement;
+- keyed DOM reconciliation for time grids and list — month already preserves unchanged chips on individual updates;
 - a consolidated pointer engine;
 - density policies per view: slot-row policy, `datesAboveResources`;
 - source-range caching.

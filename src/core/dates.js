@@ -6,35 +6,39 @@ import { Temporal } from "temporal-polyfill";
  * rolling window, not a structural constant — `day` plus a `dayCount` option
  * reaches any custom length without a new view name.
  *
- * @type {Record<string, { range: string, defaultDayCount?: number }>}
+ * @type {Record<string, {
+ *   range: "rolling" | "week" | "month",
+ *   renderer?: "month" | "list",
+ *   defaultDayCount?: number,
+ *   resource?: boolean,
+ * }>}
  */
 const VIEW_DEFS = {
   day: { range: "rolling", defaultDayCount: 1 },
   threeDays: { range: "rolling", defaultDayCount: 3 },
   week: { range: "week" },
-  resourceDay: { range: "rolling", defaultDayCount: 1 },
-  resourceThreeDays: { range: "rolling", defaultDayCount: 3 },
-  list: { range: "rolling", defaultDayCount: 7 },
+  resourceDay: { range: "rolling", defaultDayCount: 1, resource: true },
+  resourceThreeDays: { range: "rolling", defaultDayCount: 3, resource: true },
+  list: { range: "rolling", defaultDayCount: 7, renderer: "list" },
+  month: { range: "month", renderer: "month" },
 };
 
-/**
- * Views anchored on a civil week rather than on the anchor date. Everything
- * else is a rolling range that simply starts at `date`.
- *
- * @type {Set<string>}
- */
-const WEEK_ANCHORED_VIEWS = new Set(["week"]);
+/** @param {string} view */
+function getViewDefinition(view) {
+  return Object.hasOwn(VIEW_DEFS, view) ? VIEW_DEFS[view] : undefined;
+}
 
 /**
- * Whether `view` names a view the element can render. `month` is a first-class
- * view without time/date derivation of its own, so it is not in `VIEW_DEFS`;
- * this predicate is the single source of truth for known view names.
- *
  * @param {string} view
  * @returns {boolean}
  */
 export function isKnownView(view) {
-  return view === "month" || Object.hasOwn(VIEW_DEFS, view);
+  return getViewDefinition(view) !== undefined;
+}
+
+/** @param {string} view */
+export function getViewRenderer(view) {
+  return getViewDefinition(view)?.renderer ?? "timeGrid";
 }
 
 /**
@@ -102,7 +106,7 @@ export function toPlainDate(value) {
  * @returns {number | null}
  */
 export function getDayCount(view, options = {}) {
-  const def = VIEW_DEFS[view];
+  const def = getViewDefinition(view);
   if (def?.range !== "rolling") return null;
   const count = Number(options.dayCount);
   if (Number.isInteger(count) && count >= 1) return count;
@@ -114,7 +118,7 @@ export function getDayCount(view, options = {}) {
  * @returns {boolean}
  */
 export function isWeekAnchoredView(view) {
-  return WEEK_ANCHORED_VIEWS.has(view);
+  return getViewDefinition(view)?.range === "week";
 }
 
 /**
@@ -234,7 +238,7 @@ export function stepAnchor(date, view, direction, options = {}) {
  * @returns {boolean}
  */
 export function isResourceView(view) {
-  return view === "resourceDay" || view === "resourceThreeDays";
+  return getViewDefinition(view)?.resource === true;
 }
 
 /**
@@ -242,7 +246,7 @@ export function isResourceView(view) {
  * @returns {boolean}
  */
 export function isMonthView(view) {
-  return view === "month";
+  return getViewDefinition(view)?.range === "month";
 }
 
 /**
