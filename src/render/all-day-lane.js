@@ -87,6 +87,24 @@ export function createAllDayLane({
   lane.style.gridColumn = "1 / -1";
   lane.style.gridRow = "2";
 
+  /**
+   * Whether a rendered segment is cut by the visible range. The civil day
+   * just outside the segment is checked instead of the event boundary, so a
+   * bar cut by the viewport and a bar cut by a hidden weekday report the same
+   * thing, and a bar that merely fills the range reports nothing.
+   *
+   * @param {import("../core/model.js").NormalizedEvent} event
+   * @param {number} startDay
+   * @param {number} endDay
+   * @returns {{ before: boolean, after: boolean }}
+   */
+  function cutEdges(event, startDay, endDay) {
+    return {
+      before: eventOverlapsDate(event, columns[startDay].date.subtract({ days: 1 }), timeZone),
+      after: eventOverlapsDate(event, columns[endDay - 1].date.add({ days: 1 }), timeZone),
+    };
+  }
+
   /** @param {number} clientX */
   const columnAtX = (clientX) => columns[columnIndexAtX(clientX)] ?? columns[0];
 
@@ -433,9 +451,15 @@ export function createAllDayLane({
     }
     for (const segment of layoutDaySegments(allDaySegments)) {
       const { event, startDay, endDay } = segment;
+      const cut = cutEdges(event, startDay, endDay);
       const bar = document.createElement("button");
       bar.type = "button";
-      bar.className = ["cv-allday-event", ...(event.classNames ?? [])].join(" ");
+      bar.className = [
+        "cv-allday-event",
+        ...(event.classNames ?? []),
+        ...(cut.before ? ["cv-continues-before"] : []),
+        ...(cut.after ? ["cv-continues-after"] : []),
+      ].join(" ");
       bar.dataset.eventId = event.id;
       bar.dataset.focusKey = JSON.stringify([event.id, "allday", event.resourceId ?? null]);
       const barState = stateOf(event);

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendar prototype - all-day range edges</title>
+  <link rel="stylesheet" href="../dist/calendar.css">
+  <script src="../dist/calendar.js"></script>
+  <style>
+    body { margin: 0; padding: 2rem; background: #eef1f6; font: 0.875rem/1.4 system-ui, sans-serif; }
+    main { max-width: 1200px; margin: auto; }
+    nav { display: flex; gap: .5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>All-day range edges</h1>
+  <p>
+    A bar clipped by the visible range keeps a square corner and an inset chevron on the cut
+    side, pointing at the days it still covers outside the window. A bar that starts or ends
+    inside the window keeps both rounded ends, so a clipped range never reads as a complete one.
+    Switch the duration to see the same events change status.
+  </p>
+  <nav>
+    <span id="views">
+      <button type="button" data-view="day">Day</button>
+      <button type="button" data-view="threeDays">3 days</button>
+      <button type="button" data-view="week">Week</button>
+    </span>
+  </nav>
+  <calendar-view view="week" date="2026-09-09"></calendar-view>
+</main>
+<script type="module">
+  const calendar = document.querySelector("calendar-view");
+  // Fixture readiness contract for the browser suites: the first configured
+  // render marks the document.
+  calendar.addEventListener("calendar:render", () => {
+    document.documentElement.dataset.calendarReady = "";
+  }, { once: true });
+  calendar.configure({ timeZone: "Europe/Brussels" });
+  calendar.events = [
+    { id: "closure", title: "Closure (all week, and beyond)", allDay: true, start: "2026-09-01", end: "2026-09-15" },
+    { id: "delivery", title: "Delivery (started before)", allDay: true, start: "2026-08-28", end: "2026-09-08" },
+    { id: "workshop", title: "Workshop (runs past the week)", allDay: true, start: "2026-09-11", end: "2026-09-20" },
+    { id: "offsite", title: "Offsite (entirely visible)", allDay: true, start: "2026-09-09", end: "2026-09-10" },
+    { id: "timed", title: "Design review", start: "2026-09-09T09:00:00+02:00[Europe/Brussels]", end: "2026-09-09T10:00:00+02:00[Europe/Brussels]" }
+  ];
+  document.querySelector("#views").addEventListener("click", (event) => {
+    const view = event.target.dataset.view;
+    if (view) calendar.setView(view);
+  });
+</script>
+</body>
+</html>

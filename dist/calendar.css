@@ -227,6 +227,58 @@
   cursor: grabbing;
 }
 
+/* A bar cut by the edge of the rendered range keeps a square corner and gains
+   an inset chevron pointing at the hidden continuation: the bar is clipped by
+   the view, not closed by the event. */
+.cv-allday-event.cv-continues-before {
+  margin-inline-start: 0;
+  padding-inline-start: 1.15rem;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  border-inline-start-width: 0;
+}
+
+.cv-allday-event.cv-continues-after {
+  margin-inline-end: 0;
+  padding-inline-end: 1.15rem;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  border-inline-end-width: 0;
+}
+
+.cv-allday-event.cv-continues-before::before,
+.cv-allday-event.cv-continues-after::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inline-size: 0.4rem;
+  block-size: 0.4rem;
+  border-inline-start: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  opacity: 0.65;
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.cv-allday-event.cv-continues-before::before {
+  inset-inline-start: 0.4rem;
+}
+
+.cv-allday-event.cv-continues-after::after {
+  inset-inline-end: 0.4rem;
+  transform: translateY(-50%) rotate(-135deg);
+}
+
+/* In a right-to-left flow the cue sits on the mirrored edge and its logical
+   borders form the other corner, so the point is mirrored too. Direction is
+   inherited from the nearest `dir` ancestor. */
+[dir="rtl"] .cv-allday-event.cv-continues-before::before {
+  transform: translateY(-50%) rotate(-45deg);
+}
+
+[dir="rtl"] .cv-allday-event.cv-continues-after::after {
+  transform: translateY(-50%) rotate(135deg);
+}
+
 .cv-allday-background {
   z-index: 1;
   margin: 1px 2px;

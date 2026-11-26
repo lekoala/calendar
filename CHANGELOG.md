@@ -35,6 +35,10 @@
   pointer x-coordinate matches a column: it must land on a visible day
   column. When the lane is not rendered, that column is highlighted instead
   of receiving a lane ghost.
+* All-day bars clipped by the visible range mark the cut side with a square
+  corner and an inset chevron, instead of reading as a range that starts or
+  ends on the visible day. A bar that fits the range exactly keeps both
+  rounded ends.
 
 ### Changed
 

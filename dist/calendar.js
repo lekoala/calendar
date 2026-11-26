@@ -5014,6 +5014,12 @@
     lane.style.gridTemplateColumns = gridTemplate;
     lane.style.gridColumn = "1 / -1";
     lane.style.gridRow = "2";
+    function cutEdges(event, startDay, endDay) {
+      return {
+        before: eventOverlapsDate(event, columns[startDay].date.subtract({ days: 1 }), timeZone),
+        after: eventOverlapsDate(event, columns[endDay - 1].date.add({ days: 1 }), timeZone)
+      };
+    }
     const columnAtX = (clientX) => columns[columnIndexAtX(clientX)] ?? columns[0];
     function allDayColumnAtPoint(x, y) {
       const hit = elementAtPoint(lane, x, y);
@@ -5300,9 +5306,15 @@
       }
       for (const segment of layoutDaySegments(allDaySegments)) {
         const { event, startDay, endDay } = segment;
+        const cut = cutEdges(event, startDay, endDay);
         const bar = document.createElement("button");
         bar.type = "button";
-        bar.className = ["cv-allday-event", ...event.classNames ?? []].join(" ");
+        bar.className = [
+          "cv-allday-event",
+          ...event.classNames ?? [],
+          ...cut.before ? ["cv-continues-before"] : [],
+          ...cut.after ? ["cv-continues-after"] : []
+        ].join(" ");
         bar.dataset.eventId = event.id;
         bar.dataset.focusKey = JSON.stringify([event.id, "allday", event.resourceId ?? null]);
         const barState = stateOf(event);

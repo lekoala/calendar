@@ -99,6 +99,59 @@ test("allDaySlot false hides the lane without hiding the event elsewhere", async
   await expect(page.locator('.cv-month-event[data-event-id="ad"]')).toHaveCount(3);
 });
 
+test("a bar cut by the visible range marks the hidden continuation", async ({ page }) => {
+  await openDemo(page, "basic");
+  await expect(page.locator(".cv-day")).toHaveCount(3);
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).events = [
+      { id: "cut", title: "Cut both", allDay: true, start: "2026-09-01", end: "2026-09-07" },
+      { id: "early", title: "Cut before", allDay: true, start: "2026-08-30", end: "2026-09-05" },
+      { id: "late", title: "Cut after", allDay: true, start: "2026-09-04", end: "2026-09-09" },
+      { id: "exact", title: "Exact fit", allDay: true, start: "2026-09-03", end: "2026-09-06" },
+    ];
+  });
+  await flushRender(page);
+
+  const classes = await page.evaluate(() =>
+    Object.fromEntries(
+      [...document.querySelectorAll(".cv-allday-event")].map((node) => [
+        node.getAttribute("data-event-id"),
+        node.className,
+      ]),
+    ),
+  );
+  expect(classes).toEqual({
+    cut: "cv-allday-event cv-continues-before cv-continues-after",
+    early: "cv-allday-event cv-continues-before",
+    late: "cv-allday-event cv-continues-after",
+    exact: "cv-allday-event",
+  });
+
+  // A cut side is square and carries the chevron; a bar that fills the range
+  // exactly keeps both rounded ends and no cue.
+  const cut = page.locator('.cv-allday-event[data-event-id="cut"]');
+  await expect(cut).toHaveCSS("border-top-left-radius", "0px");
+  await expect(cut).toHaveCSS("border-top-right-radius", "0px");
+  const exact = page.locator('.cv-allday-event[data-event-id="exact"]');
+  await expect(exact).not.toHaveCSS("border-top-left-radius", "0px");
+  await expect(exact).not.toHaveCSS("border-top-right-radius", "0px");
+
+  const cues = await page.evaluate(() => {
+    /** @param {string} id */
+    const read = (id) => {
+      const node = /** @type {Element} */ (document.querySelector(`.cv-allday-event[data-event-id="${id}"]`));
+      return {
+        before: getComputedStyle(node, "::before").content,
+        after: getComputedStyle(node, "::after").content,
+      };
+    };
+    return { cut: read("cut"), exact: read("exact") };
+  });
+  expect(cues.exact).toEqual({ before: "none", after: "none" });
+  expect(cues.cut.before).not.toBe("none");
+  expect(cues.cut.after).not.toBe("none");
+});
+
 test("resource views keep each room's bars inside its own block", async ({ page }) => {
   await openDemo(page, "resources");
   await expect(page.locator(".cv-day").first()).toBeVisible();
@@ -151,6 +204,42 @@ test("resource views keep each room's bars inside its own block", async ({ page 
   expect(Number(b?.end)).toBeLessThanOrEqual(cols + 2);
   expect(a?.row).toBe("1");
   expect(b?.row).toBe("1");
+});
+
+test("a cut bar is marked in its own room's block only", async ({ page }) => {
+  await openDemo(page, "resources");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.events = [
+      ...calendar.events,
+      {
+        id: "ad-a",
+        title: "Room A closure",
+        allDay: true,
+        start: "2026-08-30",
+        end: "2026-09-20",
+        resourceId: "room-a",
+      },
+      {
+        id: "ad-b",
+        title: "Room B closure",
+        allDay: true,
+        start: "2026-09-03",
+        end: "2026-09-05",
+        resourceId: "room-b",
+      },
+    ];
+  });
+  await flushRender(page);
+
+  const roomA = page.locator('.cv-allday-event[data-event-id="ad-a"]');
+  await expect(roomA).toHaveCount(1);
+  await expect(roomA).toHaveClass(/cv-continues-before/);
+  await expect(roomA).toHaveClass(/cv-continues-after/);
+  // The room B bar fits the visible three days exactly: no cue.
+  const roomB = page.locator('.cv-allday-event[data-event-id="ad-b"]');
+  await expect(roomB).toHaveClass(/cv-allday-event/);
+  await expect(roomB).not.toHaveClass(/cv-continues/);
 });
 
 test("all-day resize handles appear only on visible true edges", async ({ page }) => {
