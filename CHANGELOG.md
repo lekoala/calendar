@@ -60,6 +60,9 @@
 * Event and all-day gestures share one pointer lifecycle primitive for
   pointer identity, capture, movement threshold, cancellation and cleanup.
   The all-day lane is rendered by its own module.
+* The showcase demo follows Actual CSS 0.20.2, `@lekoala/combobox` 0.8.2 and
+  `@lekoala/date-picker` 0.6.3. The update is additive for the classes,
+  tokens and themes the shell uses, so its own CSS is unchanged.
 
 ## 0.4.0 - 2026-11-06
 
