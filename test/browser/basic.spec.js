@@ -271,6 +271,81 @@ test("dragging selects a snapped range without a residual click selection", asyn
   expect(selection.end).toContain("T12:15:00+02:00");
 });
 
+for (const gesture of ["selection", "resize"]) {
+  test(`a timed ${gesture} cancels on release over a sticky header`, async ({ page }) => {
+    await openDemo(page, "basic");
+    await page.evaluate(() => {
+      const calendar = /** @type {import("../../src/calendar-view.js").CalendarViewElement} */ (
+        document.querySelector("calendar-view")
+      );
+      calendar.setView("day");
+      const event = calendar.getEventById("a");
+      if (!event) throw new Error("Expected a timed event");
+      calendar.events = [event];
+      calendar.backgrounds = [];
+      for (const name of ["calendar:select", "calendar:eventresize", "calendar:eventclick"]) {
+        calendar.addEventListener(name, () => {
+          calendar.dataset.gestureIntent = name;
+        });
+      }
+    });
+    await expect(page.locator(".cv-day")).toHaveCount(1);
+    const points = await page.evaluate((gesture) => {
+      const scroller = /** @type {HTMLElement} */ (document.querySelector(".cv-scroller"));
+      scroller.style.maxHeight = "320px";
+      scroller.scrollIntoView({ block: "center" });
+      scroller.scrollTop = 90;
+      const body = /** @type {HTMLElement} */ (scroller.querySelector(".cv-day-body"));
+      const header = /** @type {HTMLElement} */ (scroller.querySelector(".cv-day-header"));
+      const handle = /** @type {HTMLElement} */ (scroller.querySelector(".cv-resize-s"));
+      const card = /** @type {HTMLElement} */ (scroller.querySelector(".cv-event"));
+      const rect = (gesture === "resize" ? handle : body).getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + (gesture === "resize" ? rect.height / 2 : 280),
+        outside: header.getBoundingClientRect().bottom - 12,
+        height: card.style.height,
+      };
+    }, gesture);
+    await page.mouse.move(points.x, points.y);
+    await page.mouse.down();
+    await page.mouse.move(points.x, points.y + 35);
+    const ghost = page.locator(".cv-select-ghost");
+    const card = page.locator(".cv-event");
+    if (gesture === "selection") await expect(ghost).toBeVisible();
+    else await expect(card).not.toHaveCSS("height", points.height);
+    await page.mouse.move(points.x, points.outside);
+    if (gesture === "selection") await expect(ghost).toBeHidden();
+    else await expect(card).toHaveCSS("height", points.height);
+    await page.mouse.up();
+    await expect(page.locator("calendar-view")).not.toHaveAttribute("data-gesture-intent");
+    await expect(ghost).toHaveCount(0);
+    await expect(card).toHaveCSS("height", points.height);
+  });
+}
+
+test("timed selection uses the slot under the pointer after the viewport scrolls", async ({ page }) => {
+  await openDemo(page, "basic");
+  await trackSelections(page);
+  await page.locator(".cv-scroller").evaluate((node) => {
+    node.style.maxHeight = "420px";
+    node.scrollIntoView({ block: "center" });
+    node.scrollTop = 110;
+  });
+  const [from, to] = await slotPoints(page, [{ time: "11:02" }, { time: "12:12" }]);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y);
+  await expect(page.locator(".cv-select-chip")).toHaveText("11:00 - 12:15");
+  await page.locator(".cv-scroller").evaluate((node) => {
+    node.scrollTop += 54;
+  });
+  await page.mouse.up();
+  const [selection] = await readSelections(page);
+  expect(selection.start).toContain("T11:00:00+02:00");
+  expect(selection.end).toContain("T12:45:00+02:00");
+});
+
 test("range selection in a resource column returns the resource id", async ({ page }) => {
   await openDemo(page, "resources");
   await trackSelections(page);

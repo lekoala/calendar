@@ -98,8 +98,6 @@ import { startNowIndicator } from "./now-indicator.js";
  * @property {number} downX
  * @property {number} downY
  * @property {boolean} moved
- * @property {number} start
- * @property {number} end
  */
 
 /**
@@ -1462,20 +1460,15 @@ export function renderTimeGrid({
         const downX = nativeEvent.clientX;
         const downY = nativeEvent.clientY;
         let moved = false;
-        /** @type {{ start: Temporal.ZonedDateTime, end: Temporal.ZonedDateTime, resourceId: string | null } | null} */
-        let pending = null;
         // Last evaluated destination (`start:end`) and its policy decision.
         // The first destination may differ from a clipped original edge.
         /** @type {string | null} */
         let resizeKey = null;
 
-        /** @param {PointerEvent} moveEvent @returns {void} */
-        const onMove = (moveEvent) => {
-          if (longPressConsumed) return;
-          if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
-          if (!moved) return;
-          const hit = columnHit(column, body, moveEvent.clientX, moveEvent.clientY);
-          if (!hit) return;
+        /** @param {PointerEvent} pointer */
+        const resizeTarget = (pointer) => {
+          const hit = gridHit(pointer.clientX, pointer.clientY);
+          if (hit?.column !== columnIndex) return null;
           const edges = columnEdges(columnIndex, event.id);
           let start = item.start;
           let end = item.end;
@@ -1484,11 +1477,33 @@ export function renderTimeGrid({
           } else {
             start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
           }
-          pending = {
+          const range = {
             start: edge === "start" ? zonedDateTimeAt(column.date, start, timeZone) : startZoned,
             end: edge === "end" ? zonedDateTimeAt(column.date, end, timeZone) : endZoned,
             resourceId: event.resourceId ?? null,
           };
+          return { start, end, range };
+        };
+
+        const resetPreview = () => {
+          node.style.top = savedTop;
+          node.style.height = savedHeight;
+          node.classList.remove("cv-invalid");
+          delete node.dataset.reason;
+          resizeKey = null;
+        };
+
+        /** @param {PointerEvent} moveEvent @returns {void} */
+        const onMove = (moveEvent) => {
+          if (longPressConsumed) return;
+          if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4) moved = true;
+          if (!moved) return;
+          const target = resizeTarget(moveEvent);
+          if (!target) {
+            resetPreview();
+            return;
+          }
+          const { start, end, range } = target;
           node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
           node.style.height = `${(end - start) * pxPerMinute}px`;
           const key = `${start}:${end}`;
@@ -1497,7 +1512,7 @@ export function renderTimeGrid({
             const decision = host.checkInteraction({
               action: "resize",
               event,
-              ...pending,
+              ...range,
             });
             node.classList.toggle("cv-invalid", !decision.ok);
             if (decision.reason) node.dataset.reason = decision.reason;
@@ -1507,49 +1522,31 @@ export function renderTimeGrid({
 
         /** @param {PointerEvent} upEvent @returns {void} */
         const onUp = (upEvent) => {
+          cleanup();
+          const target = moved && !longPressConsumed ? resizeTarget(upEvent) : null;
+          resetPreview();
+          if (longPressConsumed || !moved) return;
+          suppressClick = true;
+          if (!target || Temporal.ZonedDateTime.compare(target.range.end, target.range.start) <= 0) return;
+          host.commitEventResize({
+            event,
+            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
+            current: target.range,
+            nativeEvent: upEvent,
+          });
+        };
+
+        const cleanup = () => {
           node.removeEventListener("pointermove", onMove);
           node.removeEventListener("pointerup", onUp);
           node.removeEventListener("pointercancel", onCancel);
-          // See the drag path: the implicit release at `pointerup` would
-          // otherwise cancel a resize that already committed.
           node.removeEventListener("lostpointercapture", onCancel);
-          if (longPressConsumed) {
-            node.style.top = savedTop;
-            node.style.height = savedHeight;
-            return;
-          }
-          if (!moved || !pending) return;
-          node.classList.remove("cv-invalid");
-          delete node.dataset.reason;
-          suppressClick = true;
-          if (Temporal.ZonedDateTime.compare(pending.end, pending.start) <= 0) {
-            node.style.top = savedTop;
-            node.style.height = savedHeight;
-            suppressClick = false;
-            return;
-          }
-          const result = host.commitEventResize({
-            event,
-            previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-            current: pending,
-            nativeEvent: upEvent,
-          });
-          if (!result) {
-            node.style.top = savedTop;
-            node.style.height = savedHeight;
-          }
         };
 
         /** @param {PointerEvent} _cancelEvent @returns {void} */
         const onCancel = (_cancelEvent) => {
-          node.removeEventListener("pointermove", onMove);
-          node.removeEventListener("pointerup", onUp);
-          node.removeEventListener("pointercancel", onCancel);
-          node.removeEventListener("lostpointercapture", onCancel);
-          node.style.top = savedTop;
-          node.style.height = savedHeight;
-          node.classList.remove("cv-invalid");
-          delete node.dataset.reason;
+          cleanup();
+          resetPreview();
           // No click follows a cancel: drop both suppression flags.
           longPressConsumed = false;
           suppressClick = false;
@@ -1831,6 +1828,9 @@ export function renderTimeGrid({
           resourceId: column.resource?.id ?? null,
         });
         if (!gate.ok) return;
+        // The calendar owns this mouse gesture. Native text selection can
+        // autoscroll the viewport underneath the captured pointer.
+        if (nativeEvent.pointerType === "mouse") nativeEvent.preventDefault();
         // Seeded with the entry target so the first identical snap skips.
         selectKey = `${anchor}:${anchor + defaultDuration}`;
         hover.hidden = true;
@@ -1847,10 +1847,16 @@ export function renderTimeGrid({
           downX: nativeEvent.clientX,
           downY: nativeEvent.clientY,
           moved: false,
-          start: anchor,
-          end: anchor,
         };
       });
+
+      /** @param {number} anchor @param {number} minutes */
+      function selectionRange(anchor, minutes) {
+        const edges = columnEdges(columnIndex);
+        const start = magnetOrSnap(Math.min(anchor, minutes), "floor", edges);
+        const end = Math.max(magnetOrSnap(Math.max(anchor, minutes), "ceil", edges), start + snapStep);
+        return { start, end };
+      }
 
       body.addEventListener("pointermove", (nativeEvent) => {
         if (!selecting || !ghost || !ghostChip) return;
@@ -1858,16 +1864,10 @@ export function renderTimeGrid({
           selecting.moved = true;
         }
         if (!selecting.moved) return;
-        const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
-        if (!hit) return;
-        const edges = columnEdges(columnIndex);
-        const start = magnetOrSnap(Math.min(selecting.anchor, hit.minutes), "floor", edges);
-        const end = Math.max(
-          magnetOrSnap(Math.max(selecting.anchor, hit.minutes), "ceil", edges),
-          start + snapStep,
-        );
-        selecting.start = start;
-        selecting.end = end;
+        const hit = gridHit(nativeEvent.clientX, nativeEvent.clientY);
+        ghost.hidden = hit?.column !== columnIndex;
+        if (hit?.column !== columnIndex) return;
+        const { start, end } = selectionRange(selecting.anchor, hit.minutes);
         ghost.style.top = `${(start - startMinutes) * pxPerMinute}px`;
         ghost.style.height = `${(end - start) * pxPerMinute}px`;
         ghostChip.textContent = `${formatClock(start)} - ${formatClock(end)}`;
@@ -1898,14 +1898,17 @@ export function renderTimeGrid({
         const wasLongPress = longPressConsumed;
         longPressConsumed = false;
         if (!selecting) return;
-        const { anchor, moved, start, end } = selecting;
+        const { anchor, moved } = selecting;
         selecting = null;
         ghost?.remove();
         ghost = null;
         ghostChip = null;
         if (cancelled || wasLongPress) return;
+        if (moved) suppressClick = true;
+        const hit = gridHit(nativeEvent.clientX, nativeEvent.clientY);
+        if (hit?.column !== columnIndex) return;
         if (moved) {
-          suppressClick = true;
+          const { start, end } = selectionRange(anchor, hit.minutes);
           dispatchSelect(body, column, start, end, nativeEvent);
         } else {
           dispatchSelect(body, column, anchor, Math.min(anchor + defaultDuration, endMinutes), nativeEvent);

@@ -115,8 +115,6 @@ export type ActiveSelection = {
     downX: number;
     downY: number;
     moved: boolean;
-    start: number;
-    end: number;
 };
 /**
  * @typedef {object} ExternalDropTarget
@@ -183,8 +181,6 @@ export type ActiveSelection = {
  * @property {number} downX
  * @property {number} downY
  * @property {boolean} moved
- * @property {number} start
- * @property {number} end
  */
 /**
  * @param {object} input

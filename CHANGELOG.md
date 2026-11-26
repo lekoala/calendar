@@ -27,6 +27,8 @@
   into a clipped column.
 * All-day moves and resizes cancel on release outside the visible all-day
   lane. Resizes validate the current target and policy at release.
+* Timed selections and resizes resolve the current slot in their original
+  column at release and cancel outside that column's visible time body.
 
 ### Changed
 

@@ -46,6 +46,11 @@ increments and never magnetize: they are already precise.
 
 Residual click after a true drag-selection must be suppressed.
 
+Timed selections and edge resizes use the visible date and resource column
+where the gesture began. Leaving that column clears the preview. On release,
+the calendar resolves the current slot there and cancels the gesture when
+the pointer is outside the column.
+
 ## 3. Event click
 
 Click/Enter dispatches `calendar:eventclick` with event identity and native event context. No built-in editor.

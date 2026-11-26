@@ -6181,18 +6181,11 @@
           const downX = nativeEvent.clientX;
           const downY = nativeEvent.clientY;
           let moved = false;
-          let pending = null;
           let resizeKey = null;
-          const onMove = (moveEvent) => {
-            if (longPressConsumed)
-              return;
-            if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
-              moved = true;
-            if (!moved)
-              return;
-            const hit = columnHit(column, body, moveEvent.clientX, moveEvent.clientY);
-            if (!hit)
-              return;
+          const resizeTarget = (pointer) => {
+            const hit = gridHit(pointer.clientX, pointer.clientY);
+            if (hit?.column !== columnIndex)
+              return null;
             const edges = columnEdges(columnIndex, event.id);
             let start = item.start;
             let end = item.end;
@@ -6201,11 +6194,33 @@
             } else {
               start = Math.min(magnetOrSnap(hit.minutes, "floor", edges), end - snapStep);
             }
-            pending = {
+            const range = {
               start: edge === "start" ? zonedDateTimeAt(column.date, start, timeZone) : startZoned,
               end: edge === "end" ? zonedDateTimeAt(column.date, end, timeZone) : endZoned,
               resourceId: event.resourceId ?? null
             };
+            return { start, end, range };
+          };
+          const resetPreview = () => {
+            node.style.top = savedTop;
+            node.style.height = savedHeight;
+            node.classList.remove("cv-invalid");
+            delete node.dataset.reason;
+            resizeKey = null;
+          };
+          const onMove = (moveEvent) => {
+            if (longPressConsumed)
+              return;
+            if (Math.hypot(moveEvent.clientX - downX, moveEvent.clientY - downY) >= 4)
+              moved = true;
+            if (!moved)
+              return;
+            const target = resizeTarget(moveEvent);
+            if (!target) {
+              resetPreview();
+              return;
+            }
+            const { start, end, range } = target;
             node.style.top = `${(start - startMinutes) * pxPerMinute}px`;
             node.style.height = `${(end - start) * pxPerMinute}px`;
             const key = `${start}:${end}`;
@@ -6214,7 +6229,7 @@
               const decision = host.checkInteraction({
                 action: "resize",
                 event,
-                ...pending
+                ...range
               });
               node.classList.toggle("cv-invalid", !decision.ok);
               if (decision.reason)
@@ -6224,46 +6239,30 @@
             }
           };
           const onUp = (upEvent) => {
-            node.removeEventListener("pointermove", onMove);
-            node.removeEventListener("pointerup", onUp);
-            node.removeEventListener("pointercancel", onCancel);
-            node.removeEventListener("lostpointercapture", onCancel);
-            if (longPressConsumed) {
-              node.style.top = savedTop;
-              node.style.height = savedHeight;
+            cleanup();
+            const target = moved && !longPressConsumed ? resizeTarget(upEvent) : null;
+            resetPreview();
+            if (longPressConsumed || !moved)
               return;
-            }
-            if (!moved || !pending)
-              return;
-            node.classList.remove("cv-invalid");
-            delete node.dataset.reason;
             suppressClick = true;
-            if (Temporal2.ZonedDateTime.compare(pending.end, pending.start) <= 0) {
-              node.style.top = savedTop;
-              node.style.height = savedHeight;
-              suppressClick = false;
+            if (!target || Temporal2.ZonedDateTime.compare(target.range.end, target.range.start) <= 0)
               return;
-            }
-            const result = host.commitEventResize({
+            host.commitEventResize({
               event,
               previous: { start: event.start, end: event.end, resourceId: event.resourceId ?? null },
-              current: pending,
+              current: target.range,
               nativeEvent: upEvent
             });
-            if (!result) {
-              node.style.top = savedTop;
-              node.style.height = savedHeight;
-            }
           };
-          const onCancel = (_cancelEvent) => {
+          const cleanup = () => {
             node.removeEventListener("pointermove", onMove);
             node.removeEventListener("pointerup", onUp);
             node.removeEventListener("pointercancel", onCancel);
             node.removeEventListener("lostpointercapture", onCancel);
-            node.style.top = savedTop;
-            node.style.height = savedHeight;
-            node.classList.remove("cv-invalid");
-            delete node.dataset.reason;
+          };
+          const onCancel = (_cancelEvent) => {
+            cleanup();
+            resetPreview();
             longPressConsumed = false;
             suppressClick = false;
           };
@@ -6502,6 +6501,12 @@
       }
       const canSelect = column.resource?.selectable !== false;
       if (canSelect) {
+        let selectionRange = function(anchor, minutes) {
+          const edges = columnEdges(columnIndex);
+          const start = magnetOrSnap(Math.min(anchor, minutes), "floor", edges);
+          const end = Math.max(magnetOrSnap(Math.max(anchor, minutes), "ceil", edges), start + snapStep);
+          return { start, end };
+        };
         const hover = document.createElement("div");
         hover.className = "cv-hover";
         hover.setAttribute("aria-hidden", "true");
@@ -6554,6 +6559,8 @@
           });
           if (!gate.ok)
             return;
+          if (nativeEvent.pointerType === "mouse")
+            nativeEvent.preventDefault();
           selectKey = `${anchor}:${anchor + defaultDuration}`;
           hover.hidden = true;
           tryCapture(body, nativeEvent.pointerId);
@@ -6568,9 +6575,7 @@
             anchor,
             downX: nativeEvent.clientX,
             downY: nativeEvent.clientY,
-            moved: false,
-            start: anchor,
-            end: anchor
+            moved: false
           };
         });
         body.addEventListener("pointermove", (nativeEvent) => {
@@ -6581,14 +6586,11 @@
           }
           if (!selecting.moved)
             return;
-          const hit = columnHit(column, body, nativeEvent.clientX, nativeEvent.clientY);
-          if (!hit)
+          const hit = gridHit(nativeEvent.clientX, nativeEvent.clientY);
+          ghost.hidden = hit?.column !== columnIndex;
+          if (hit?.column !== columnIndex)
             return;
-          const edges = columnEdges(columnIndex);
-          const start = magnetOrSnap(Math.min(selecting.anchor, hit.minutes), "floor", edges);
-          const end = Math.max(magnetOrSnap(Math.max(selecting.anchor, hit.minutes), "ceil", edges), start + snapStep);
-          selecting.start = start;
-          selecting.end = end;
+          const { start, end } = selectionRange(selecting.anchor, hit.minutes);
           ghost.style.top = `${(start - startMinutes) * pxPerMinute}px`;
           ghost.style.height = `${(end - start) * pxPerMinute}px`;
           ghostChip.textContent = `${formatClock(start)} - ${formatClock(end)}`;
@@ -6614,15 +6616,20 @@
           longPressConsumed = false;
           if (!selecting)
             return;
-          const { anchor, moved, start, end } = selecting;
+          const { anchor, moved } = selecting;
           selecting = null;
           ghost?.remove();
           ghost = null;
           ghostChip = null;
           if (cancelled || wasLongPress)
             return;
-          if (moved) {
+          if (moved)
             suppressClick = true;
+          const hit = gridHit(nativeEvent.clientX, nativeEvent.clientY);
+          if (hit?.column !== columnIndex)
+            return;
+          if (moved) {
+            const { start, end } = selectionRange(anchor, hit.minutes);
             dispatchSelect(body, column, start, end, nativeEvent);
           } else {
             dispatchSelect(body, column, anchor, Math.min(anchor + defaultDuration, endMinutes), nativeEvent);
