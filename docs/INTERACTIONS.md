@@ -107,8 +107,10 @@ application's paste/armed-item path. The grid draws nothing new until a
 registered source actually starts dragging. In the showcase, workbench
 validation reuses the range context's overlapping events for conflict checks.
 
-Dragging an event out of the calendar is the inverse gesture: while the
-pointer is outside every column (grid edge, time axis strip) the dragged
+Dragging an event out of the calendar is the inverse gesture. During a
+timed drag, each column receives drops only on its visible time body.
+The scroller edge, sticky headers and time axis can cover parts of a column.
+While the pointer is outside the visible time bodies, the dragged
 node carries `data-dropout`, which an application can style (a sibling
 parking panel glows via `:has()`), and releasing there dispatches
 `calendar:eventdropout`. The residual click on the source card is

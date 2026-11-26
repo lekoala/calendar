@@ -21,3 +21,17 @@ export function applyContent(element, content) {
 export function emitCalendarEvent(target, name, detail, { cancelable = false } = {}) {
   return target.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true, cancelable }));
 }
+
+/**
+ * Hit-test in the same tree as the renderer so shadow hosts do not hide
+ * the elements inside them.
+ *
+ * @param {Element} origin
+ * @param {number} x
+ * @param {number} y
+ */
+export function elementAtPoint(origin, x, y) {
+  const tree = origin.getRootNode();
+  const hitRoot = tree instanceof ShadowRoot ? tree : origin.ownerDocument;
+  return hitRoot.elementFromPoint(x, y);
+}

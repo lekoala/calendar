@@ -15,4 +15,13 @@ export declare function applyContent(element: HTMLElement, content: unknown): bo
 export declare function emitCalendarEvent<T>(target: EventTarget, name: string, detail: T, { cancelable }?: {
     cancelable?: boolean;
 }): boolean;
+/**
+ * Hit-test in the same tree as the renderer so shadow hosts do not hide
+ * the elements inside them.
+ *
+ * @param {Element} origin
+ * @param {number} x
+ * @param {number} y
+ */
+export declare function elementAtPoint(origin: Element, x: number, y: number): Element | null;
 //# sourceMappingURL=dom.d.ts.map

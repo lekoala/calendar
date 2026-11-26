@@ -25,7 +25,7 @@ import { describeEvent, eventOverlapsDate, sliceTimedEventForDay, toZonedDateTim
 import { temporalState } from "../core/temporal.js";
 import { deriveTimedColumn } from "../core/time-grid-model.js";
 import { createAutoscroller } from "./autoscroll.js";
-import { applyContent, emitCalendarEvent } from "./dom.js";
+import { applyContent, elementAtPoint, emitCalendarEvent } from "./dom.js";
 import { bindExternalPlacement } from "./external-placement.js";
 import { startNowIndicator } from "./now-indicator.js";
 
@@ -1096,25 +1096,20 @@ export function renderTimeGrid({
   }
 
   /**
-   * Grid-wide hit test across every rendered day column. Used by event drag
-   * to resolve day and resource changes while the pointer moves.
+   * Resolve the day body that the browser exposes at this point. A body's
+   * client rect also covers areas clipped by the scroller or hidden under
+   * sticky headers. Those areas cannot receive a timed drop.
    *
    * @param {number} clientX
    * @param {number} clientY
    */
   function gridHit(clientX, clientY) {
-    return hitTest({
-      x: clientX,
-      y: clientY,
-      columns: bodies.map(({ column, body }) => ({
-        date: column.date,
-        resource: column.resource,
-        rect: body.getBoundingClientRect(),
-      })),
-      slotMin: startMinutes,
-      slotMax: endMinutes,
-      pxPerMinute,
-    });
+    const body = elementAtPoint(root, clientX, clientY)?.closest(".cv-day-body");
+    const index = bodies.findIndex((entry) => entry.body === body);
+    if (index < 0) return null;
+    const target = bodies[index];
+    const hit = columnHit(target.column, target.body, clientX, clientY);
+    return hit ? { ...hit, column: index } : null;
   }
 
   for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {

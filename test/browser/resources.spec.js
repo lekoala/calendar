@@ -412,6 +412,60 @@ test("a stationary drag follows horizontal autoscroll and drops on the newly vis
   await page.evaluate(() => document.getElementById("wide")?.remove());
 });
 
+for (const target of ["outside the scroller", "over a sticky header"]) {
+  test(`a timed event drop ${target} refuses the clipped column beneath it`, async ({ page }) => {
+    await openDemo(page, "resources");
+    const points = await page.evaluate((target) => {
+      const scroller = /** @type {HTMLElement} */ (document.querySelector(".cv-scroller"));
+      const card = /** @type {HTMLElement} */ (scroller.querySelector('.cv-event[data-event-id="a"]'));
+      scroller.style.width = "min(360px, calc(100% - 90px))";
+      scroller.style.maxHeight = "320px";
+      scroller.scrollIntoView({ block: "center" });
+      scroller.scrollTop = target === "over a sticky header" ? 60 : 0;
+      const source = card.getBoundingClientRect();
+      const boundary = scroller.getBoundingClientRect();
+      const header = /** @type {HTMLElement} */ (scroller.querySelector(".cv-day-header"));
+      const start = { x: source.left + source.width / 2, y: source.top + 25 };
+      const end =
+        target === "over a sticky header"
+          ? { x: start.x, y: header.getBoundingClientRect().bottom - 10 }
+          : { x: boundary.right + 20, y: start.y };
+
+      // Record the state during the pointer event, before autoscroll can
+      // take the clipped column out from under the test coordinates.
+      scroller.ownerDocument.addEventListener(
+        "pointerdown",
+        () => {
+          scroller.ownerDocument.addEventListener(
+            "pointermove",
+            () => {
+              scroller.dataset.dropArmed = String(card.hasAttribute("data-dropout"));
+            },
+            { once: true },
+          );
+        },
+        { once: true },
+      );
+      const calendar = /** @type {HTMLElement} */ (scroller.closest("calendar-view"));
+      calendar.addEventListener("calendar:eventdropout", () => {
+        calendar.dataset.droppedOutside = "true";
+      });
+      calendar.addEventListener("calendar:eventmove", () => {
+        calendar.dataset.moved = "true";
+      });
+      return { start, end };
+    }, target);
+    await page.mouse.move(points.start.x, points.start.y);
+    await page.mouse.down();
+    await page.mouse.move(points.end.x, points.end.y);
+    await page.mouse.up();
+    await expect(page.locator("calendar-view")).toHaveAttribute("data-dropped-outside", "true");
+    await expect(page.locator("calendar-view")).not.toHaveAttribute("data-moved", "true");
+    await expect(page.locator(".cv-scroller")).toHaveAttribute("data-drop-armed", "true");
+    await expect(page.locator(".cv-drag-mirror")).toHaveCount(0);
+  });
+}
+
 test("a numeric resourceId still matches its resource column", async ({ page }) => {
   await openDemo(page, "resources");
   await page.evaluate(() => {

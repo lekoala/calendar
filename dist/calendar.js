@@ -4424,6 +4424,11 @@
   function emitCalendarEvent(target, name, detail, { cancelable = false } = {}) {
     return target.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true, cancelable }));
   }
+  function elementAtPoint(origin, x, y) {
+    const tree = origin.getRootNode();
+    const hitRoot = tree instanceof ShadowRoot ? tree : origin.ownerDocument;
+    return hitRoot.elementFromPoint(x, y);
+  }
 
   // src/render/list.js
   function renderList({
@@ -5172,9 +5177,7 @@
     root.addEventListener("drop", dropExternal);
     let externalAutoscroll = null;
     function pointerOverGrid(x, y) {
-      const tree = root.getRootNode();
-      const hitRoot = tree instanceof ShadowRoot ? tree : root.ownerDocument;
-      const element = hitRoot.elementFromPoint(x, y);
+      const element = elementAtPoint(root, x, y);
       return element != null && root.contains(element);
     }
     return {
@@ -5971,18 +5974,13 @@
       return findSnapTarget(raw, edges, snapThreshold) ?? snapMinutes(raw, snapStep, mode);
     }
     function gridHit(clientX, clientY) {
-      return hitTest({
-        x: clientX,
-        y: clientY,
-        columns: bodies.map(({ column, body }) => ({
-          date: column.date,
-          resource: column.resource,
-          rect: body.getBoundingClientRect()
-        })),
-        slotMin: startMinutes,
-        slotMax: endMinutes,
-        pxPerMinute
-      });
+      const body = elementAtPoint(root, clientX, clientY)?.closest(".cv-day-body");
+      const index = bodies.findIndex((entry) => entry.body === body);
+      if (index < 0)
+        return null;
+      const target = bodies[index];
+      const hit = columnHit(target.column, target.body, clientX, clientY);
+      return hit ? { ...hit, column: index } : null;
     }
     for (let columnIndex = 0;columnIndex < columns.length; columnIndex += 1) {
       const column = columns[columnIndex];

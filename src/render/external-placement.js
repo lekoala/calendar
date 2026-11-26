@@ -2,6 +2,7 @@ import { Temporal } from "temporal-polyfill";
 import { durationMinutes, zonedDateTimeAt } from "../core/dates.js";
 import { snapMinutes } from "../core/geometry.js";
 import { createAutoscroller } from "./autoscroll.js";
+import { elementAtPoint } from "./dom.js";
 /** @typedef {import("./time-grid.js").TimeGridHost} TimeGridHost */
 
 /**
@@ -330,9 +331,7 @@ export function bindExternalPlacement({
   let externalAutoscroll = null;
   /** @param {number} x @param {number} y */
   function pointerOverGrid(x, y) {
-    const tree = root.getRootNode();
-    const hitRoot = tree instanceof ShadowRoot ? tree : root.ownerDocument;
-    const element = hitRoot.elementFromPoint(x, y);
+    const element = elementAtPoint(root, x, y);
     return element != null && root.contains(element);
   }
   return {

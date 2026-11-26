@@ -22,6 +22,9 @@
   is embedded inside a shadow root.
 * During timed event drags, the preview and drop target follow autoscroll
   even when the pointer stays still.
+* Timed drops use the visible grid. Releasing beyond its scroller or over a
+  sticky header produces the outside-drop intent instead of moving an event
+  into a clipped column.
 
 ### Changed
 

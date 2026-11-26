@@ -592,6 +592,7 @@ test("a non-droppable resource refuses the drop", async ({ page }) => {
   await expect(page.locator(".cv-day").first()).toBeVisible();
   await page.evaluate(() => {
     const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.setView("resourceDay");
     calendar.resources = [
       { id: "room-a", title: "Room A" },
       { id: "room-b", title: "Room B", droppable: false },
@@ -601,6 +602,11 @@ test("a non-droppable resource refuses the drop", async ({ page }) => {
   await injectSource(page, { kind: "occurrence" }, { duration: 60 });
 
   const roomB = await slotPoint(page, { date: "2026-09-03", resourceId: "room-b", time: "10:00" });
+  const visibleResource = await page.evaluate(
+    ({ x, y }) => document.elementFromPoint(x, y)?.closest(".cv-day")?.getAttribute("data-resource-id"),
+    roomB,
+  );
+  expect(visibleResource).toBe("room-b");
   await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), roomB);
   await expect(page.locator(".cv-external-ghost")).toHaveClass(/cv-invalid/);
 
