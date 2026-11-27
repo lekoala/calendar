@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-11-27
+
+See [docs/MIGRATION-0.5.md](docs/MIGRATION-0.5.md) for the consumer-facing
+changes: loading a new source scope and idempotent render decorators.
 
 ### Fixed
 

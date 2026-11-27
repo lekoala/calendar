@@ -283,6 +283,7 @@ The contract and test matrix are documented in
 
 - Upgrading an existing integration from 0.2? See [docs/MIGRATION-0.3.md](docs/MIGRATION-0.3.md).
 - Upgrading from 0.3? See [docs/MIGRATION-0.4.md](docs/MIGRATION-0.4.md).
+- Upgrading from 0.4? See [docs/MIGRATION-0.5.md](docs/MIGRATION-0.5.md).
 - Coming from FullCalendar? See [docs/MIGRATING_FROM_FULLCALENDAR.md](docs/MIGRATING_FROM_FULLCALENDAR.md)
   for the view/option mapping, the stricter event model, event-source and
   callback replacements, and an explicit list of what has no equivalent.
