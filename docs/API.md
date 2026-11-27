@@ -636,10 +636,13 @@ Rules:
   structurally refused (out of the grid, outside `slotMin`/`slotMax`,
   `droppable: false`) or refused by the application's `validate`;
 - a timed source enters the all-day lane only when the lane is actually
-  exposed under the pointer; a source declared with `allDay: true` may target
-  a visible day column even when the lane is not rendered, and the column is
-  highlighted instead of receiving a lane ghost. A sticky header or an area
-  outside the day columns is never a valid target;
+  exposed under the pointer; a source declared with `allDay: true` keeps its
+  ghost in the rendered lane whenever one exists, even over the timed grid of
+  a day, because the drop is still civil. When the lane is not rendered, the
+  target day column is highlighted instead of receiving a lane ghost, and
+  that highlight carries `cv-invalid` plus `data-reason` when the target is
+  refused. A sticky header or an area outside the day columns is never a
+  valid target;
 - the core never computes overlaps for you: `validate` runs on your
   calendar's own state via `calendar.getEventOverlaps(target)`;
 - the drop dispatches `calendar:externaldrop` with only the anchor; a
@@ -707,7 +710,7 @@ calendar.addEventListener("calendar:loading", (event) => {
 
 `calendar:render` fires once the rendered subtree exists, with `detail: { view, dates, resources, partial }`. It is the supported way to decorate rendered columns; listeners that mutate state simply queue the next frame, like any other mutation. `partial` is `true` when the renderer reconciled the existing subtree in place (`updateEvent()` in time grids or month) and `false` for a full rebuild. Because a partial render keeps existing nodes, decorators must be idempotent: re-apply their state to the current nodes instead of appending a new node on every event.
 
-A full render replaces the grid subtree. A time-grid render triggered only by `updateEvent()` reconciles timed segments in place: unchanged events keep their node, custom content and focus, while the changed event gets a fresh node and fresh handlers. The shell (scroller, headers, all-day lane, now indicator, external placement) stays mounted. A structural all-day change, `addEvent()`/`removeEvent()`, a refetch, a navigation or a view change still rebuilds the subtree. When focus was inside an event node, the calendar restores it to the same rendered segment (event id + date + resource) after a rebuild, and preserves `scrollTop`/`scrollLeft`; focus outside the calendar is never stolen. Replacing the node under an active pointer gesture cancels that gesture, removes its mirror/ghost, and commits nothing. An in-place update of another event does not interrupt the gesture: its layout edges are refreshed and cached validation is re-evaluated against the new state. Applications that need transactional gestures should not trigger a structural render mid-drag.
+A full render replaces the grid subtree. A time-grid render triggered only by `updateEvent()` reconciles timed segments in place: unchanged events keep their node, and that node keeps its position, custom content and focus, while its geometry and neighbor magnetism are refreshed. The changed event gets a fresh node and fresh handlers. The shell (scroller, headers, all-day lane, now indicator, external placement) stays mounted. A structural all-day change, `addEvent()`/`removeEvent()`, a refetch, a navigation or a view change still rebuilds the subtree. When focus was inside an event node, the calendar restores it to the same rendered segment (event id + date + resource) after a rebuild, and preserves `scrollTop`/`scrollLeft`; focus outside the calendar is never stolen. Replacing the node under an active pointer gesture cancels that gesture, removes its mirror/ghost, and commits nothing. An in-place update of another event does not interrupt the gesture: its layout edges are refreshed and cached validation is re-evaluated against the new state. Applications that need transactional gestures should not trigger a structural render mid-drag.
 
 `calendar:moreclick` reports that a month day has more events than `monthEventLimit` allows, with `detail: { date, events, hidden, nativeEvent }`. The core only carries the intent: whether that opens a popover, switches to the day view, or raises the chip limit is an application decision. The `+n more` control is a real button, so pointer and keyboard activation behave alike, and it does not fall through to the day cell's `calendar:select`.
 

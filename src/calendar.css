@@ -83,6 +83,7 @@
 }
 
 .cv-day {
+  position: relative;
   min-width: var(--calendar-column-min);
   border-inline-start: 1px solid var(--calendar-line);
   background: var(--calendar-surface);
@@ -100,6 +101,33 @@
   .cv-day.cv-external-lane-target {
     background-color: color-mix(in srgb, var(--calendar-accent) 10%, var(--calendar-surface));
   }
+}
+
+/* The fallback column is the only surface when the lane is missing, so it
+   carries the refusal too: red outline, and the reason at its top edge where
+   the pointer still is. A silent red would contradict every other ghost. */
+.cv-day.cv-external-lane-target.cv-invalid {
+  outline-color: #dc2626;
+  background-color: rgb(220 38 38 / 0.08);
+}
+
+.cv-day.cv-external-lane-target[data-reason]::after {
+  content: attr(data-reason);
+  position: absolute;
+  inset-block-start: 0.35rem;
+  inset-inline: 0.35rem;
+  z-index: 1;
+  overflow: hidden;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1.25;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .cv-day-header {
@@ -861,11 +889,16 @@
     border-color: Mark;
   }
 
+  .cv-day.cv-external-lane-target.cv-invalid {
+    outline-color: Mark;
+  }
+
   .cv-drag-mirror[data-reason]::after,
   .cv-event.cv-invalid[data-reason]::after,
   .cv-select-ghost[data-reason]::after,
   .cv-external-ghost[data-reason]::after,
-  .cv-preview[data-reason]::after {
+  .cv-preview[data-reason]::after,
+  .cv-day.cv-external-lane-target[data-reason]::after {
     background: Mark;
     color: Canvas;
   }

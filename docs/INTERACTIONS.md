@@ -76,7 +76,7 @@ During a drag the original node stays in place while a detached mirror follows t
 
 A render triggered by `updateEvent()` of another event keeps the gesture's node connected: the gesture continues, neighbor magnetism reads the refreshed layout, and cached validation is re-evaluated against the new state. If the gesture's own event is updated, or the grid is rebuilt by a refetch, navigation or structural change, the gesture is disposed before its node is removed and commits nothing. `lostpointercapture` remains the safety net for browser-initiated interruptions.
 
-A refused destination paints before the drop ever happens: the mirror (and the selection/external ghosts) carries `cv-invalid` plus `data-reason` when the policy names a reason, and the stylesheet renders that attribute as a chip inside the ghost — a refusal says why, it does not only turn red. Because the refused drop commits nothing and dispatches nothing, the attribute is also the one place an application can read the reason as the pointer releases.
+A refused destination paints before the drop ever happens: the mirror (and the selection/external ghosts) carries `cv-invalid` plus `data-reason` when the policy names a reason, and the stylesheet renders that attribute as a chip inside the ghost — a refusal says why, it does not only turn red. When an external all-day placement has no lane to host a ghost and falls back to highlighting the day column, that column carries the same two markers and the reason chip is painted at its top edge. Because the refused drop commits nothing and dispatches nothing, the attribute is also the one place an application can read the reason as the pointer releases.
 
 Dragging a slice of a multi-day event shifts the whole event: the day delta between source and target columns plus the wall-clock minute delta apply to both `start` and `end`, so the total duration is preserved (same contract as `Shift` + arrows). A single `click` handler in the capture phase both dispatches `calendar:eventclick` and drops the residual click after a drag, resize or long-press.
 
@@ -98,7 +98,11 @@ pointer → hit → snap → resource → rect (real duration) → structural va
 The ghost is a `cv-invalid`-capable overlay with the actual geometry; the
 core judges only structural facts (droppable, slot bounds, timed/all-day
 coherence) and lets `validate` add application policy (overlaps, working
-hours, resource capability). On drop, `calendar:externaldrop` carries
+hours, resource capability). A source declared `allDay: true` keeps its
+ghost in a rendered lane, even while the pointer is over the timed grid of a
+day: the drop is civil either way. Only when the lane is not rendered does
+the day column become the fallback surface, carrying the refusal itself. On
+drop, `calendar:externaldrop` carries
 `{ payload, date, time?, resourceId, allDay, nativeEvent }` — nothing else.
 The application then runs the same `getEventOverlaps() → moveEvent()`
 path as paste; a refused target (structural or `validate`) suppresses the

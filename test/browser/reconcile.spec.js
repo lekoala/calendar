@@ -434,6 +434,147 @@ test("a partial update leaves scroll and the now indicator in place", async ({ p
   expect(result.now).toBe(1);
 });
 
+test("an update of an earlier neighbour keeps the dragged event's pointer capture", async ({ page }) => {
+  await setupEvents(page, [A, B]);
+  await page.evaluate(() => {
+    const hooks = /** @type {any} */ (window);
+    hooks.__moves = 0;
+    hooks.__captures = 0;
+    document
+      .querySelector('.cv-day[data-date="2026-09-03"] [data-event-id="b"]')
+      ?.addEventListener("lostpointercapture", () => {
+        hooks.__captures += 1;
+      });
+    document.querySelector("calendar-view")?.addEventListener("calendar:eventmove", () => {
+      hooks.__moves += 1;
+    });
+  });
+  // Drag the second event, then update the first: the rebuild must be
+  // inserted among the kept nodes, never by moving them. A moved node loses
+  // pointer capture and the drop would silently commit nothing.
+  const box = await page.locator('.cv-day[data-date="2026-09-03"] [data-event-id="b"]').boundingBox();
+  if (!box) throw new Error("expected event geometry");
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 40, { steps: 4 });
+  await expect(page.locator(".cv-drag-mirror")).toHaveCount(1);
+
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).updateEvent({
+      id: "a",
+      title: "Alpha updated",
+    });
+  });
+  await flush(page);
+
+  const kept = await page.evaluate(() => ({
+    captures: /** @type {any} */ (window).__captures,
+    mirror: document.querySelectorAll(".cv-drag-mirror").length,
+    source: document.querySelectorAll(".cv-drag-source").length,
+  }));
+  expect(kept).toEqual({ captures: 0, mirror: 1, source: 1 });
+
+  await page.mouse.move(x, y + 80, { steps: 4 });
+  await page.mouse.up();
+  await flush(page);
+
+  expect(await page.evaluate(() => /** @type {any} */ (window).__moves)).toBe(1);
+  expect(
+    await page.evaluate(
+      () => /** @type {any} */ (document.querySelector("calendar-view")).getEventById("b").start,
+    ),
+  ).not.toBe(B.start);
+});
+
+test("an update of the dragged event never inserts before its removed mirror", async ({ page }) => {
+  /** @type {string[]} */
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  await openDemo(page, "resources");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.setView("resourceDay");
+    // No selection means no hover overlay: the drag mirror is the only
+    // overlay, and updating the dragged event removes it during the render.
+    calendar.resources = [{ id: "room-a", title: "Room A", selectable: false }];
+    calendar.events = [
+      {
+        id: "a",
+        title: "Alpha",
+        start: "2026-09-03T09:00:00+02:00[Europe/Brussels]",
+        end: "2026-09-03T10:00:00+02:00[Europe/Brussels]",
+        resourceId: "room-a",
+      },
+    ];
+    /** @type {any} */ (window).__moves = 0;
+    calendar.addEventListener("calendar:eventmove", () => {
+      /** @type {any} */ (window).__moves += 1;
+    });
+  });
+  await flush(page);
+
+  const box = await page.locator('[data-event-id="a"]').boundingBox();
+  if (!box) throw new Error("expected event geometry");
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 40, { steps: 4 });
+  await expect(page.locator(".cv-drag-mirror")).toHaveCount(1);
+
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).updateEvent({
+      id: "a",
+      title: "Alpha updated",
+    });
+  });
+  await flush(page);
+  await expect(page.locator(".cv-drag-mirror")).toHaveCount(0);
+
+  await page.mouse.up();
+  await flush(page);
+  expect(errors).toEqual([]);
+  expect(await page.evaluate(() => /** @type {any} */ (window).__moves)).toBe(0);
+  await expect(page.locator('[data-event-id="a"]')).toContainText("Alpha updated");
+});
+
+test("an update during a resize keeps the height the gesture is painting", async ({ page }) => {
+  await setupEvents(page, [A, B]);
+  const node = page.locator('.cv-day[data-date="2026-09-03"] [data-event-id="a"]');
+  const handle = await node.locator(".cv-resize-s").boundingBox();
+  if (!handle) throw new Error("expected a south resize handle");
+  const x = handle.x + handle.width / 2;
+  const y = handle.y + handle.height / 2;
+  const before = await node.evaluate((element) => element.style.height);
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 60, { steps: 4 });
+  const preview = await node.evaluate((element) => element.style.height);
+  expect(preview).not.toBe(before);
+
+  // The neighbour update refreshes the layout; it must not repaint the
+  // resized card back to its stored height, which would flicker mid-gesture.
+  await page.evaluate(() => {
+    /** @type {any} */ (document.querySelector("calendar-view")).updateEvent({
+      id: "b",
+      title: "Beta updated",
+    });
+  });
+  await flush(page);
+  expect(await node.evaluate((element) => element.style.height)).toBe(preview);
+
+  await page.mouse.up();
+  await flush(page);
+  expect(
+    await page.evaluate(
+      () => /** @type {any} */ (document.querySelector("calendar-view")).getEventById("a").end,
+    ),
+  ).not.toBe(A.end);
+});
+
 test("calendar:render reports whether the render was partial", async ({ page }) => {
   await setupEvents(page, [A, B]);
   const partials = await page.evaluate(async () => {

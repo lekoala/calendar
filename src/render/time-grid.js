@@ -517,6 +517,13 @@ export function renderTimeGrid({
   let eventNodes = new Map();
   /** @type {Map<HTMLElement, () => void>} */
   const gestureDisposers = new Map();
+  /**
+   * Nodes whose inline geometry belongs to an active resize preview. A model
+   * refresh must not repaint them back to their stored height mid-gesture.
+   *
+   * @type {Set<HTMLButtonElement>}
+   */
+  const previewingNodes = new Set();
   let previousEvents = events;
 
   /**
@@ -835,6 +842,7 @@ export function renderTimeGrid({
       if (!pressGate.ok) return;
       nativeEvent.stopPropagation();
       nativeEvent.preventDefault();
+      previewingNodes.add(node);
       const savedTop = node.style.top;
       const savedHeight = node.style.height;
       // Last evaluated destination (`start:end`) and its policy decision.
@@ -922,6 +930,9 @@ export function renderTimeGrid({
           // No click follows a cancel: drop both suppression flags.
           interaction.longPressConsumed = false;
           interaction.suppressClick = false;
+        },
+        onCleanup() {
+          previewingNodes.delete(node);
         },
       });
       gestureDisposers.set(node, () => gesture.dispose());
@@ -1388,14 +1399,18 @@ export function renderTimeGrid({
    * @param {{ event: import("../core/model.js").NormalizedEvent, start: number, end: number, left: number, width: number, geometry: { top: number, height: number } }} item
    */
   function applyTimedGeometry(node, item) {
-    const top = `${item.geometry.top}px`;
-    const height = `${item.geometry.height}px`;
-    const start = `${item.left * 100}%`;
-    const width = `${item.width * 100}%`;
-    if (node.style.top !== top) node.style.top = top;
-    if (node.style.height !== height) node.style.height = height;
-    if (node.style.insetInlineStart !== start) node.style.insetInlineStart = start;
-    if (node.style.width !== width) node.style.width = width;
+    // A resized node is painting its own preview; the model still holds the
+    // pre-gesture edges until the commit re-renders.
+    if (!previewingNodes.has(node)) {
+      const top = `${item.geometry.top}px`;
+      const height = `${item.geometry.height}px`;
+      const start = `${item.left * 100}%`;
+      const width = `${item.width * 100}%`;
+      if (node.style.top !== top) node.style.top = top;
+      if (node.style.height !== height) node.style.height = height;
+      if (node.style.insetInlineStart !== start) node.style.insetInlineStart = start;
+      if (node.style.width !== width) node.style.width = width;
+    }
     const state = stateOf(item.event);
     if (node.dataset.temporalState !== state) node.dataset.temporalState = state;
     const label = describeEvent(item.event, timeZone, labels.untitledEvent);
@@ -1407,23 +1422,6 @@ export function renderTimeGrid({
     gestureDisposers.get(node)?.();
     gestureDisposers.delete(node);
     node.remove();
-  }
-
-  /**
-   * Keep event nodes in model order before overlays, while moving only the
-   * nodes whose position actually differs.
-   *
-   * @param {HTMLDivElement} body
-   * @param {HTMLButtonElement[]} nodes
-   * @param {Element | null} anchor
-   */
-  function reorderTimedNodes(body, nodes, anchor) {
-    let expected = anchor;
-    for (let index = nodes.length - 1; index >= 0; index -= 1) {
-      const node = nodes[index];
-      if (node.nextSibling !== expected) body.insertBefore(node, expected);
-      expected = node;
-    }
   }
 
   /**
@@ -1450,9 +1448,10 @@ export function renderTimeGrid({
     for (let index = 0; index < columns.length; index += 1) {
       const column = columns[index];
       const body = bodies[index].body;
-      // The anchor keeps the event block before hover, preview and gesture
-      // overlays even when a segment is recreated.
-      const anchor =
+      // Overlays (hover, preview, gesture ghosts) sit after the event block.
+      // This one can disappear during the pass itself when the gesture's own
+      // event is rebuilt, so it is only trusted while still attached.
+      const overlay =
         body.querySelector(
           ":scope > :is(.cv-hover, .cv-select-ghost, .cv-preview, .cv-external-ghost, .cv-drag-mirror)",
         ) ?? null;
@@ -1466,9 +1465,14 @@ export function renderTimeGrid({
       // an in-place update must refresh it instead of capturing stale edges.
       columnSlices[index] = model;
 
-      /** @type {HTMLButtonElement[]} */
-      const columnNodes = [];
-      for (const item of model.events) {
+      // Walk the model backwards and insert each rebuilt node before its
+      // already-placed successor. Kept nodes are never moved: a DOM move
+      // drops pointer capture, focus and :active state, so an unrelated
+      // update must not touch a neighbour that is mid-gesture.
+      /** @type {Element | null} */
+      let reference = overlay;
+      for (let itemIndex = model.events.length - 1; itemIndex >= 0; itemIndex -= 1) {
+        const item = model.events[itemIndex];
         const { event } = item;
         const key = segmentKey(event, column);
         const existing = eventNodes.get(key);
@@ -1480,13 +1484,14 @@ export function renderTimeGrid({
         } else {
           if (existing) removeTimedNode(existing.node);
           node = createTimedEventNode(body, column, index, item);
-          if (anchor?.parentNode === body) body.insertBefore(node, anchor);
-          else body.append(node);
+          // The overlay can disappear during this same pass when the render
+          // disposes a gesture and its mirror, so it is re-validated here
+          // instead of being reused as an insertion reference.
+          body.insertBefore(node, reference?.parentNode === body ? reference : null);
         }
-        columnNodes.push(node);
+        if (node.parentNode === body) reference = node;
         nextNodes.set(key, { node, event, state });
       }
-      reorderTimedNodes(body, columnNodes, anchor);
     }
 
     for (const [key, entry] of eventNodes) {

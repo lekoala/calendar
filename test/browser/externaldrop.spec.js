@@ -736,3 +736,88 @@ test("removeExternalDrop disarms the source; the grid stops previewing", async (
   await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
   await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
 });
+
+test("a rendered all-day lane keeps the ghost when the pointer leaves it", async ({ page }) => {
+  await openDemo(page, "basic");
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    calendar.addEvent({ id: "civil", allDay: true, start: "2026-09-03", end: "2026-09-04" });
+  });
+  await flushRender(page);
+  await expect(page.locator(".cv-allday")).toBeVisible();
+  await injectSource(page, { kind: "occurrence" }, { allDay: true, title: "Closure" });
+  const lane = await page.locator(".cv-allday").boundingBox();
+  if (!lane) throw new Error("Expected the all-day lane");
+  // Same column in both steps, so the only thing that changes is the surface
+  // under the pointer: the lane keeps hosting the civil ghost instead of the
+  // day column adding a second, competing affordance.
+  const grid = await slotPoint(page, { date: "2026-09-03", time: "10:07" });
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), {
+    x: grid.x,
+    y: lane.y + lane.height / 2,
+  });
+  await expect(page.locator(".cv-allday .cv-external-ghost-lane")).toHaveCount(1);
+  await expect(page.locator(".cv-external-lane-target")).toHaveCount(0);
+
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), grid);
+  const result = await page.evaluate(() => ({
+    laneGhosts: document.querySelectorAll(".cv-allday .cv-external-ghost-lane").length,
+    gridGhosts: document.querySelectorAll(".cv-day-body .cv-external-ghost").length,
+    highlights: document.querySelectorAll(".cv-external-lane-target").length,
+  }));
+  expect(result).toEqual({ laneGhosts: 1, gridGhosts: 0, highlights: 0 });
+});
+
+test("a refused day-column fallback carries the refusal", async ({ page }) => {
+  await openDemo(page, "basic");
+  // No all-day content: the lane takes no space and is not rendered.
+  await expect(page.locator(".cv-allday")).toHaveCount(0);
+  await page.evaluate(() => {
+    const calendar = /** @type {any} */ (document.querySelector("calendar-view"));
+    const source = document.createElement("button");
+    document.body.append(source);
+    /** @type {any} */ (globalThis).__refuse = false;
+    calendar.addExternalDrop(
+      source,
+      { kind: "occurrence" },
+      {
+        allDay: true,
+        title: "Closure",
+        // A function cannot cross `page.evaluate`, so the policy lives here.
+        validate: () => (/** @type {any} */ (globalThis).__refuse ? "Occupied" : true),
+      },
+    );
+    /** @type {any} */ (globalThis).__extOver = (/** @type {number} */ x, /** @type {number} */ y) => {
+      const dt = new DataTransfer();
+      source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      const root = /** @type {HTMLElement} */ (calendar.querySelector(".cv-grid"));
+      root.dispatchEvent(
+        new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dt,
+          clientX: x,
+          clientY: y,
+        }),
+      );
+    };
+  });
+  const point = await slotPoint(page, { date: "2026-09-04", time: "10:00" });
+  const day = page.locator('.cv-day[data-date="2026-09-04"]');
+
+  await page.evaluate(({ x, y }) => /** @type {any} */ (globalThis).__extOver(x, y), point);
+  await expect(day).toHaveClass(/cv-external-lane-target/);
+  await expect(day).not.toHaveClass(/cv-invalid/);
+  await expect(day).not.toHaveAttribute("data-reason");
+
+  await page.evaluate(({ x, y }) => {
+    /** @type {any} */ (globalThis).__refuse = true;
+    /** @type {any} */ (globalThis).__extOver(x, y);
+  }, point);
+  await expect(day).toHaveClass(/cv-external-lane-target/);
+  await expect(day).toHaveClass(/cv-invalid/);
+  await expect(day).toHaveAttribute("data-reason", "Occupied");
+  // The column highlight replaced the ghost: no other surface shows the
+  // refusal, and the reason must still be readable on the column itself.
+  await expect(page.locator(".cv-external-ghost")).toHaveCount(0);
+});

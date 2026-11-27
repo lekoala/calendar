@@ -5556,18 +5556,28 @@
     let externalGhost = null;
     let externalPreview = null;
     let highlightedColumn = null;
-    function highlightLaneColumn(index) {
+    function highlightLaneColumn(index, placement) {
       const day = bodies[index]?.body.closest(".cv-day");
-      if (highlightedColumn === day)
+      if (!(day instanceof HTMLElement)) {
+        clearLaneHighlight();
         return;
-      clearLaneHighlight();
-      if (!(day instanceof HTMLElement))
-        return;
-      day.classList.add("cv-external-lane-target");
-      highlightedColumn = day;
+      }
+      if (highlightedColumn !== day) {
+        clearLaneHighlight();
+        day.classList.add("cv-external-lane-target");
+        highlightedColumn = day;
+      }
+      day.classList.toggle("cv-invalid", !placement.ok);
+      if (placement.reason)
+        day.dataset.reason = placement.reason;
+      else
+        delete day.dataset.reason;
     }
     function clearLaneHighlight() {
-      highlightedColumn?.classList.remove("cv-external-lane-target");
+      if (!highlightedColumn)
+        return;
+      highlightedColumn.classList.remove("cv-external-lane-target", "cv-invalid");
+      delete highlightedColumn.dataset.reason;
       highlightedColumn = null;
     }
     function removeExternalGhost() {
@@ -5618,7 +5628,7 @@
         const index = allDayIndex;
         if (index < 0)
           return null;
-        const highlight = meta.allDay === true && laneIndex < 0;
+        const highlight = meta.allDay === true && laneIndex < 0 && !lane.isConnected;
         const key = `lane:${index}`;
         const previous = cached(key);
         if (previous)
@@ -5709,7 +5719,7 @@
       }
       const external = host.getExternalDrag();
       if (placement.kind === "lane" && placement.highlight) {
-        highlightLaneColumn(placement.index);
+        highlightLaneColumn(placement.index, placement);
       } else {
         clearLaneHighlight();
       }
@@ -6128,6 +6138,7 @@
     }
     let eventNodes = new Map;
     const gestureDisposers = new Map;
+    const previewingNodes = new Set;
     let previousEvents = events;
     const segmentKey = (event, column) => JSON.stringify([event.id, column.date.toString(), column.resource?.id ?? null]);
     function createTimedEventNode(body, column, columnIndex, item) {
@@ -6360,6 +6371,7 @@
           return;
         nativeEvent.stopPropagation();
         nativeEvent.preventDefault();
+        previewingNodes.add(node);
         const savedTop = node.style.top;
         const savedHeight = node.style.height;
         let resizeKey = null;
@@ -6444,6 +6456,9 @@
             resetPreview();
             interaction.longPressConsumed = false;
             interaction.suppressClick = false;
+          },
+          onCleanup() {
+            previewingNodes.delete(node);
           }
         });
         gestureDisposers.set(node, () => gesture.dispose());
@@ -6829,18 +6844,20 @@
       root.append(day);
     }
     function applyTimedGeometry(node, item) {
-      const top = `${item.geometry.top}px`;
-      const height = `${item.geometry.height}px`;
-      const start = `${item.left * 100}%`;
-      const width = `${item.width * 100}%`;
-      if (node.style.top !== top)
-        node.style.top = top;
-      if (node.style.height !== height)
-        node.style.height = height;
-      if (node.style.insetInlineStart !== start)
-        node.style.insetInlineStart = start;
-      if (node.style.width !== width)
-        node.style.width = width;
+      if (!previewingNodes.has(node)) {
+        const top = `${item.geometry.top}px`;
+        const height = `${item.geometry.height}px`;
+        const start = `${item.left * 100}%`;
+        const width = `${item.width * 100}%`;
+        if (node.style.top !== top)
+          node.style.top = top;
+        if (node.style.height !== height)
+          node.style.height = height;
+        if (node.style.insetInlineStart !== start)
+          node.style.insetInlineStart = start;
+        if (node.style.width !== width)
+          node.style.width = width;
+      }
       const state = stateOf(item.event);
       if (node.dataset.temporalState !== state)
         node.dataset.temporalState = state;
@@ -6852,15 +6869,6 @@
       gestureDisposers.get(node)?.();
       gestureDisposers.delete(node);
       node.remove();
-    }
-    function reorderTimedNodes(body, nodes, anchor) {
-      let expected = anchor;
-      for (let index = nodes.length - 1;index >= 0; index -= 1) {
-        const node = nodes[index];
-        if (node.nextSibling !== expected)
-          body.insertBefore(node, expected);
-        expected = node;
-      }
     }
     function update(nextEvents, nextNow) {
       const previousAllDay = new Map(previousEvents.filter((item) => item.allDay === true).map((item) => [item.id, item]));
@@ -6877,7 +6885,7 @@
       for (let index = 0;index < columns.length; index += 1) {
         const column = columns[index];
         const body = bodies[index].body;
-        const anchor = body.querySelector(":scope > :is(.cv-hover, .cv-select-ghost, .cv-preview, .cv-external-ghost, .cv-drag-mirror)") ?? null;
+        const overlay = body.querySelector(":scope > :is(.cv-hover, .cv-select-ghost, .cv-preview, .cv-external-ghost, .cv-drag-mirror)") ?? null;
         const model = deriveTimedColumn(column, nextEvents, backgrounds, {
           timeZone,
           slotMin: startMinutes,
@@ -6885,8 +6893,9 @@
           pxPerMinute
         });
         columnSlices[index] = model;
-        const columnNodes = [];
-        for (const item of model.events) {
+        let reference = overlay;
+        for (let itemIndex = model.events.length - 1;itemIndex >= 0; itemIndex -= 1) {
+          const item = model.events[itemIndex];
           const { event } = item;
           const key = segmentKey(event, column);
           const existing = eventNodes.get(key);
@@ -6899,15 +6908,12 @@
             if (existing)
               removeTimedNode(existing.node);
             node = createTimedEventNode(body, column, index, item);
-            if (anchor?.parentNode === body)
-              body.insertBefore(node, anchor);
-            else
-              body.append(node);
+            body.insertBefore(node, reference?.parentNode === body ? reference : null);
           }
-          columnNodes.push(node);
+          if (node.parentNode === body)
+            reference = node;
           nextNodes.set(key, { node, event, state });
         }
-        reorderTimedNodes(body, columnNodes, anchor);
       }
       for (const [key, entry] of eventNodes) {
         if (!nextNodes.has(key))

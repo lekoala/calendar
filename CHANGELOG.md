@@ -34,8 +34,10 @@
   pointer. Sticky headers and clipped areas are not valid lane targets, and a
   source declared `allDay: true` no longer becomes valid only because its
   pointer x-coordinate matches a column: it must land on a visible day
-  column. When the lane is not rendered, that column is highlighted instead
-  of receiving a lane ghost.
+  column. A rendered lane keeps hosting the ghost even when the pointer moves
+  over the timed grid of a day, because the drop stays civil; the fallback
+  day-column highlight is reserved for a missing lane and now carries the
+  refusal (`cv-invalid`, `data-reason`) instead of resembling a valid target.
 * All-day bars clipped by the visible range mark the cut side with a square
   corner and an inset chevron, instead of reading as a range that starts or
   ends on the visible day. A bar that fits the range exactly keeps both
@@ -49,15 +51,18 @@
   keyboard focus of unchanged chips that stay visible with the same
   temporal state.
 * In time grids, `updateEvent()` reconciles timed segments in place: an
-  unchanged event keeps its node, custom content and focus while its
-  geometry and neighbor magnetism are refreshed. A changed event gets a fresh
-  node and handlers. Structural all-day changes, add/remove mutations,
-  refetches and navigation still rebuild the view.
+  unchanged event keeps its node, its DOM position, custom content and focus
+  while its geometry and neighbor magnetism are refreshed. A changed event
+  gets a fresh node and handlers, inserted among the kept nodes instead of
+  appended and re-sorted, so no other node is ever moved. Structural all-day
+  changes, add/remove mutations, refetches and navigation still rebuild the
+  view.
 * A render triggered by `updateEvent()` of another event no longer cancels an
-  active drag or resize. The gesture continues against the refreshed layout
-  and its cached validation is re-evaluated. Updating the manipulated event,
-  or a full rebuild, disposes the gesture explicitly before removing its
-  node.
+  active drag or resize: kept nodes do not lose pointer capture, and a
+  resized card keeps the geometry its gesture is painting. The gesture
+  continues against the refreshed layout and its cached validation is
+  re-evaluated. Updating the manipulated event, or a full rebuild, disposes
+  the gesture explicitly before removing its node.
 * Time grids calculate timed segments and overlap geometry before rendering.
   Pointer and native drag-and-drop share the external placement controller.
 * Event and all-day gestures share one pointer lifecycle primitive for

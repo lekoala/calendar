@@ -51,19 +51,36 @@ export function bindExternalPlacement({
   /** @type {HTMLElement | null} */
   let highlightedColumn = null;
 
-  /** @param {number} index */
-  function highlightLaneColumn(index) {
+  /**
+   * Highlight the fallback day column of an all-day target. This column is
+   * only used when no lane is rendered, so it is the only surface left and
+   * must carry the refusal itself.
+   *
+   * @param {number} index
+   * @param {{ ok: boolean, reason: string | null }} placement
+   * @returns {void}
+   */
+  function highlightLaneColumn(index, placement) {
     const day = bodies[index]?.body.closest(".cv-day");
-    if (highlightedColumn === day) return;
-    clearLaneHighlight();
-    if (!(day instanceof HTMLElement)) return;
-    day.classList.add("cv-external-lane-target");
-    highlightedColumn = day;
+    if (!(day instanceof HTMLElement)) {
+      clearLaneHighlight();
+      return;
+    }
+    if (highlightedColumn !== day) {
+      clearLaneHighlight();
+      day.classList.add("cv-external-lane-target");
+      highlightedColumn = day;
+    }
+    day.classList.toggle("cv-invalid", !placement.ok);
+    if (placement.reason) day.dataset.reason = placement.reason;
+    else delete day.dataset.reason;
   }
 
   /** @returns {void} */
   function clearLaneHighlight() {
-    highlightedColumn?.classList.remove("cv-external-lane-target");
+    if (!highlightedColumn) return;
+    highlightedColumn.classList.remove("cv-external-lane-target", "cv-invalid");
+    delete highlightedColumn.dataset.reason;
     highlightedColumn = null;
   }
 
@@ -178,7 +195,11 @@ export function bindExternalPlacement({
     if (meta.allDay === true || laneIndex >= 0) {
       const index = allDayIndex;
       if (index < 0) return null;
-      const highlight = meta.allDay === true && laneIndex < 0;
+      // The column highlight is the fallback for a missing lane. A rendered
+      // lane keeps hosting the ghost even when the pointer is over the timed
+      // grid: the drop is still civil, and two competing affordances for the
+      // same target read as two different destinations.
+      const highlight = meta.allDay === true && laneIndex < 0 && !lane.isConnected;
       const key = `lane:${index}`;
       const previous = cached(key);
       if (previous) return previous;
@@ -293,7 +314,7 @@ export function bindExternalPlacement({
     }
     const external = host.getExternalDrag();
     if (placement.kind === "lane" && placement.highlight) {
-      highlightLaneColumn(placement.index);
+      highlightLaneColumn(placement.index, placement);
     } else {
       clearLaneHighlight();
     }
