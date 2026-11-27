@@ -33,28 +33,27 @@
     }
 
     /* Tabler is a webfont: one class for the family, one per glyph. Icons
-       sit as flex items inside Actual's controls, so `line-height: 1` is
-       what keeps them optically centred instead of riding the text
-       baseline - the reason glyph characters looked misaligned before. */
+       sit as flex items inside Actual's controls, so the slot owns the
+       centering and the glyph never rides the text baseline. */
     .ti {
       font-size: 1.15em;
-      line-height: 1;
+      line-height: 1.15;
     }
 
     .ti-lg {
       font-size: 1.35em;
     }
 
-    /* The glyphs themselves carry their own vertical metrics, so a line
-       box is never the drawing: `line-height: 1` centres the box, not the
-       icon. The slot owns centering; the font glyph is a block so its
-       baseline does not add an extra inline alignment offset. */
+    /* Tabler's glyph content area is 1.15em, not 1em. Matching the line box
+       to that area and to the block keeps the ink centred: a 1em line box
+       leaves negative half-leading, which pushes the glyph above the block's
+       centre instead of centring it. */
     .sc-shell .ti {
       display: block;
       flex: none;
       inline-size: 1.15em;
       block-size: 1.15em;
-      line-height: 1;
+      line-height: 1.15;
     }
 
     .sc-shell .ti::before {
@@ -135,6 +134,11 @@
 
     .sc-modules {
       border-block-end: 0;
+      /* The strip owns the header's bottom edge: it stretches to the
+         separation line and absorbs the topbar's block-end padding, so the
+         current-tab indicator sits on the line instead of floating above it. */
+      align-self: stretch;
+      margin-block-end: calc(-1 * var(--space-10));
     }
 
     .sc-modules .tab {
@@ -631,6 +635,10 @@
     .sc-range {
       display: grid;
       min-inline-size: 0;
+      /* The UA gives a <p> a 1em block margin. Inside the flex toolbar that
+         margin does not collapse: it inflated the row by 32px around a 34px
+         label. The toolbar's own gap owns the spacing. */
+      margin: 0;
       line-height: var(--line-height-tight);
     }
 
@@ -2209,19 +2217,15 @@
       --cb-border-color: var(--border);
       --cb-border-radius: var(--radius);
       --cb-focus-color: var(--focus);
+      /* Actual paints field focus as a ring inside the border box, and the
+         library already does the same for the control it upgrades. Passing
+         the framework width keeps a high-contrast or brutalist theme's 3px
+         ring intact instead of freezing the library's 2px. */
+      --cb-focus-width: var(--focus-ring-width);
       --cb-muted-color: var(--text-muted);
       --cb-error-color: var(--danger);
       --cb-control-height: var(--control-size);
       --cb-option-min-height: var(--control-size);
-    }
-
-    .actual-combobox :is(.cb-text-control, .cb-control):focus-within {
-      --cb-border-color: var(--focus);
-      /* Actual 0.10 replaced the halo with a solid focus line. The library's
-         own 3px tint would double it, so only the shared line is drawn. */
-      outline: var(--focus-ring-width) solid var(--focus);
-      outline-offset: var(--focus-outline-offset);
-      box-shadow: none;
     }
 
     /* The picker is in the top layer, outside the control's subtree, so its

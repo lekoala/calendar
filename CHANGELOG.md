@@ -68,9 +68,16 @@
 * Event and all-day gestures share one pointer lifecycle primitive for
   pointer identity, capture, movement threshold, cancellation and cleanup.
   The all-day lane is rendered by its own module.
-* The showcase demo follows Actual CSS 0.20.2, `@lekoala/combobox` 0.8.2 and
-  `@lekoala/date-picker` 0.6.3. The update is additive for the classes,
-  tokens and themes the shell uses, so its own CSS is unchanged.
+* The showcase demo follows Actual CSS 0.22.0, `@lekoala/combobox` 0.8.2 and
+  `@lekoala/date-picker` 0.6.3. The shell uses none of the radius and edge
+  hooks that lost their default values in 0.21 and 0.22, so its own CSS is
+  unchanged; field edges and select hover now follow the framework defaults.
+  Its palette field keeps the framework's inset focus ring instead of drawing
+  a second ring around the border, the range label no longer adds a
+  paragraph's block margin inside the toolbar, the section tabs'
+  current-page indicator lands on the header rule instead of floating above
+  it, and icon slots match Tabler's 1.15em content area so glyphs stay
+  optically centred.
 
 ## 0.4.0 - 2026-11-06
 
